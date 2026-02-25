@@ -89,11 +89,25 @@ class MatchProvider extends ChangeNotifier {
       '随便聊聊'
     ];
     
+    // 70%概率匹配到在线用户（优先在线）
+    final isOnline = DateTime.now().millisecond % 10 < 7;
+    
+    // 在线用户80%有位置权限，离线用户0%有位置权限
+    final hasLocationPermission = isOnline && (DateTime.now().second % 10 < 8);
+    
     return User(
       id: const Uuid().v4(),
       nickname: '神秘人',
-      distance: '${(1 + (DateTime.now().millisecond % 50))}km',
+      // 离线用户不显示位置，显示"未知"
+      distance: hasLocationPermission 
+          ? '${(1 + (DateTime.now().millisecond % 50))}km'
+          : '位置未知',
       status: statuses[DateTime.now().second % statuses.length],
+      isOnline: isOnline,
+      hasLocationPermission: hasLocationPermission,
+      lastOnlineTime: isOnline ? DateTime.now() : DateTime.now().subtract(
+        Duration(minutes: 5 + (DateTime.now().second % 55)),
+      ),
     );
   }
 }

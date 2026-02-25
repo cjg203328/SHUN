@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:go_router/go_router.dart';
 import '../config/theme.dart';
 import '../providers/match_provider.dart';
 import '../providers/chat_provider.dart';
@@ -44,34 +43,32 @@ class _MatchTabState extends State<MatchTab> with SingleTickerProviderStateMixin
       body: SafeArea(
         child: Consumer<MatchProvider>(
           builder: (context, matchProvider, child) {
+            // 匹配成功后显示全屏卡片
+            if (matchProvider.matchedUser != null) {
+              return _buildFullScreenMatchCard(matchProvider);
+            }
+            
+            // 未匹配时显示匹配界面
             return Center(
-              child: SingleChildScrollView(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 40),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: [
-                      // 顶部情感化文案 + 次数显示
-                      _buildHeader(matchProvider),
-                      
-                      const SizedBox(height: 60),
-                      
-                      // 光球或匹配卡片
-                      if (matchProvider.matchedUser == null)
-                        _buildMatchOrb(matchProvider)
-                      else
-                        _buildMatchedCard(matchProvider),
-                      
-                      const SizedBox(height: 60),
-                      
-                      // 按钮
-                      if (matchProvider.matchedUser == null)
-                        _buildMatchButton(matchProvider)
-                      else
-                        _buildActionButtons(matchProvider),
-                    ],
-                  ),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 40),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    // 顶部情感化文案 + 次数显示
+                    _buildHeader(matchProvider),
+                    
+                    const SizedBox(height: 60),
+                    
+                    // 光球
+                    _buildMatchOrb(matchProvider),
+                    
+                    const SizedBox(height: 60),
+                    
+                    // 按钮
+                    _buildMatchButton(matchProvider),
+                  ],
                 ),
               ),
             );
@@ -198,70 +195,335 @@ class _MatchTabState extends State<MatchTab> with SingleTickerProviderStateMixin
     );
   }
 
-  Widget _buildMatchedCard(MatchProvider provider) {
+  // 全屏匹配成功卡片（一屏展示，无需滚动）
+  Widget _buildFullScreenMatchCard(MatchProvider provider) {
     final user = provider.matchedUser!;
+    final isOnline = user.isOnline;
+    final hasLocation = user.hasLocationPermission;
     
     return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(36),
-      decoration: BoxDecoration(
-        color: AppColors.cardBg,
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: AppColors.white08),
-      ),
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
       child: Column(
         children: [
-          // 头像
+          // 顶部标题
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Text(
+                '匹配成功',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w300,
+                  color: AppColors.textSecondary,
+                  letterSpacing: 2,
+                ),
+              ),
+              if (isOnline) ...[
+                const SizedBox(width: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 3,
+                  ),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF4CAF50).withOpacity(0.15),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        width: 6,
+                        height: 6,
+                        decoration: const BoxDecoration(
+                          color: Color(0xFF4CAF50),
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      const Text(
+                        'TA在线',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w500,
+                          color: Color(0xFF4CAF50),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ],
+          ),
+          
+          const SizedBox(height: 32),
+          
+          // 用户信息卡片（紧凑版）
           Container(
-            width: 100,
-            height: 100,
+            padding: const EdgeInsets.all(24),
             decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: AppColors.white08,
-              border: Border.all(color: AppColors.white05, width: 2),
+              color: AppColors.cardBg,
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(
+                color: isOnline 
+                    ? const Color(0xFF4CAF50).withOpacity(0.2)
+                    : AppColors.white08,
+              ),
+              // 在线用户：微妙的发光效果
+              boxShadow: isOnline ? [
+                BoxShadow(
+                  color: const Color(0xFF4CAF50).withOpacity(0.1),
+                  blurRadius: 20,
+                  spreadRadius: 0,
+                ),
+              ] : null,
             ),
-            child: const Center(
-              child: Text('👤', style: TextStyle(fontSize: 48)),
+            child: Column(
+              children: [
+                // 头像
+                Stack(
+                  children: [
+                    Container(
+                      width: 80,
+                      height: 80,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: AppColors.white08,
+                        border: Border.all(
+                          color: isOnline
+                              ? const Color(0xFF4CAF50).withOpacity(0.3)
+                              : AppColors.white05,
+                          width: 2,
+                        ),
+                      ),
+                      child: const Center(
+                        child: Text('👤', style: TextStyle(fontSize: 40)),
+                      ),
+                    ),
+                    // 在线绿点
+                    if (isOnline)
+                      Positioned(
+                        right: 4,
+                        bottom: 4,
+                        child: Container(
+                          width: 16,
+                          height: 16,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF4CAF50),
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                              color: AppColors.cardBg,
+                              width: 3,
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+                
+                const SizedBox(height: 16),
+                
+                // 昵称
+                const Text(
+                  '匿名',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w300,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+                
+                const SizedBox(height: 12),
+                
+                // 状态和距离
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: AppColors.white08,
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: Text(
+                        user.status,
+                        style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w300,
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                    ),
+                    // 只有在线且有位置权限才显示距离
+                    if (hasLocation) ...[
+                      const SizedBox(width: 12),
+                      Row(
+                        children: [
+                          Icon(
+                            Icons.location_on,
+                            size: 14,
+                            color: AppColors.textTertiary,
+                          ),
+                          const SizedBox(width: 2),
+                          Text(
+                            user.distance,
+                            style: const TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w300,
+                              color: AppColors.textTertiary,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ],
+                ),
+              ],
             ),
           ),
           
           const SizedBox(height: 24),
           
-          Text(
-            '匿名',
-            style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-              color: AppColors.textTertiary,
-            ),
+          // 招呼语区域（紧凑版）
+          Expanded(
+            child: _buildCompactGreetingSection(),
           ),
           
           const SizedBox(height: 16),
           
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-            decoration: BoxDecoration(
-              color: AppColors.white08,
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: AppColors.white12),
-            ),
-            child: Text(
-              user.status,
-              style: Theme.of(context).textTheme.bodyMedium,
-            ),
-          ),
-          
-          const SizedBox(height: 16),
-          
-          Text(
-            user.distance,
-            style: Theme.of(context).textTheme.bodySmall,
-          ),
-          
-          const SizedBox(height: 32),
-          
-          // 招呼语区域
-          _buildGreetingSection(),
+          // 底部按钮
+          _buildActionButtons(provider),
         ],
       ),
+    );
+  }
+
+  // 紧凑版招呼语区域（一屏展示）
+  Widget _buildCompactGreetingSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // 标题
+        const Text(
+          '打个招呼',
+          style: TextStyle(
+            fontSize: 15,
+            fontWeight: FontWeight.w300,
+            color: AppColors.textPrimary,
+            letterSpacing: 1,
+          ),
+        ),
+        const SizedBox(height: 16),
+        
+        // 快捷语（仅在未自定义时显示）
+        if (_greetingController.text.isEmpty)
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: _quickGreetings.map((greeting) {
+              final isSelected = _selectedQuickGreeting == greeting;
+              
+              return GestureDetector(
+                onTap: () {
+                  setState(() {
+                    _selectedQuickGreeting = greeting;
+                  });
+                },
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: isSelected 
+                        ? AppColors.white12 
+                        : AppColors.white05,
+                    border: Border.all(
+                      color: isSelected 
+                          ? AppColors.white20 
+                          : AppColors.white08,
+                    ),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text(
+                    greeting,
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w300,
+                      color: isSelected 
+                          ? AppColors.textPrimary 
+                          : AppColors.textSecondary,
+                    ),
+                  ),
+                ),
+              );
+            }).toList(),
+          ),
+        
+        // 自定义输入（仅在未选择快捷语时显示）
+        if (_selectedQuickGreeting == null) ...[
+          const SizedBox(height: 12),
+          
+          // 自定义输入框
+          TextField(
+            controller: _greetingController,
+            maxLength: 25,
+            maxLines: 2,
+            decoration: InputDecoration(
+              hintText: '或者自己写点什么...',
+              hintStyle: const TextStyle(
+                fontSize: 13,
+                color: AppColors.textTertiary,
+              ),
+              counterStyle: const TextStyle(
+                fontSize: 11,
+                color: AppColors.textTertiary,
+              ),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 16,
+                vertical: 12,
+              ),
+              suffixIcon: _greetingController.text.isNotEmpty
+                  ? IconButton(
+                      icon: const Icon(
+                        Icons.close,
+                        size: 16,
+                        color: AppColors.textTertiary,
+                      ),
+                      onPressed: () {
+                        setState(() {
+                          _greetingController.clear();
+                        });
+                      },
+                    )
+                  : null,
+            ),
+            onChanged: (value) {
+              setState(() {});
+            },
+          ),
+        ],
+        
+        // 已选择快捷语时，显示切换按钮
+        if (_selectedQuickGreeting != null) ...[
+          const SizedBox(height: 12),
+          Center(
+            child: TextButton(
+              onPressed: () {
+                setState(() {
+                  _selectedQuickGreeting = null;
+                });
+              },
+              child: const Text(
+                '换成自定义',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w300,
+                  color: AppColors.textTertiary,
+                  letterSpacing: 1,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ],
     );
   }
 
@@ -445,42 +707,65 @@ class _MatchTabState extends State<MatchTab> with SingleTickerProviderStateMixin
       buttonText = '开始匹配';
     }
     
-    return Center(
-      child: SizedBox(
-        width: double.infinity,
-        child: ElevatedButton(
-          onPressed: provider.matchCount <= 0
-              ? null
-              : () async {
-                  if (provider.isMatching) {
-                    // 取消匹配
-                    provider.cancelMatch();
-                  } else {
-                    // 开始匹配前请求位置权限（首次或缓存清除后会弹窗）
-                    final hasPermission = await PermissionManager.requestLocationPermission(context);
-                    
-                    // 不管有没有位置权限都可以匹配（位置不是强依赖）
-                    provider.startMatch();
-                    
-                    if (!hasPermission && mounted) {
-                      // 没有位置权限，提示用户（但不阻止匹配）
-                      AppToast.show(context, '未开启位置，将随机匹配用户');
+    final showLocationTip = PermissionManager.getSessionLocationPermission() == false;
+
+    return Column(
+      children: [
+        SizedBox(
+          width: double.infinity,
+          child: ElevatedButton(
+            onPressed: provider.matchCount <= 0
+                ? null
+                : () async {
+                    if (provider.isMatching) {
+                      provider.cancelMatch();
+                    } else {
+                      await PermissionManager.requestLocationPermission(context);
+                      if (!mounted) return;
+
+                      // 刷新按钮下方提示，避免反复弹出底部浮层覆盖交互按钮
+                      setState(() {});
+                      provider.startMatch();
                     }
-                  }
-                },
-          style: ElevatedButton.styleFrom(
-            backgroundColor: provider.isMatching
-                ? AppColors.white12
-                : provider.matchCount > 0 
-                    ? AppColors.textPrimary 
-                    : AppColors.white05,
-            foregroundColor: provider.isMatching
-                ? AppColors.textPrimary
-                : AppColors.pureBlack,
+                  },
+            style: ElevatedButton.styleFrom(
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              backgroundColor: provider.isMatching
+                  ? AppColors.white12
+                  : provider.matchCount > 0 
+                      ? AppColors.textPrimary 
+                      : AppColors.white05,
+              foregroundColor: provider.isMatching
+                  ? AppColors.textPrimary
+                  : AppColors.pureBlack,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+            child: Text(
+              buttonText,
+              style: const TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.w300,
+                letterSpacing: 1,
+              ),
+            ),
           ),
-          child: Text(buttonText),
         ),
-      ),
+        if (showLocationTip) ...[
+          const SizedBox(height: 10),
+          const Text(
+            '当前未开启位置，将为你随机匹配',
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w300,
+              color: AppColors.textTertiary,
+              letterSpacing: 0.3,
+            ),
+            textAlign: TextAlign.center,
+          ),
+        ],
+      ],
     );
   }
 
@@ -498,10 +783,10 @@ class _MatchTabState extends State<MatchTab> with SingleTickerProviderStateMixin
               provider.clearMatchedUser();
             },
             style: OutlinedButton.styleFrom(
-              padding: const EdgeInsets.symmetric(vertical: 16),
+              padding: const EdgeInsets.symmetric(vertical: 14),
               side: const BorderSide(color: AppColors.white12),
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(50),
+                borderRadius: BorderRadius.circular(12),
               ),
             ),
             child: const Text(
@@ -510,7 +795,7 @@ class _MatchTabState extends State<MatchTab> with SingleTickerProviderStateMixin
                 color: AppColors.textSecondary,
                 fontSize: 15,
                 fontWeight: FontWeight.w300,
-                letterSpacing: 2,
+                letterSpacing: 1,
               ),
             ),
           ),
@@ -532,16 +817,26 @@ class _MatchTabState extends State<MatchTab> with SingleTickerProviderStateMixin
               context.read<ChatProvider>().addThread(thread);
               context.read<ChatProvider>().sendMessage(thread.id, greeting);
               
+              // 清除匹配卡片，留在匹配页，不跳转
               provider.clearMatchedUser();
               
-              // 从匹配页进入聊天，返回时应该回到匹配页
-              context.push('/chat/${thread.id}').then((_) {
-                if (context.mounted) {
-                  context.go('/main?tab=0');
-                }
-              });
+              // 显示提示
+              AppToast.show(context, '招呼已发送');
             },
-            child: const Text('发送'),
+            style: ElevatedButton.styleFrom(
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+            child: const Text(
+              '发送',
+              style: TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.w300,
+                letterSpacing: 1,
+              ),
+            ),
           ),
         ),
       ],

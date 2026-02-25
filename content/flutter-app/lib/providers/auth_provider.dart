@@ -79,7 +79,7 @@ class AuthProvider extends ChangeNotifier {
     await StorageService.clearAuth();
     
     // 清除位置权限缓存
-    await PermissionManager.clearLocationPermissionCache();
+    PermissionManager.clearSessionCache();
     
     notifyListeners();
   }

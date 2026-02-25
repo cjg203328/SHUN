@@ -12,7 +12,7 @@ import 'dart:async';
 
 class ChatScreen extends StatefulWidget {
   final String threadId;
-  
+
   const ChatScreen({super.key, required this.threadId});
 
   @override
@@ -26,19 +26,37 @@ class _ChatScreenState extends State<ChatScreen> {
   int _lastIntimacyPoints = 0;
   bool _showIntimacyChange = false;
   int _intimacyChange = 0;
+  bool _hasText = false; // 添加状态追踪
 
   @override
   void initState() {
     super.initState();
-    
+
+    // 监听输入框变化
+    _inputController.addListener(() {
+      final hasText = _inputController.text.trim().isNotEmpty;
+      if (hasText != _hasText) {
+        setState(() {
+          _hasText = hasText;
+        });
+      }
+    });
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<ChatProvider>().markAsRead(widget.threadId);
+      // 不要立即清零未读数，等用户滚动到底部或停留一段时间后再清零
       final thread = context.read<ChatProvider>().getThread(widget.threadId);
       if (thread != null) {
         _lastIntimacyPoints = thread.intimacyPoints;
+
+        // 延迟1秒后清零未读数（给用户时间看到消息）
+        Future.delayed(const Duration(seconds: 1), () {
+          if (mounted) {
+            context.read<ChatProvider>().markAsRead(widget.threadId);
+          }
+        });
       }
     });
-    
+
     // 定时检查亲密度变化
     _timer = Timer.periodic(const Duration(milliseconds: 500), (_) {
       final thread = context.read<ChatProvider>().getThread(widget.threadId);
@@ -49,7 +67,7 @@ class _ChatScreenState extends State<ChatScreen> {
             _intimacyChange = change;
             _showIntimacyChange = true;
           });
-          
+
           // 2秒后隐藏
           Future.delayed(const Duration(milliseconds: 2000), () {
             if (mounted) {
@@ -88,73 +106,73 @@ class _ChatScreenState extends State<ChatScreen> {
       appBar: AppBar(
         backgroundColor: AppColors.pureBlack,
         elevation: 0,
+        toolbarHeight: 64,
+        titleSpacing: 0,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back, color: AppColors.textPrimary),
           onPressed: () => context.pop(),
         ),
-        title: Consumer<ChatProvider>(
-          builder: (context, chatProvider, child) {
+        title: Consumer2<ChatProvider, FriendProvider>(
+          builder: (context, chatProvider, friendProvider, child) {
             final thread = chatProvider.getThread(widget.threadId);
             if (thread == null) return const SizedBox();
-            
-            final isFriend = context.read<FriendProvider>().isFriend(thread.otherUser.id);
-            
-            return Column(
+
+            final isFriend = friendProvider.isFriend(thread.otherUser.id);
+            final displayName =
+                thread.hasUnlockedNickname ? thread.otherUser.nickname : '神秘人';
+
+            return Row(
               children: [
-                Row(
-                  children: [
-                    // 头像
-                    Container(
-                      width: 36,
-                      height: 36,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: AppColors.white08,
+                Container(
+                  width: 36,
+                  height: 36,
+                  decoration: const BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: AppColors.white08,
+                  ),
+                  child: Center(
+                    child: Text(
+                      '👤',
+                      style: TextStyle(
+                        fontSize: 18,
+                        color: thread.hasUnlockedAvatar
+                            ? AppColors.textPrimary
+                            : AppColors.textTertiary.withOpacity(0.3),
                       ),
-                      child: Center(
-                        child: Text(
-                          '👤',
-                          style: TextStyle(
-                            fontSize: 18,
-                            color: thread.hasUnlockedAvatar
-                                ? AppColors.textPrimary 
-                                : AppColors.textTertiary.withOpacity(0.3),
-                          ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        displayName,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w300,
+                          color: thread.hasUnlockedNickname
+                              ? AppColors.textPrimary
+                              : AppColors.textTertiary,
                         ),
                       ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            thread.hasUnlockedNickname 
-                                ? thread.otherUser.nickname 
-                                : '神秘人',
-                            style: TextStyle(
-                              fontSize: 15,
-                              fontWeight: FontWeight.w300,
-                              color: thread.hasUnlockedNickname
-                                  ? AppColors.textPrimary
-                                  : AppColors.textTertiary,
-                            ),
-                          ),
-                          if (!isFriend) ...[
-                            const SizedBox(height: 2),
-                            Text(
-                              _getIntimacyHint(thread),
-                              style: const TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w300,
-                                color: AppColors.textTertiary,
-                              ),
-                            ),
-                          ],
-                        ],
+                      const SizedBox(height: 2),
+                      Text(
+                        _getHeaderSubtitle(thread, isFriend),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w300,
+                          color: AppColors.textTertiary,
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ],
             );
@@ -166,9 +184,10 @@ class _ChatScreenState extends State<ChatScreen> {
             builder: (context, chatProvider, friendProvider, child) {
               final thread = chatProvider.getThread(widget.threadId);
               if (thread == null) return const SizedBox();
-              
+
               return PopupMenuButton<String>(
-                icon: const Icon(Icons.more_horiz, color: AppColors.textPrimary),
+                icon:
+                    const Icon(Icons.more_horiz, color: AppColors.textPrimary),
                 color: AppColors.cardBg,
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(12),
@@ -191,7 +210,7 @@ class _ChatScreenState extends State<ChatScreen> {
                   final isFriend = friendProvider.isFriend(thread.otherUser.id);
                   final canCall = isFriend || thread.hasUnlockedProfile;
                   final canAddFriend = !isFriend && thread.canAddFriend;
-                  
+
                   return [
                     if (thread.hasUnlockedProfile)
                       PopupMenuItem(
@@ -206,7 +225,8 @@ class _ChatScreenState extends State<ChatScreen> {
                     if (canAddFriend)
                       PopupMenuItem(
                         value: 'add_friend',
-                        child: _buildMenuItem(Icons.person_add_outlined, '添加好友'),
+                        child:
+                            _buildMenuItem(Icons.person_add_outlined, '添加好友'),
                       ),
                     if (isFriend) ...[
                       PopupMenuItem(
@@ -215,7 +235,9 @@ class _ChatScreenState extends State<ChatScreen> {
                       ),
                       PopupMenuItem(
                         value: 'unfollow',
-                        child: _buildMenuItem(Icons.person_remove_outlined, '取关', isDanger: true),
+                        child: _buildMenuItem(
+                            Icons.person_remove_outlined, '取关',
+                            isDanger: true),
                       ),
                     ],
                   ];
@@ -224,23 +246,6 @@ class _ChatScreenState extends State<ChatScreen> {
             },
           ),
         ],
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(50),
-          child: Consumer<ChatProvider>(
-            builder: (context, chatProvider, child) {
-              final thread = chatProvider.getThread(widget.threadId);
-              if (thread == null || thread.isFriend) return const SizedBox();
-              
-              return Container(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-                child: IntimacyProgressBar(
-                  points: thread.intimacyPoints,
-                  showLabel: true,
-                ),
-              );
-            },
-          ),
-        ),
       ),
       body: Column(
         children: [
@@ -248,13 +253,16 @@ class _ChatScreenState extends State<ChatScreen> {
           Consumer<ChatProvider>(
             builder: (context, chatProvider, child) {
               final thread = chatProvider.getThread(widget.threadId);
-              if (thread == null || !thread.isUnfollowed) return const SizedBox();
-              
+              if (thread == null || !thread.isUnfollowed) {
+                return const SizedBox();
+              }
+
               final remaining = 3 - thread.messagesSinceUnfollow;
-              
+
               return Container(
                 width: double.infinity,
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                 decoration: BoxDecoration(
                   color: AppColors.error.withOpacity(0.1),
                   border: Border(
@@ -291,7 +299,8 @@ class _ChatScreenState extends State<ChatScreen> {
                           AppToast.show(context, '已发送提醒');
                         },
                         style: TextButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 4),
                           minimumSize: Size.zero,
                           tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                         ),
@@ -308,7 +317,7 @@ class _ChatScreenState extends State<ChatScreen> {
               );
             },
           ),
-          
+
           // 消息列表
           Expanded(
             child: Stack(
@@ -316,11 +325,11 @@ class _ChatScreenState extends State<ChatScreen> {
                 Consumer<ChatProvider>(
                   builder: (context, chatProvider, child) {
                     final messages = chatProvider.getMessages(widget.threadId);
-                    
+
                     WidgetsBinding.instance.addPostFrameCallback((_) {
                       _scrollToBottom();
                     });
-                    
+
                     if (messages.isEmpty) {
                       return Center(
                         child: Column(
@@ -336,15 +345,18 @@ class _ChatScreenState extends State<ChatScreen> {
                             const SizedBox(height: 16),
                             Text(
                               '开始聊天吧',
-                              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                color: AppColors.textTertiary,
-                              ),
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .bodyMedium
+                                  ?.copyWith(
+                                    color: AppColors.textTertiary,
+                                  ),
                             ),
                           ],
                         ),
                       );
                     }
-                    
+
                     return ListView.builder(
                       controller: _scrollController,
                       padding: const EdgeInsets.all(20),
@@ -358,7 +370,7 @@ class _ChatScreenState extends State<ChatScreen> {
                     );
                   },
                 ),
-                
+
                 // 亲密度变化动画
                 if (_showIntimacyChange)
                   Positioned(
@@ -374,13 +386,13 @@ class _ChatScreenState extends State<ChatScreen> {
               ],
             ),
           ),
-          
+
           // 输入区域
           Consumer<ChatProvider>(
             builder: (context, chatProvider, child) {
               final thread = chatProvider.getThread(widget.threadId);
               final canSend = thread?.canSendMessage ?? true;
-              
+
               return Container(
                 padding: const EdgeInsets.all(20),
                 decoration: BoxDecoration(
@@ -413,29 +425,34 @@ class _ChatScreenState extends State<ChatScreen> {
                         width: 48,
                         height: 48,
                         decoration: BoxDecoration(
-                          color: _inputController.text.isNotEmpty && canSend
-                              ? AppColors.textPrimary 
+                          color: _hasText && canSend
+                              ? AppColors.textPrimary
                               : AppColors.white05,
                           borderRadius: BorderRadius.circular(12),
                         ),
                         child: IconButton(
                           icon: Icon(
                             Icons.arrow_upward,
-                            color: _inputController.text.isNotEmpty && canSend
-                                ? AppColors.pureBlack 
+                            color: _hasText && canSend
+                                ? AppColors.pureBlack
                                 : AppColors.textDisabled,
                           ),
-                          onPressed: _inputController.text.isEmpty || !canSend ? null : () {
-                            final content = _inputController.text.trim();
-                            if (content.isNotEmpty) {
-                              context.read<ChatProvider>().sendMessage(
-                                widget.threadId,
-                                content,
-                              );
-                              _inputController.clear();
-                              setState(() {});
-                            }
-                          },
+                          onPressed: !_hasText || !canSend
+                              ? null
+                              : () {
+                                  final content = _inputController.text.trim();
+                                  if (content.isNotEmpty) {
+                                    context.read<ChatProvider>().sendMessage(
+                                          widget.threadId,
+                                          content,
+                                        );
+                                    _inputController.clear();
+                                    // 清空后自动更新状态
+                                    setState(() {
+                                      _hasText = false;
+                                    });
+                                  }
+                                },
                         ),
                       ),
                     ],
@@ -449,20 +466,48 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
-  String _getIntimacyHint(ChatThread thread) {
+  String _getHeaderSubtitle(ChatThread thread, bool isFriend) {
+    if (isFriend) {
+      return thread.otherUser.isOnline ? '好友 · 在线' : '好友 · 私聊中';
+    }
+
     final nextUnlock = IntimacyUnlock.getNextUnlock(thread.intimacyPoints);
-    if (nextUnlock == null) return '可以互关了';
-    
-    final level = IntimacyUnlock.getLevel(thread.intimacyPoints);
-    return '${level.name} · 即将解锁$nextUnlock';
+    if (nextUnlock == null) {
+      return '聊得很投缘';
+    }
+
+    final pointsToNext = _getPointsToNextUnlock(thread.intimacyPoints);
+    return '轻聊中 · 距离解锁$nextUnlock还差$pointsToNext分';
   }
-  
+
+  int _getPointsToNextUnlock(int points) {
+    if (points < IntimacyUnlock.unlockAvatar) {
+      return IntimacyUnlock.unlockAvatar - points;
+    }
+    if (points < IntimacyUnlock.unlockNickname) {
+      return IntimacyUnlock.unlockNickname - points;
+    }
+    if (points < IntimacyUnlock.unlockSignature) {
+      return IntimacyUnlock.unlockSignature - points;
+    }
+    if (points < IntimacyUnlock.unlockProfile) {
+      return IntimacyUnlock.unlockProfile - points;
+    }
+    if (points < IntimacyUnlock.unlockBackground) {
+      return IntimacyUnlock.unlockBackground - points;
+    }
+    if (points < IntimacyUnlock.canAddFriend) {
+      return IntimacyUnlock.canAddFriend - points;
+    }
+    return 0;
+  }
+
   Widget _buildMenuItem(IconData icon, String text, {bool isDanger = false}) {
     return Row(
       children: [
         Icon(
-          icon, 
-          size: 20, 
+          icon,
+          size: 20,
           color: isDanger ? AppColors.error : AppColors.textSecondary,
         ),
         const SizedBox(width: 12),
@@ -477,7 +522,7 @@ class _ChatScreenState extends State<ChatScreen> {
       ],
     );
   }
-  
+
   void _handleVoiceCall(BuildContext context) async {
     final confirm = await AppDialog.showConfirm(
       context,
@@ -485,15 +530,15 @@ class _ChatScreenState extends State<ChatScreen> {
       content: '对方接听后将开始计时，通话时长不影响聊天倒计时',
       confirmText: '呼叫',
     );
-    
+
     if (confirm == true && mounted) {
       AppToast.show(context, '语音通话功能即将上线');
     }
   }
-  
+
   void _showAddFriendDialog(BuildContext context, User user) async {
     final controller = TextEditingController();
-    
+
     final result = await showModalBottomSheet<bool>(
       context: context,
       backgroundColor: Colors.transparent,
@@ -584,18 +629,18 @@ class _ChatScreenState extends State<ChatScreen> {
         ),
       ),
     );
-    
+
     if (result == true && mounted) {
       context.read<FriendProvider>().sendFriendRequest(
-        user,
-        controller.text.trim().isEmpty ? null : controller.text.trim(),
-      );
+            user,
+            controller.text.trim().isEmpty ? null : controller.text.trim(),
+          );
       AppToast.show(context, '好友请求已发送');
     }
-    
+
     controller.dispose();
   }
-  
+
   void _showUnfollowDialog(BuildContext context, String threadId) async {
     final confirm = await AppDialog.showConfirm(
       context,
@@ -604,23 +649,23 @@ class _ChatScreenState extends State<ChatScreen> {
       confirmText: '取关',
       isDanger: true,
     );
-    
+
     if (confirm == true && context.mounted) {
       context.read<ChatProvider>().unfollowFriend(threadId);
       context.read<FriendProvider>().removeFriend(threadId);
       AppToast.show(context, '已取关');
     }
   }
-  
+
   void _showUserProfile(BuildContext context, User user) {
     // TODO: 实现个人主页
     AppToast.show(context, '个人主页功能即将上线');
   }
-  
+
   void _showSetRemarkDialog(BuildContext context, String userId) async {
     final friend = context.read<FriendProvider>().getFriend(userId);
     final controller = TextEditingController(text: friend?.remark ?? '');
-    
+
     final result = await showModalBottomSheet<bool>(
       context: context,
       backgroundColor: Colors.transparent,
@@ -711,16 +756,16 @@ class _ChatScreenState extends State<ChatScreen> {
         ),
       ),
     );
-    
+
     if (result == true && mounted) {
       final remark = controller.text.trim();
       context.read<FriendProvider>().setRemark(
-        userId,
-        remark.isEmpty ? null : remark,
-      );
+            userId,
+            remark.isEmpty ? null : remark,
+          );
       AppToast.show(context, '备注已保存');
     }
-    
+
     controller.dispose();
   }
 }
@@ -728,7 +773,7 @@ class _ChatScreenState extends State<ChatScreen> {
 class _MessageBubble extends StatelessWidget {
   final Message message;
   final String threadId;
-  
+
   const _MessageBubble({
     required this.message,
     required this.threadId,
@@ -737,14 +782,15 @@ class _MessageBubble extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     // 判断是否可以撤回（2分钟内）
-    final canRecall = message.isMe && 
+    final canRecall = message.isMe &&
         message.status == MessageStatus.sent &&
         DateTime.now().difference(message.timestamp).inMinutes < 2;
-    
+
     return Align(
       alignment: message.isMe ? Alignment.centerRight : Alignment.centerLeft,
       child: Row(
-        mainAxisAlignment: message.isMe ? MainAxisAlignment.end : MainAxisAlignment.start,
+        mainAxisAlignment:
+            message.isMe ? MainAxisAlignment.end : MainAxisAlignment.start,
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
           // 发送失败的感叹号（仅自己的消息）
@@ -752,7 +798,9 @@ class _MessageBubble extends StatelessWidget {
             GestureDetector(
               onTap: () {
                 // 点击重新发送
-                context.read<ChatProvider>().resendMessage(threadId, message.id);
+                context
+                    .read<ChatProvider>()
+                    .resendMessage(threadId, message.id);
               },
               child: Container(
                 margin: const EdgeInsets.only(right: 8, bottom: 12),
@@ -764,35 +812,40 @@ class _MessageBubble extends StatelessWidget {
               ),
             ),
           ],
-          
+
           // 消息气泡
           GestureDetector(
-            onLongPress: message.status == MessageStatus.sending ? null : () async {
-              final action = await AppDialog.showMessageActions(
-                context,
-                isMe: message.isMe,
-                canRecall: canRecall,
-              );
-              
-              if (action == 'copy') {
-                await Clipboard.setData(ClipboardData(text: message.content));
-                if (context.mounted) {
-                  AppToast.show(context, '已复制');
-                }
-              } else if (action == 'recall') {
-                final confirm = await AppDialog.showConfirm(
-                  context,
-                  title: '确定要撤回这条消息吗？',
-                  confirmText: '撤回',
-                  isDanger: true,
-                );
-                
-                if (confirm == true && context.mounted) {
-                  context.read<ChatProvider>().recallMessage(threadId, message.id);
-                  AppToast.show(context, '已撤回');
-                }
-              }
-            },
+            onLongPress: message.status == MessageStatus.sending
+                ? null
+                : () async {
+                    final action = await AppDialog.showMessageActions(
+                      context,
+                      isMe: message.isMe,
+                      canRecall: canRecall,
+                    );
+
+                    if (action == 'copy') {
+                      await Clipboard.setData(
+                          ClipboardData(text: message.content));
+                      if (context.mounted) {
+                        AppToast.show(context, '已复制');
+                      }
+                    } else if (action == 'recall') {
+                      final confirm = await AppDialog.showConfirm(
+                        context,
+                        title: '确定要撤回这条消息吗？',
+                        confirmText: '撤回',
+                        isDanger: true,
+                      );
+
+                      if (confirm == true && context.mounted) {
+                        context
+                            .read<ChatProvider>()
+                            .recallMessage(threadId, message.id);
+                        AppToast.show(context, '已撤回');
+                      }
+                    }
+                  },
             child: Container(
               margin: const EdgeInsets.only(bottom: 12),
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -800,19 +853,19 @@ class _MessageBubble extends StatelessWidget {
                 maxWidth: MediaQuery.of(context).size.width * 0.7,
               ),
               decoration: BoxDecoration(
-                color: message.isMe 
-                    ? (message.status == MessageStatus.failed 
+                color: message.isMe
+                    ? (message.status == MessageStatus.failed
                         ? AppColors.error.withOpacity(0.2)
                         : const Color(0x99464646))
                     : const Color(0xCC282828),
                 borderRadius: BorderRadius.only(
                   topLeft: const Radius.circular(18),
                   topRight: const Radius.circular(18),
-                  bottomLeft: message.isMe 
-                      ? const Radius.circular(18) 
+                  bottomLeft: message.isMe
+                      ? const Radius.circular(18)
                       : const Radius.circular(4),
-                  bottomRight: message.isMe 
-                      ? const Radius.circular(4) 
+                  bottomRight: message.isMe
+                      ? const Radius.circular(4)
                       : const Radius.circular(18),
                 ),
               ),
@@ -822,14 +875,14 @@ class _MessageBubble extends StatelessWidget {
                   fontSize: 15,
                   fontWeight: FontWeight.w300,
                   letterSpacing: 0.3,
-                  color: message.status == MessageStatus.failed 
+                  color: message.status == MessageStatus.failed
                       ? AppColors.textSecondary
                       : AppColors.textPrimary,
                 ),
               ),
             ),
           ),
-          
+
           // 发送中的加载动画（仅自己的消息）
           if (message.isMe && message.status == MessageStatus.sending) ...[
             Container(

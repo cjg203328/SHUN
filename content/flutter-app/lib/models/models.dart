@@ -4,6 +4,9 @@ class User {
   final String? avatar;
   final String distance;
   final String status;
+  final bool isOnline; // 是否在线
+  final bool hasLocationPermission; // 是否开启位置权限
+  final DateTime? lastOnlineTime; // 最后在线时间
   
   User({
     required this.id,
@@ -11,7 +14,29 @@ class User {
     this.avatar,
     required this.distance,
     required this.status,
+    this.isOnline = false,
+    this.hasLocationPermission = false,
+    this.lastOnlineTime,
   });
+  
+  // 复制用户并修改某些字段
+  User copyWith({
+    bool? isOnline,
+    bool? hasLocationPermission,
+    DateTime? lastOnlineTime,
+    String? distance,
+  }) {
+    return User(
+      id: id,
+      nickname: nickname,
+      avatar: avatar,
+      distance: distance ?? this.distance,
+      status: status,
+      isOnline: isOnline ?? this.isOnline,
+      hasLocationPermission: hasLocationPermission ?? this.hasLocationPermission,
+      lastOnlineTime: lastOnlineTime ?? this.lastOnlineTime,
+    );
+  }
   
   factory User.fromJson(Map<String, dynamic> json) {
     return User(
@@ -20,6 +45,11 @@ class User {
       avatar: json['avatar'],
       distance: json['distance'],
       status: json['status'],
+      isOnline: json['isOnline'] ?? false,
+      hasLocationPermission: json['hasLocationPermission'] ?? false,
+      lastOnlineTime: json['lastOnlineTime'] != null 
+          ? DateTime.parse(json['lastOnlineTime'])
+          : null,
     );
   }
   
@@ -30,6 +60,9 @@ class User {
       'avatar': avatar,
       'distance': distance,
       'status': status,
+      'isOnline': isOnline,
+      'hasLocationPermission': hasLocationPermission,
+      'lastOnlineTime': lastOnlineTime?.toIso8601String(),
     };
   }
 }

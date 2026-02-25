@@ -1,13 +1,40 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
 import '../config/theme.dart';
 import '../providers/auth_provider.dart';
-import '../utils/permission_manager.dart';
+import '../services/image_upload_service.dart';
 import 'app_toast.dart';
 
-class ProfileTab extends StatelessWidget {
+class ProfileTab extends StatefulWidget {
   const ProfileTab({super.key});
+
+  @override
+  State<ProfileTab> createState() => _ProfileTabState();
+}
+
+class _ProfileTabState extends State<ProfileTab> {
+  String? _avatarPath;
+  String? _backgroundPath;
+  
+  @override
+  void initState() {
+    super.initState();
+    _loadImages();
+  }
+  
+  Future<void> _loadImages() async {
+    final avatarPath = await ImageUploadService.getAvatarPath();
+    final backgroundPath = await ImageUploadService.getBackgroundPath();
+    
+    if (mounted) {
+      setState(() {
+        _avatarPath = avatarPath;
+        _backgroundPath = backgroundPath;
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -17,138 +44,217 @@ class ProfileTab extends StatelessWidget {
         builder: (context, authProvider, child) {
           return CustomScrollView(
             slivers: [
-              // 顶部个人信息区域
+              // 顶部背景和个人信息区域
               SliverToBoxAdapter(
-                child: Container(
-                  padding: const EdgeInsets.fromLTRB(20, 60, 20, 40),
-                  child: Column(
-                    children: [
-                      // 头像
-                      GestureDetector(
-                        onTap: () => _showAvatarOptions(context),
-                        child: Stack(
-                          children: [
-                            Container(
-                              width: 100,
-                              height: 100,
-                              decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                color: AppColors.white08,
-                                border: Border.all(
-                                  color: AppColors.brandBlue.withOpacity(0.3),
-                                  width: 3,
+                child: Stack(
+                  children: [
+                    // 背景图片
+                    GestureDetector(
+                      onTap: () => _changeBackground(),
+                      child: Container(
+                        height: 200,
+                        width: double.infinity,
+                        decoration: BoxDecoration(
+                          color: AppColors.white08,
+                          image: _backgroundPath != null
+                              ? DecorationImage(
+                                  image: FileImage(File(_backgroundPath!)),
+                                  fit: BoxFit.cover,
+                                )
+                              : null,
+                        ),
+                        child: _backgroundPath == null
+                            ? Center(
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(
+                                      Icons.add_photo_alternate_outlined,
+                                      size: 40,
+                                      color: AppColors.textTertiary.withOpacity(0.5),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Text(
+                                      '点击设置背景',
+                                      style: TextStyle(
+                                        fontSize: 13,
+                                        color: AppColors.textTertiary.withOpacity(0.5),
+                                      ),
+                                    ),
+                                  ],
                                 ),
-                              ),
-                              child: Center(
-                                child: Text(authProvider.avatar, style: const TextStyle(fontSize: 48)),
-                              ),
-                            ),
-                            Positioned(
-                              right: 0,
-                              bottom: 0,
-                              child: Container(
-                                padding: const EdgeInsets.all(6),
-                                decoration: BoxDecoration(
-                                  color: AppColors.white12,
-                                  shape: BoxShape.circle,
-                                  border: Border.all(
-                                    color: AppColors.pureBlack,
-                                    width: 2,
+                              )
+                            : Container(
+                                alignment: Alignment.topRight,
+                                padding: const EdgeInsets.all(12),
+                                child: Container(
+                                  padding: const EdgeInsets.all(6),
+                                  decoration: BoxDecoration(
+                                    color: Colors.black.withOpacity(0.5),
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: const Icon(
+                                    Icons.edit,
+                                    size: 16,
+                                    color: Colors.white,
                                   ),
                                 ),
-                                child: const Icon(
-                                  Icons.camera_alt,
-                                  size: 16,
-                                  color: AppColors.textPrimary,
+                              ),
+                      ),
+                    ),
+                    
+                    // 个人信息
+                    Container(
+                      margin: const EdgeInsets.only(top: 140),
+                      padding: const EdgeInsets.fromLTRB(20, 0, 20, 40),
+                      child: Column(
+                        children: [
+                          // 头像
+                          GestureDetector(
+                            onTap: () => _changeAvatar(),
+                            child: Stack(
+                              children: [
+                                Container(
+                                  width: 100,
+                                  height: 100,
+                                  decoration: BoxDecoration(
+                                    shape: BoxShape.circle,
+                                    color: AppColors.white08,
+                                    border: Border.all(
+                                      color: AppColors.pureBlack,
+                                      width: 4,
+                                    ),
+                                  ),
+                                  child: ClipOval(
+                                    child: _avatarPath != null
+                                        ? Image.file(
+                                            File(_avatarPath!),
+                                            fit: BoxFit.cover,
+                                            errorBuilder: (context, error, stackTrace) {
+                                              return Center(
+                                                child: Text(
+                                                  authProvider.avatar,
+                                                  style: const TextStyle(fontSize: 48),
+                                                ),
+                                              );
+                                            },
+                                          )
+                                        : Center(
+                                            child: Text(
+                                              authProvider.avatar,
+                                              style: const TextStyle(fontSize: 48),
+                                            ),
+                                          ),
+                                  ),
                                 ),
-                              ),
+                                Positioned(
+                                  right: 0,
+                                  bottom: 0,
+                                  child: Container(
+                                    padding: const EdgeInsets.all(8),
+                                    decoration: BoxDecoration(
+                                      color: AppColors.white12,
+                                      shape: BoxShape.circle,
+                                      border: Border.all(
+                                        color: AppColors.pureBlack,
+                                        width: 2,
+                                      ),
+                                    ),
+                                    child: const Icon(
+                                      Icons.camera_alt,
+                                      size: 16,
+                                      color: AppColors.textPrimary,
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ),
-                          ],
-                        ),
-                      ),
-                      
-                      const SizedBox(height: 20),
-                      
-                      // 昵称
-                      GestureDetector(
-                        onTap: () => _showEditNickname(context),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Text(
-                              authProvider.nickname,
-                              style: const TextStyle(
-                                fontSize: 22,
-                                fontWeight: FontWeight.w300,
-                                color: AppColors.textPrimary,
-                                letterSpacing: 1,
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            const Icon(
-                              Icons.edit,
-                              size: 18,
-                              color: AppColors.textTertiary,
-                            ),
-                          ],
-                        ),
-                      ),
-                      
-                      const SizedBox(height: 8),
-                      
-                      // 手机号
-                      Text(
-                        authProvider.phone ?? '未登录',
-                        style: const TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w300,
-                          color: AppColors.textTertiary,
-                        ),
-                      ),
-                      
-                      const SizedBox(height: 24),
-                      
-                      // 状态
-                      GestureDetector(
-                        onTap: () => _showEditStatus(context),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 20,
-                            vertical: 12,
                           ),
-                          decoration: BoxDecoration(
-                            color: AppColors.white05,
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              const Text(
-                                '状态：',
-                                style: TextStyle(
-                                  fontSize: 13,
+                          
+                          const SizedBox(height: 20),
+                          
+                          // 昵称
+                          GestureDetector(
+                            onTap: () => _showEditNickname(context),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Text(
+                                  authProvider.nickname,
+                                  style: const TextStyle(
+                                    fontSize: 22,
+                                    fontWeight: FontWeight.w300,
+                                    color: AppColors.textPrimary,
+                                    letterSpacing: 1,
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                const Icon(
+                                  Icons.edit,
+                                  size: 18,
                                   color: AppColors.textTertiary,
                                 ),
-                              ),
-                              Text(
-                                authProvider.status,
-                                style: const TextStyle(
-                                  fontSize: 13,
-                                  color: AppColors.textSecondary,
-                                ),
-                              ),
-                              const SizedBox(width: 6),
-                              const Icon(
-                                Icons.edit,
-                                size: 14,
-                                color: AppColors.textTertiary,
-                              ),
-                            ],
+                              ],
+                            ),
                           ),
-                        ),
+                          
+                          const SizedBox(height: 8),
+                          
+                          // 手机号
+                          Text(
+                            authProvider.phone ?? '未登录',
+                            style: const TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w300,
+                              color: AppColors.textTertiary,
+                            ),
+                          ),
+                          
+                          const SizedBox(height: 24),
+                          
+                          // 状态
+                          GestureDetector(
+                            onTap: () => _showEditStatus(context),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 20,
+                                vertical: 12,
+                              ),
+                              decoration: BoxDecoration(
+                                color: AppColors.white05,
+                                borderRadius: BorderRadius.circular(20),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Text(
+                                    '状态：',
+                                    style: TextStyle(
+                                      fontSize: 13,
+                                      color: AppColors.textTertiary,
+                                    ),
+                                  ),
+                                  Text(
+                                    authProvider.status,
+                                    style: const TextStyle(
+                                      fontSize: 13,
+                                      color: AppColors.textSecondary,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 6),
+                                  const Icon(
+                                    Icons.edit,
+                                    size: 14,
+                                    color: AppColors.textTertiary,
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
               ),
               
@@ -179,6 +285,30 @@ class ProfileTab extends StatelessWidget {
         },
       ),
     );
+  }
+  
+  // 修改头像
+  Future<void> _changeAvatar() async {
+    final imageFile = await ImageUploadService.pickAvatar(context);
+    
+    if (imageFile != null && mounted) {
+      setState(() {
+        _avatarPath = imageFile.path;
+      });
+      AppToast.show(context, '头像已更新');
+    }
+  }
+  
+  // 修改背景
+  Future<void> _changeBackground() async {
+    final imageFile = await ImageUploadService.pickBackground(context);
+    
+    if (imageFile != null && mounted) {
+      setState(() {
+        _backgroundPath = imageFile.path;
+      });
+      AppToast.show(context, '背景已更新');
+    }
   }
 
   Widget _buildMenuItem(
@@ -218,116 +348,20 @@ class ProfileTab extends StatelessWidget {
     );
   }
   
-  void _showAvatarOptions(BuildContext context) async {
-    final action = await showModalBottomSheet<String>(
-      context: context,
-      backgroundColor: Colors.transparent,
-      builder: (context) => Container(
-        decoration: BoxDecoration(
-          color: AppColors.cardBg,
-          borderRadius: const BorderRadius.vertical(
-            top: Radius.circular(24),
-          ),
-        ),
-        padding: const EdgeInsets.symmetric(vertical: 16),
-        child: SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _buildActionItem(
-                context,
-                icon: Icons.camera_alt_outlined,
-                text: '拍照',
-                onTap: () => Navigator.pop(context, 'camera'),
-              ),
-              _buildActionItem(
-                context,
-                icon: Icons.photo_library_outlined,
-                text: '从相册选择',
-                onTap: () => Navigator.pop(context, 'gallery'),
-              ),
-              const SizedBox(height: 8),
-              _buildActionItem(
-                context,
-                icon: Icons.close,
-                text: '取消',
-                onTap: () => Navigator.pop(context),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-    
-    if (action == 'camera' && context.mounted) {
-      final hasPermission = await PermissionManager.requestCameraPermission(context);
-      if (hasPermission && context.mounted) {
-        AppToast.show(context, '拍照功能即将上线');
-      }
-    } else if (action == 'gallery' && context.mounted) {
-      final hasPermission = await PermissionManager.requestPhotosPermission(context);
-      if (hasPermission && context.mounted) {
-        AppToast.show(context, '相册选择功能即将上线');
-      }
-    }
-  }
-  
-  Widget _buildActionItem(
-    BuildContext context, {
-    required IconData icon,
-    required String text,
-    required VoidCallback onTap,
-  }) {
-    return InkWell(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-        child: Row(
-          children: [
-            Icon(
-              icon,
-              size: 20,
-              color: AppColors.textSecondary,
-            ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Text(
-                text,
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w300,
-                  color: AppColors.textPrimary,
-                  letterSpacing: 0.5,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-  
   void _showEditNickname(BuildContext context) async {
     final authProvider = context.read<AuthProvider>();
     final controller = TextEditingController(text: authProvider.nickname);
     
-    final result = await showModalBottomSheet<bool>(
+    final result = await showDialog<bool>(
       context: context,
-      backgroundColor: Colors.transparent,
-      isScrollControlled: true,
-      builder: (context) => Padding(
-        padding: EdgeInsets.only(
-          bottom: MediaQuery.of(context).viewInsets.bottom,
-        ),
-        child: Container(
-          decoration: BoxDecoration(
-            color: AppColors.cardBg,
-            borderRadius: const BorderRadius.vertical(
-              top: Radius.circular(24),
-            ),
+      builder: (dialogContext) {
+        return Dialog(
+          backgroundColor: AppColors.cardBg,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
           ),
-          padding: const EdgeInsets.all(24),
-          child: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -355,7 +389,7 @@ class ProfileTab extends StatelessWidget {
                   children: [
                     Expanded(
                       child: TextButton(
-                        onPressed: () => Navigator.pop(context, false),
+                        onPressed: () => Navigator.pop(dialogContext, false),
                         style: TextButton.styleFrom(
                           padding: const EdgeInsets.symmetric(vertical: 16),
                           backgroundColor: AppColors.white05,
@@ -376,7 +410,7 @@ class ProfileTab extends StatelessWidget {
                     const SizedBox(width: 12),
                     Expanded(
                       child: TextButton(
-                        onPressed: () => Navigator.pop(context, true),
+                        onPressed: () => Navigator.pop(dialogContext, true),
                         style: TextButton.styleFrom(
                           padding: const EdgeInsets.symmetric(vertical: 16),
                           backgroundColor: AppColors.white12,
@@ -399,8 +433,8 @@ class ProfileTab extends StatelessWidget {
               ],
             ),
           ),
-        ),
-      ),
+        );
+      },
     );
     
     if (result == true && context.mounted) {
@@ -426,18 +460,15 @@ class ProfileTab extends StatelessWidget {
       '随便聊聊',
     ];
     
-    await showModalBottomSheet(
+    await showDialog(
       context: context,
-      backgroundColor: Colors.transparent,
-      builder: (context) => Container(
-        decoration: BoxDecoration(
-          color: AppColors.cardBg,
-          borderRadius: const BorderRadius.vertical(
-            top: Radius.circular(24),
-          ),
+      builder: (context) => Dialog(
+        backgroundColor: AppColors.cardBg,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
         ),
-        padding: const EdgeInsets.symmetric(vertical: 20),
-        child: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 20),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [

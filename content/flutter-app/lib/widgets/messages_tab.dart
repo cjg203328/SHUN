@@ -150,11 +150,25 @@ class _ThreadItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isOnline = thread.otherUser.isOnline;
+    final isFriend = thread.isFriend;
+    
     return InkWell(
       onTap: onTap,
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
         decoration: BoxDecoration(
+          // 在线陌生人：微妙的渐变背景吸引注意
+          gradient: isOnline && !isFriend
+              ? LinearGradient(
+                  colors: [
+                    AppColors.brandBlue.withOpacity(0.03),
+                    Colors.transparent,
+                  ],
+                  begin: Alignment.centerLeft,
+                  end: Alignment.centerRight,
+                )
+              : null,
           border: Border(
             bottom: BorderSide(color: AppColors.white05),
           ),
@@ -170,7 +184,13 @@ class _ThreadItem extends StatelessWidget {
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
                     color: AppColors.white08,
-                    border: Border.all(color: AppColors.white05, width: 2),
+                    // 好友：蓝色边框
+                    border: Border.all(
+                      color: isFriend 
+                          ? AppColors.brandBlue.withOpacity(0.5)
+                          : AppColors.white05,
+                      width: 2,
+                    ),
                   ),
                   child: Center(
                     child: Text(
@@ -184,6 +204,34 @@ class _ThreadItem extends StatelessWidget {
                     ),
                   ),
                 ),
+                
+                // 在线状态绿点
+                if (isOnline)
+                  Positioned(
+                    right: 2,
+                    bottom: 2,
+                    child: Container(
+                      width: 14,
+                      height: 14,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF4CAF50), // 绿色
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: AppColors.pureBlack,
+                          width: 2,
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: const Color(0xFF4CAF50).withOpacity(0.5),
+                            blurRadius: 4,
+                            spreadRadius: 1,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                
+                // 未读数角标
                 if (thread.unreadCount > 0)
                   Positioned(
                     right: 0,
@@ -222,17 +270,66 @@ class _ThreadItem extends StatelessWidget {
                   Row(
                     children: [
                       Expanded(
-                        child: Text(
-                          thread.hasUnlockedNickname
-                              ? thread.otherUser.nickname 
-                              : '神秘人',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w400,
-                            color: thread.hasUnlockedNickname
-                                ? AppColors.textPrimary
-                                : AppColors.textTertiary,
-                          ),
+                        child: Row(
+                          children: [
+                            // 昵称
+                            Text(
+                              thread.hasUnlockedNickname
+                                  ? thread.otherUser.nickname 
+                                  : '神秘人',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w400,
+                                color: thread.hasUnlockedNickname
+                                    ? AppColors.textPrimary
+                                    : AppColors.textTertiary,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            
+                            // 好友标签
+                            if (isFriend)
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 6,
+                                  vertical: 2,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: AppColors.brandBlue.withOpacity(0.15),
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: const Text(
+                                  '好友',
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w500,
+                                    color: AppColors.brandBlue,
+                                  ),
+                                ),
+                              ),
+                            
+                            // 在线标识（仅陌生人显示）
+                            if (isOnline && !isFriend)
+                              Container(
+                                margin: const EdgeInsets.only(left: 6),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 6,
+                                  vertical: 2,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFF4CAF50).withOpacity(0.15),
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: const Text(
+                                  '在线',
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w500,
+                                    color: Color(0xFF4CAF50),
+                                  ),
+                                ),
+                              ),
+                          ],
                         ),
                       ),
                       Text(
@@ -258,7 +355,7 @@ class _ThreadItem extends StatelessWidget {
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
-                      if (!thread.isFriend) ...[
+                      if (!isFriend) ...[
                         const SizedBox(width: 8),
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
@@ -289,17 +386,33 @@ class _ThreadItem extends StatelessWidget {
                       ],
                     ],
                   ),
-                  const SizedBox(height: 6),
-                  Text(
-                    _formatTimeRemaining(thread.timeRemaining),
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w300,
-                      color: thread.timeRemaining.inHours < 1 
-                          ? AppColors.error 
-                          : AppColors.textTertiary,
+                  
+                  // 倒计时（仅陌生人显示）
+                  if (!isFriend) ...[
+                    const SizedBox(height: 6),
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.access_time,
+                          size: 12,
+                          color: thread.timeRemaining.inHours < 3
+                              ? AppColors.error
+                              : AppColors.textTertiary,
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          _formatTimeRemaining(thread.timeRemaining),
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w300,
+                            color: thread.timeRemaining.inHours < 3
+                                ? AppColors.error 
+                                : AppColors.textTertiary,
+                          ),
+                        ),
+                      ],
                     ),
-                  ),
+                  ],
                 ],
               ),
             ),

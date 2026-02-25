@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
 import '../config/theme.dart';
 import '../providers/auth_provider.dart';
+import '../services/image_upload_service.dart';
 import '../widgets/app_toast.dart';
 
 class SettingsScreen extends StatelessWidget {
@@ -31,6 +32,35 @@ class SettingsScreen extends StatelessWidget {
       body: ListView(
         children: [
           const SizedBox(height: 20),
+          
+          // 个人资料
+          _buildSectionTitle('个人资料'),
+          Container(
+            margin: const EdgeInsets.symmetric(horizontal: 20),
+            decoration: BoxDecoration(
+              color: AppColors.white05,
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Column(
+              children: [
+                _buildSettingItem(
+                  context,
+                  icon: Icons.photo_outlined,
+                  title: '头像管理',
+                  onTap: () => _showAvatarManagement(context),
+                ),
+                _buildDivider(),
+                _buildSettingItem(
+                  context,
+                  icon: Icons.wallpaper_outlined,
+                  title: '背景管理',
+                  onTap: () => _showBackgroundManagement(context),
+                ),
+              ],
+            ),
+          ),
+          
+          const SizedBox(height: 30),
           
           // 账号与安全
           _buildSectionTitle('账号与安全'),
@@ -214,7 +244,7 @@ class SettingsScreen extends StatelessWidget {
           // 版本信息
           Center(
             child: Text(
-              'V1.0.2',
+              'V1.0.3',
               style: TextStyle(
                 fontSize: 12,
                 color: AppColors.textDisabled,
@@ -224,6 +254,331 @@ class SettingsScreen extends StatelessWidget {
           
           const SizedBox(height: 40),
         ],
+      ),
+    );
+  }
+  
+  // 头像管理
+  static Future<void> _showAvatarManagement(BuildContext context) async {
+    final hasAvatar = await ImageUploadService.avatarExists();
+    
+    await showDialog(
+      context: context,
+      builder: (context) => Dialog(
+        backgroundColor: AppColors.cardBg,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                '头像管理',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w400,
+                  color: AppColors.textPrimary,
+                ),
+              ),
+              const SizedBox(height: 20),
+              
+              // 更换头像
+              _buildManagementItem(
+                context,
+                icon: Icons.photo_camera_outlined,
+                title: '更换头像',
+                onTap: () async {
+                  Navigator.pop(context);
+                  final imageFile = await ImageUploadService.pickAvatar(context);
+                  if (imageFile != null && context.mounted) {
+                    AppToast.show(context, '头像已更新');
+                  }
+                },
+              ),
+              
+              // 删除头像（仅在有头像时显示）
+              if (hasAvatar) ...[
+                const SizedBox(height: 12),
+                _buildManagementItem(
+                  context,
+                  icon: Icons.delete_outline,
+                  title: '删除头像',
+                  isDanger: true,
+                  onTap: () async {
+                    Navigator.pop(context);
+                    final confirm = await _showConfirmDialog(
+                      context,
+                      title: '确定要删除头像吗？',
+                      content: '删除后将恢复默认头像',
+                    );
+                    
+                    if (confirm == true) {
+                      await ImageUploadService.clearAvatar();
+                      if (context.mounted) {
+                        AppToast.show(context, '头像已删除');
+                      }
+                    }
+                  },
+                ),
+              ],
+              
+              const SizedBox(height: 20),
+              
+              // 取消按钮
+              SizedBox(
+                width: double.infinity,
+                child: TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  style: TextButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    backgroundColor: AppColors.white05,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  child: const Text(
+                    '取消',
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w300,
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+  
+  // 背景管理
+  static Future<void> _showBackgroundManagement(BuildContext context) async {
+    final hasBackground = await ImageUploadService.backgroundExists();
+    
+    await showDialog(
+      context: context,
+      builder: (context) => Dialog(
+        backgroundColor: AppColors.cardBg,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                '背景管理',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w400,
+                  color: AppColors.textPrimary,
+                ),
+              ),
+              const SizedBox(height: 20),
+              
+              // 更换背景
+              _buildManagementItem(
+                context,
+                icon: Icons.wallpaper_outlined,
+                title: '更换背景',
+                onTap: () async {
+                  Navigator.pop(context);
+                  final imageFile = await ImageUploadService.pickBackground(context);
+                  if (imageFile != null && context.mounted) {
+                    AppToast.show(context, '背景已更新');
+                  }
+                },
+              ),
+              
+              // 删除背景（仅在有背景时显示）
+              if (hasBackground) ...[
+                const SizedBox(height: 12),
+                _buildManagementItem(
+                  context,
+                  icon: Icons.delete_outline,
+                  title: '删除背景',
+                  isDanger: true,
+                  onTap: () async {
+                    Navigator.pop(context);
+                    final confirm = await _showConfirmDialog(
+                      context,
+                      title: '确定要删除背景吗？',
+                      content: '删除后将恢复默认背景',
+                    );
+                    
+                    if (confirm == true) {
+                      await ImageUploadService.clearBackground();
+                      if (context.mounted) {
+                        AppToast.show(context, '背景已删除');
+                      }
+                    }
+                  },
+                ),
+              ],
+              
+              const SizedBox(height: 20),
+              
+              // 取消按钮
+              SizedBox(
+                width: double.infinity,
+                child: TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  style: TextButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    backgroundColor: AppColors.white05,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  child: const Text(
+                    '取消',
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w300,
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+  
+  static Widget _buildManagementItem(
+    BuildContext context, {
+    required IconData icon,
+    required String title,
+    required VoidCallback onTap,
+    bool isDanger = false,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: AppColors.white05,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
+          children: [
+            Icon(
+              icon,
+              size: 22,
+              color: isDanger ? AppColors.error : AppColors.textSecondary,
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Text(
+                title,
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w300,
+                  color: isDanger ? AppColors.error : AppColors.textPrimary,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+  
+  static Future<bool?> _showConfirmDialog(
+    BuildContext context, {
+    required String title,
+    required String content,
+  }) {
+    return showDialog<bool>(
+      context: context,
+      builder: (context) => Dialog(
+        backgroundColor: AppColors.cardBg,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                title,
+                style: const TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w400,
+                  color: AppColors.textPrimary,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 16),
+              Text(
+                content,
+                style: const TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w300,
+                  color: AppColors.textSecondary,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 24),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextButton(
+                      onPressed: () => Navigator.pop(context, false),
+                      style: TextButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        backgroundColor: AppColors.white05,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      child: const Text(
+                        '取消',
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w300,
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: TextButton(
+                      onPressed: () => Navigator.pop(context, true),
+                      style: TextButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        backgroundColor: AppColors.error.withOpacity(0.2),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      child: const Text(
+                        '确定',
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w300,
+                          color: AppColors.error,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -296,22 +651,147 @@ class SettingsScreen extends StatelessWidget {
   }
 
   void _showAboutDialog(BuildContext context) async {
-    await AppDialog.showConfirm(
-      context,
-      title: '关于瞬',
-      content: '版本：V1.0.2\n\n24小时限时匿名社交\n每个夜晚都是新的开始\n\nCopyright © 2026 瞬团队',
-      confirmText: '确定',
-      cancelText: '',
+    await showDialog(
+      context: context,
+      builder: (context) => Dialog(
+        backgroundColor: AppColors.cardBg,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                '关于瞬',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w400,
+                  color: AppColors.textPrimary,
+                ),
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                '版本：V1.0.3\n\n24小时限时匿名社交\n每个夜晚都是新的开始\n\nCopyright © 2026 瞬团队',
+                style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w300,
+                  color: AppColors.textSecondary,
+                  height: 1.6,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 24),
+              SizedBox(
+                width: double.infinity,
+                child: TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  style: TextButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    backgroundColor: AppColors.white12,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  child: const Text(
+                    '确定',
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w300,
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
   void _showLogoutDialog(BuildContext context) async {
-    final confirm = await AppDialog.showConfirm(
-      context,
-      title: '退出登录',
-      content: '确定要退出登录吗？',
-      confirmText: '退出',
-      isDanger: true,
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => Dialog(
+        backgroundColor: AppColors.cardBg,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                '退出登录',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w400,
+                  color: AppColors.textPrimary,
+                ),
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                '确定要退出登录吗？',
+                style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w300,
+                  color: AppColors.textSecondary,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 24),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextButton(
+                      onPressed: () => Navigator.pop(context, false),
+                      style: TextButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        backgroundColor: AppColors.white05,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      child: const Text(
+                        '取消',
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w300,
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: TextButton(
+                      onPressed: () => Navigator.pop(context, true),
+                      style: TextButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        backgroundColor: AppColors.error.withOpacity(0.15),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      child: const Text(
+                        '退出',
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w300,
+                          color: AppColors.error,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
     );
     
     if (confirm == true && context.mounted) {

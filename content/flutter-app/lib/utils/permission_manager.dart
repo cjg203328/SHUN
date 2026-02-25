@@ -1,28 +1,29 @@
 import 'package:flutter/material.dart';
 import 'package:permission_handler/permission_handler.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import '../config/theme.dart';
-import '../widgets/app_toast.dart';
 
 class PermissionManager {
-  static const String _locationPermissionKey = 'location_permission_granted';
+  // 会话级别的位置权限缓存（内存中，不持久化）
+  static bool? _sessionLocationPermission;
   
-  // 检查位置权限是否已授权过（缓存）
-  static Future<bool> hasLocationPermissionCache() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getBool(_locationPermissionKey) ?? false;
+  // 检查本次会话是否已请求过位置权限
+  static bool hasSessionLocationPermission() {
+    return _sessionLocationPermission != null;
   }
   
-  // 保存位置权限授权状态
-  static Future<void> saveLocationPermissionCache(bool granted) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(_locationPermissionKey, granted);
+  // 获取本次会话的位置权限状态
+  static bool? getSessionLocationPermission() {
+    return _sessionLocationPermission;
   }
   
-  // 清除位置权限缓存（退出登录时调用）
-  static Future<void> clearLocationPermissionCache() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove(_locationPermissionKey);
+  // 保存本次会话的位置权限状态
+  static void setSessionLocationPermission(bool granted) {
+    _sessionLocationPermission = granted;
+  }
+  
+  // 清除会话缓存（退出登录或杀后台时自动清除）
+  static void clearSessionCache() {
+    _sessionLocationPermission = null;
   }
   // 检查并请求通知权限
   static Future<bool> requestNotificationPermission(BuildContext context) async {
@@ -189,23 +190,26 @@ class PermissionManager {
     return false;
   }
   
-  // 位置权限（首次登录获取，然后缓存记忆）
+  // 位置权限（会话级别缓存，杀后台后重新请求）
   static Future<bool> requestLocationPermission(BuildContext context, {bool forceRequest = false}) async {
-    // 如果不是强制请求，先检查缓存
-    if (!forceRequest) {
-      final hasCache = await hasLocationPermissionCache();
-      if (hasCache) {
-        // 已经授权过，直接返回true
+    // 如果不是强制请求，先检查会话缓存
+    if (!forceRequest && hasSessionLocationPermission()) {
+      final cachedPermission = getSessionLocationPermission();
+      if (cachedPermission == true) {
+        // 本次会话已授权，直接返回
         return true;
+      } else if (cachedPermission == false) {
+        // 本次会话已拒绝，不再弹窗
+        return false;
       }
     }
     
-    // 首次请求或强制请求，显示位置选择弹窗
+    // 首次请求，显示位置选择弹窗
     final shouldUseLocation = await _showLocationSelectionDialog(context);
     
     if (!shouldUseLocation) {
-      // 用户选择不使用位置，保存缓存（false）
-      await saveLocationPermissionCache(false);
+      // 用户选择不使用位置，保存到会话缓存
+      setSessionLocationPermission(false);
       return false;
     }
     
@@ -213,16 +217,16 @@ class PermissionManager {
     final status = await Permission.location.status;
     
     if (status.isGranted) {
-      // 已授权，保存缓存
-      await saveLocationPermissionCache(true);
+      // 已授权，保存到会话缓存
+      setSessionLocationPermission(true);
       return true;
     }
     
     if (status.isDenied) {
       final result = await Permission.location.request();
       final granted = result.isGranted;
-      // 保存授权结果
-      await saveLocationPermissionCache(granted);
+      // 保存授权结果到会话缓存
+      setSessionLocationPermission(granted);
       return granted;
     }
     
@@ -232,40 +236,34 @@ class PermissionManager {
         title: '位置权限已关闭',
         content: '请在系统设置中开启位置权限，以便为你匹配附近的人',
       );
-      await saveLocationPermissionCache(false);
+      setSessionLocationPermission(false);
       return false;
     }
     
     return false;
   }
   
-  // 显示权限请求对话框
+  // 显示权限请求对话框（使用Dialog替代BottomSheet避免层级冲突）
   static Future<bool?> _showPermissionDialog(
     BuildContext context, {
     required String title,
     required String content,
     required IconData icon,
   }) {
-    return showModalBottomSheet<bool>(
+    return showDialog<bool>(
       context: context,
-      backgroundColor: Colors.transparent,
-      isDismissible: false,
-      enableDrag: false,
-      builder: (context) => WillPopScope(
-        onWillPop: () async => false,
-        child: Container(
-          decoration: BoxDecoration(
-            color: AppColors.cardBg,
-            borderRadius: const BorderRadius.vertical(
-              top: Radius.circular(24),
-            ),
+      barrierDismissible: false,
+      builder: (dialogContext) {
+        return Dialog(
+          backgroundColor: AppColors.cardBg,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(24),
           ),
-          padding: const EdgeInsets.all(32),
-          child: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(32),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                // 图标
                 Container(
                   width: 80,
                   height: 80,
@@ -279,10 +277,7 @@ class PermissionManager {
                     color: AppColors.brandBlue,
                   ),
                 ),
-                
                 const SizedBox(height: 24),
-                
-                // 标题
                 Text(
                   title,
                   style: const TextStyle(
@@ -293,10 +288,7 @@ class PermissionManager {
                   ),
                   textAlign: TextAlign.center,
                 ),
-                
                 const SizedBox(height: 16),
-                
-                // 内容
                 Text(
                   content,
                   style: const TextStyle(
@@ -308,15 +300,12 @@ class PermissionManager {
                   ),
                   textAlign: TextAlign.center,
                 ),
-                
                 const SizedBox(height: 32),
-                
-                // 按钮
                 Row(
                   children: [
                     Expanded(
                       child: TextButton(
-                        onPressed: () => Navigator.pop(context, false),
+                        onPressed: () => Navigator.pop(dialogContext, false),
                         style: TextButton.styleFrom(
                           padding: const EdgeInsets.symmetric(vertical: 16),
                           backgroundColor: AppColors.white05,
@@ -338,7 +327,7 @@ class PermissionManager {
                     const SizedBox(width: 12),
                     Expanded(
                       child: TextButton(
-                        onPressed: () => Navigator.pop(context, true),
+                        onPressed: () => Navigator.pop(dialogContext, true),
                         style: TextButton.styleFrom(
                           padding: const EdgeInsets.symmetric(vertical: 16),
                           backgroundColor: AppColors.brandBlue.withOpacity(0.2),
@@ -362,29 +351,27 @@ class PermissionManager {
               ],
             ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
   
-  // 显示跳转设置对话框
+  // 显示跳转设置对话框（使用Dialog替代BottomSheet避免层级冲突）
   static Future<void> _showGoToSettingsDialog(
     BuildContext context, {
     required String title,
     required String content,
   }) {
-    return showModalBottomSheet(
+    return showDialog(
       context: context,
-      backgroundColor: Colors.transparent,
-      builder: (context) => Container(
-        decoration: BoxDecoration(
-          color: AppColors.cardBg,
-          borderRadius: const BorderRadius.vertical(
-            top: Radius.circular(24),
-          ),
+      barrierDismissible: true,
+      builder: (context) => Dialog(
+        backgroundColor: AppColors.cardBg,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(24),
         ),
-        padding: const EdgeInsets.all(32),
-        child: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(32),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -492,21 +479,18 @@ class PermissionManager {
     );
   }
   
-  // 显示位置选择对话框（首次登录时显示）
+  // 显示位置选择对话框（首次登录时显示，使用Dialog避免层级冲突）
   static Future<bool> _showLocationSelectionDialog(BuildContext context) async {
-    final result = await showModalBottomSheet<bool>(
+    final result = await showDialog<bool>(
       context: context,
-      backgroundColor: Colors.transparent,
-      isDismissible: true,
-      builder: (context) => Container(
-        decoration: BoxDecoration(
-          color: AppColors.cardBg,
-          borderRadius: const BorderRadius.vertical(
-            top: Radius.circular(24),
-          ),
+      barrierDismissible: true,
+      builder: (context) => Dialog(
+        backgroundColor: AppColors.cardBg,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(24),
         ),
-        padding: const EdgeInsets.all(32),
-        child: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(32),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -613,5 +597,4 @@ class PermissionManager {
     return result ?? false;
   }
 }
-
 

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../config/theme.dart';
+import '../services/storage_service.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -32,13 +33,16 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
     );
     
     _controller.forward();
-    
-    // 2.5秒后跳转
-    Future.delayed(const Duration(milliseconds: 2500), () {
-      if (mounted) {
-        context.go('/login');
-      }
-    });
+
+    _navigateAfterSplash();
+  }
+
+  Future<void> _navigateAfterSplash() async {
+    await Future.delayed(const Duration(milliseconds: 2500));
+    if (!mounted) return;
+
+    final hasLogin = StorageService.getPhone() != null && StorageService.getToken() != null;
+    context.go(hasLogin ? '/main' : '/login');
   }
 
   @override
@@ -117,5 +121,4 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
     );
   }
 }
-
 
