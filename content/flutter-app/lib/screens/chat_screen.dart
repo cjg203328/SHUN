@@ -8,7 +8,7 @@ import '../providers/friend_provider.dart';
 import '../models/models.dart';
 import '../widgets/app_toast.dart';
 import '../utils/intimacy_system.dart';
-import 'dart:async';
+import '../utils/permission_manager.dart';
 
 class ChatScreen extends StatefulWidget {
   final String threadId;
@@ -22,8 +22,10 @@ class ChatScreen extends StatefulWidget {
 class _ChatScreenState extends State<ChatScreen> {
   final TextEditingController _inputController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
-  Timer? _timer;
+  ChatProvider? _chatProvider;
   int _lastIntimacyPoints = 0;
+  int _lastMessageCount = 0;
+  int _intimacyAnimationToken = 0;
   bool _showIntimacyChange = false;
   int _intimacyChange = 0;
   bool _hasText = false; // 添加状态追踪
@@ -43,48 +45,29 @@ class _ChatScreenState extends State<ChatScreen> {
     });
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      _chatProvider = context.read<ChatProvider>();
+      _chatProvider?.addListener(_handleChatProviderChanged);
+
       // 不要立即清零未读数，等用户滚动到底部或停留一段时间后再清零
-      final thread = context.read<ChatProvider>().getThread(widget.threadId);
+      final thread = _chatProvider?.getThread(widget.threadId);
       if (thread != null) {
         _lastIntimacyPoints = thread.intimacyPoints;
+        _lastMessageCount =
+            _chatProvider?.getMessages(widget.threadId).length ?? 0;
 
         // 延迟1秒后清零未读数（给用户时间看到消息）
         Future.delayed(const Duration(seconds: 1), () {
           if (mounted) {
-            context.read<ChatProvider>().markAsRead(widget.threadId);
+            _chatProvider?.markAsRead(widget.threadId);
           }
         });
-      }
-    });
-
-    // 定时检查亲密度变化
-    _timer = Timer.periodic(const Duration(milliseconds: 500), (_) {
-      final thread = context.read<ChatProvider>().getThread(widget.threadId);
-      if (thread != null && thread.intimacyPoints != _lastIntimacyPoints) {
-        final change = thread.intimacyPoints - _lastIntimacyPoints;
-        if (change > 0) {
-          setState(() {
-            _intimacyChange = change;
-            _showIntimacyChange = true;
-          });
-
-          // 2秒后隐藏
-          Future.delayed(const Duration(milliseconds: 2000), () {
-            if (mounted) {
-              setState(() {
-                _showIntimacyChange = false;
-              });
-            }
-          });
-        }
-        _lastIntimacyPoints = thread.intimacyPoints;
       }
     });
   }
 
   @override
   void dispose() {
-    _timer?.cancel();
+    _chatProvider?.removeListener(_handleChatProviderChanged);
     _inputController.dispose();
     _scrollController.dispose();
     super.dispose();
@@ -97,6 +80,43 @@ class _ChatScreenState extends State<ChatScreen> {
         duration: const Duration(milliseconds: 300),
         curve: Curves.easeOut,
       );
+    }
+  }
+
+  void _handleChatProviderChanged() {
+    if (!mounted) return;
+
+    final thread = _chatProvider?.getThread(widget.threadId);
+    if (thread != null && thread.intimacyPoints != _lastIntimacyPoints) {
+      final change = thread.intimacyPoints - _lastIntimacyPoints;
+      _lastIntimacyPoints = thread.intimacyPoints;
+
+      if (change > 0) {
+        _intimacyAnimationToken += 1;
+        final token = _intimacyAnimationToken;
+        setState(() {
+          _intimacyChange = change;
+          _showIntimacyChange = true;
+        });
+
+        Future.delayed(const Duration(seconds: 2), () {
+          if (!mounted || token != _intimacyAnimationToken) return;
+          setState(() {
+            _showIntimacyChange = false;
+          });
+        });
+      }
+    }
+
+    final messageCount =
+        _chatProvider?.getMessages(widget.threadId).length ?? 0;
+    if (messageCount != _lastMessageCount) {
+      _lastMessageCount = messageCount;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          _scrollToBottom();
+        }
+      });
     }
   }
 
@@ -118,8 +138,7 @@ class _ChatScreenState extends State<ChatScreen> {
             if (thread == null) return const SizedBox();
 
             final isFriend = friendProvider.isFriend(thread.otherUser.id);
-            final displayName =
-                thread.hasUnlockedNickname ? thread.otherUser.nickname : '神秘人';
+            final displayName = thread.otherUser.nickname;
 
             return Row(
               children: [
@@ -132,12 +151,10 @@ class _ChatScreenState extends State<ChatScreen> {
                   ),
                   child: Center(
                     child: Text(
-                      '👤',
-                      style: TextStyle(
+                      thread.otherUser.avatar ?? '👤',
+                      style: const TextStyle(
                         fontSize: 18,
-                        color: thread.hasUnlockedAvatar
-                            ? AppColors.textPrimary
-                            : AppColors.textTertiary.withOpacity(0.3),
+                        color: AppColors.textPrimary,
                       ),
                     ),
                   ),
@@ -195,7 +212,7 @@ class _ChatScreenState extends State<ChatScreen> {
                 offset: const Offset(0, 50),
                 onSelected: (value) {
                   if (value == 'call') {
-                    _handleVoiceCall(context);
+                    _handleVoiceCall(context, thread.otherUser);
                   } else if (value == 'add_friend') {
                     _showAddFriendDialog(context, thread.otherUser);
                   } else if (value == 'profile') {
@@ -203,13 +220,16 @@ class _ChatScreenState extends State<ChatScreen> {
                   } else if (value == 'remark') {
                     _showSetRemarkDialog(context, thread.otherUser.id);
                   } else if (value == 'unfollow') {
-                    _showUnfollowDialog(context, thread.id);
+                    _showUnfollowDialog(context, thread);
+                  } else if (value == 'block') {
+                    _showBlockDialog(context, thread);
                   }
                 },
                 itemBuilder: (context) {
                   final isFriend = friendProvider.isFriend(thread.otherUser.id);
-                  final canCall = isFriend || thread.hasUnlockedProfile;
-                  final canAddFriend = !isFriend && thread.canAddFriend;
+                  final isBlocked = friendProvider.isBlocked(thread.otherUser.id);
+                  final canCall = isFriend || thread.canAddFriend;
+                  final canAddFriend = !isFriend && !isBlocked && thread.canAddFriend;
 
                   return [
                     if (thread.hasUnlockedProfile)
@@ -240,6 +260,12 @@ class _ChatScreenState extends State<ChatScreen> {
                             isDanger: true),
                       ),
                     ],
+                    if (!isBlocked)
+                      PopupMenuItem(
+                        value: 'block',
+                        child: _buildMenuItem(Icons.block_outlined, '拉黑',
+                            isDanger: true),
+                      ),
                   ];
                 },
               );
@@ -264,10 +290,10 @@ class _ChatScreenState extends State<ChatScreen> {
                 padding:
                     const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                 decoration: BoxDecoration(
-                  color: AppColors.error.withOpacity(0.1),
+                  color: AppColors.error.withValues(alpha: 0.1),
                   border: Border(
                     bottom: BorderSide(
-                      color: AppColors.error.withOpacity(0.2),
+                      color: AppColors.error.withValues(alpha: 0.2),
                       width: 0.5,
                     ),
                   ),
@@ -277,18 +303,18 @@ class _ChatScreenState extends State<ChatScreen> {
                     Icon(
                       Icons.info_outline,
                       size: 16,
-                      color: AppColors.error.withOpacity(0.8),
+                      color: AppColors.error.withValues(alpha: 0.8),
                     ),
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
                         remaining > 0
-                            ? '对方已取关，你还可以发送${remaining}条消息'
+                            ? '对方已取关，你还可以发送$remaining条消息'
                             : '等待对方确认继续聊天',
                         style: TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.w300,
-                          color: AppColors.error.withOpacity(0.9),
+                          color: AppColors.error.withValues(alpha: 0.9),
                         ),
                       ),
                     ),
@@ -308,7 +334,7 @@ class _ChatScreenState extends State<ChatScreen> {
                           '提醒',
                           style: TextStyle(
                             fontSize: 12,
-                            color: AppColors.error.withOpacity(0.9),
+                            color: AppColors.error.withValues(alpha: 0.9),
                           ),
                         ),
                       ),
@@ -326,10 +352,6 @@ class _ChatScreenState extends State<ChatScreen> {
                   builder: (context, chatProvider, child) {
                     final messages = chatProvider.getMessages(widget.threadId);
 
-                    WidgetsBinding.instance.addPostFrameCallback((_) {
-                      _scrollToBottom();
-                    });
-
                     if (messages.isEmpty) {
                       return Center(
                         child: Column(
@@ -339,7 +361,8 @@ class _ChatScreenState extends State<ChatScreen> {
                               '👋',
                               style: TextStyle(
                                 fontSize: 48,
-                                color: AppColors.textTertiary.withOpacity(0.5),
+                                color: AppColors.textTertiary
+                                    .withValues(alpha: 0.5),
                               ),
                             ),
                             const SizedBox(height: 16),
@@ -481,20 +504,8 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   int _getPointsToNextUnlock(int points) {
-    if (points < IntimacyUnlock.unlockAvatar) {
-      return IntimacyUnlock.unlockAvatar - points;
-    }
-    if (points < IntimacyUnlock.unlockNickname) {
-      return IntimacyUnlock.unlockNickname - points;
-    }
-    if (points < IntimacyUnlock.unlockSignature) {
-      return IntimacyUnlock.unlockSignature - points;
-    }
     if (points < IntimacyUnlock.unlockProfile) {
       return IntimacyUnlock.unlockProfile - points;
-    }
-    if (points < IntimacyUnlock.unlockBackground) {
-      return IntimacyUnlock.unlockBackground - points;
     }
     if (points < IntimacyUnlock.canAddFriend) {
       return IntimacyUnlock.canAddFriend - points;
@@ -523,7 +534,7 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
-  void _handleVoiceCall(BuildContext context) async {
+  void _handleVoiceCall(BuildContext context, User user) async {
     final confirm = await AppDialog.showConfirm(
       context,
       title: '发起语音通话',
@@ -531,9 +542,28 @@ class _ChatScreenState extends State<ChatScreen> {
       confirmText: '呼叫',
     );
 
-    if (confirm == true && mounted) {
-      AppToast.show(context, '语音通话功能即将上线');
+    if (!context.mounted) return;
+    if (confirm == true) {
+      final hasPermission =
+          await PermissionManager.requestMicrophonePermission(context);
+      if (!context.mounted) return;
+      if (!hasPermission) {
+        AppToast.show(context, '未获得麦克风权限，无法发起语音', isError: true);
+        return;
+      }
+
+      _showVoiceCallSheet(context, user);
     }
+  }
+
+  void _showVoiceCallSheet(BuildContext context, User user) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isDismissible: false,
+      enableDrag: false,
+      builder: (context) => _VoiceCallSheet(user: user),
+    );
   }
 
   void _showAddFriendDialog(BuildContext context, User user) async {
@@ -630,7 +660,11 @@ class _ChatScreenState extends State<ChatScreen> {
       ),
     );
 
-    if (result == true && mounted) {
+    if (!context.mounted) {
+      controller.dispose();
+      return;
+    }
+    if (result == true) {
       context.read<FriendProvider>().sendFriendRequest(
             user,
             controller.text.trim().isEmpty ? null : controller.text.trim(),
@@ -641,7 +675,7 @@ class _ChatScreenState extends State<ChatScreen> {
     controller.dispose();
   }
 
-  void _showUnfollowDialog(BuildContext context, String threadId) async {
+  void _showUnfollowDialog(BuildContext context, ChatThread thread) async {
     final confirm = await AppDialog.showConfirm(
       context,
       title: '确定要取关吗？',
@@ -651,15 +685,192 @@ class _ChatScreenState extends State<ChatScreen> {
     );
 
     if (confirm == true && context.mounted) {
-      context.read<ChatProvider>().unfollowFriend(threadId);
-      context.read<FriendProvider>().removeFriend(threadId);
+      context.read<ChatProvider>().unfollowFriend(thread.id);
+      context.read<FriendProvider>().removeFriend(thread.otherUser.id);
       AppToast.show(context, '已取关');
     }
   }
 
+  void _showBlockDialog(BuildContext context, ChatThread thread) async {
+    final confirm = await AppDialog.showConfirm(
+      context,
+      title: '确认拉黑该用户？',
+      content: '拉黑后不会再匹配到TA，可在设置-黑名单中手动取消。',
+      confirmText: '拉黑',
+      isDanger: true,
+    );
+
+    if (confirm == true && context.mounted) {
+      await context.read<FriendProvider>().blockUser(thread.otherUser.id);
+      if (!context.mounted) return;
+      context.read<ChatProvider>().deleteThread(thread.id);
+      AppToast.show(context, '已拉黑');
+      context.pop();
+    }
+  }
+
   void _showUserProfile(BuildContext context, User user) {
-    // TODO: 实现个人主页
-    AppToast.show(context, '个人主页功能即将上线');
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (context) => Container(
+        height: MediaQuery.of(context).size.height * 0.88,
+        decoration: const BoxDecoration(
+          color: AppColors.pureBlack,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        child: Column(
+          children: [
+            Stack(
+              children: [
+                Container(
+                  height: 220,
+                  width: double.infinity,
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [
+                        AppColors.white12,
+                        AppColors.white05,
+                      ],
+                    ),
+                  ),
+                  alignment: Alignment.bottomCenter,
+                  padding: const EdgeInsets.only(bottom: 22),
+                  child: Container(
+                    width: 92,
+                    height: 92,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: AppColors.white08,
+                      border: Border.all(color: AppColors.pureBlack, width: 3),
+                    ),
+                    child: Center(
+                      child: Text(
+                        user.avatar ?? '👤',
+                        style: const TextStyle(fontSize: 42),
+                      ),
+                    ),
+                  ),
+                ),
+                Positioned(
+                  right: 8,
+                  top: 8,
+                  child: IconButton(
+                    onPressed: () => Navigator.pop(context),
+                    icon: const Icon(Icons.close, color: AppColors.textPrimary),
+                  ),
+                ),
+              ],
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 18, 20, 0),
+              child: Column(
+                children: [
+                  Text(
+                    user.nickname,
+                    style: const TextStyle(
+                      fontSize: 22,
+                      fontWeight: FontWeight.w300,
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    user.status,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w300,
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 18),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: _buildProfileInfoCard(
+                      title: '在线状态',
+                      value: user.isOnline ? '在线中' : '最近在线',
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: _buildProfileInfoCard(
+                      title: '距离',
+                      value: user.distance,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 18),
+            Expanded(
+              child: Container(
+                width: double.infinity,
+                margin: const EdgeInsets.symmetric(horizontal: 20),
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: AppColors.white05,
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: const Text(
+                  '主页内容已解锁，可查看背景与基本资料。后续将继续完善更多互动页签。',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w300,
+                    color: AppColors.textSecondary,
+                    height: 1.6,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildProfileInfoCard({required String title, required String value}) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: AppColors.white05,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: const TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w300,
+              color: AppColors.textTertiary,
+            ),
+          ),
+          const SizedBox(height: 5),
+          Text(
+            value,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w300,
+              color: AppColors.textPrimary,
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   void _showSetRemarkDialog(BuildContext context, String userId) async {
@@ -757,7 +968,11 @@ class _ChatScreenState extends State<ChatScreen> {
       ),
     );
 
-    if (result == true && mounted) {
+    if (!context.mounted) {
+      controller.dispose();
+      return;
+    }
+    if (result == true) {
       final remark = controller.text.trim();
       context.read<FriendProvider>().setRemark(
             userId,
@@ -767,6 +982,155 @@ class _ChatScreenState extends State<ChatScreen> {
     }
 
     controller.dispose();
+  }
+}
+
+class _VoiceCallSheet extends StatefulWidget {
+  final User user;
+
+  const _VoiceCallSheet({required this.user});
+
+  @override
+  State<_VoiceCallSheet> createState() => _VoiceCallSheetState();
+}
+
+class _VoiceCallSheetState extends State<_VoiceCallSheet> {
+  late final DateTime _startTime;
+  bool _isMuted = false;
+  bool _isSpeakerOn = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _startTime = DateTime.now();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: const BoxDecoration(
+        color: AppColors.pureBlack,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      padding: const EdgeInsets.fromLTRB(24, 24, 24, 28),
+      child: SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 72,
+              height: 72,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: AppColors.white08,
+                border: Border.all(color: AppColors.white12, width: 1),
+              ),
+              child: Center(
+                child: Text(
+                  widget.user.avatar ?? '👤',
+                  style: const TextStyle(fontSize: 34),
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              widget.user.nickname,
+              style: const TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w300,
+                color: AppColors.textPrimary,
+              ),
+            ),
+            const SizedBox(height: 8),
+            StreamBuilder<int>(
+              stream:
+                  Stream.periodic(const Duration(seconds: 1), (x) => x).asBroadcastStream(),
+              initialData: 0,
+              builder: (context, snapshot) {
+                final elapsed = DateTime.now().difference(_startTime);
+                final minutes = elapsed.inMinutes.toString().padLeft(2, '0');
+                final seconds =
+                    (elapsed.inSeconds % 60).toString().padLeft(2, '0');
+                return Text(
+                  '通话中  $minutes:$seconds',
+                  style: const TextStyle(
+                    fontSize: 13,
+                    color: AppColors.textTertiary,
+                    fontWeight: FontWeight.w300,
+                  ),
+                );
+              },
+            ),
+            const SizedBox(height: 20),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                _buildCallAction(
+                  icon: _isMuted ? Icons.mic_off : Icons.mic_none,
+                  label: _isMuted ? '已静音' : '静音',
+                  onTap: () => setState(() => _isMuted = !_isMuted),
+                ),
+                const SizedBox(width: 16),
+                _buildCallAction(
+                  icon: _isSpeakerOn ? Icons.volume_up : Icons.volume_off,
+                  label: _isSpeakerOn ? '扬声器' : '听筒',
+                  onTap: () => setState(() => _isSpeakerOn = !_isSpeakerOn),
+                ),
+                const SizedBox(width: 16),
+                _buildCallAction(
+                  icon: Icons.call_end,
+                  label: '挂断',
+                  isDanger: true,
+                  onTap: () {
+                    Navigator.pop(context);
+                    AppToast.show(context, '通话已结束');
+                  },
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCallAction({
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+    bool isDanger = false,
+  }) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(28),
+      onTap: onTap,
+      child: Container(
+        width: 78,
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        decoration: BoxDecoration(
+          color: isDanger
+              ? AppColors.error.withValues(alpha: 0.2)
+              : AppColors.white08,
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: Column(
+          children: [
+            Icon(
+              icon,
+              size: 20,
+              color: isDanger ? AppColors.error : AppColors.textPrimary,
+            ),
+            const SizedBox(height: 6),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 11,
+                color: isDanger ? AppColors.error : AppColors.textSecondary,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 
@@ -827,10 +1191,10 @@ class _MessageBubble extends StatelessWidget {
                     if (action == 'copy') {
                       await Clipboard.setData(
                           ClipboardData(text: message.content));
-                      if (context.mounted) {
-                        AppToast.show(context, '已复制');
-                      }
+                      if (!context.mounted) return;
+                      AppToast.show(context, '已复制');
                     } else if (action == 'recall') {
+                      if (!context.mounted) return;
                       final confirm = await AppDialog.showConfirm(
                         context,
                         title: '确定要撤回这条消息吗？',
@@ -838,7 +1202,8 @@ class _MessageBubble extends StatelessWidget {
                         isDanger: true,
                       );
 
-                      if (confirm == true && context.mounted) {
+                      if (!context.mounted) return;
+                      if (confirm == true) {
                         context
                             .read<ChatProvider>()
                             .recallMessage(threadId, message.id);
@@ -855,7 +1220,7 @@ class _MessageBubble extends StatelessWidget {
               decoration: BoxDecoration(
                 color: message.isMe
                     ? (message.status == MessageStatus.failed
-                        ? AppColors.error.withOpacity(0.2)
+                        ? AppColors.error.withValues(alpha: 0.2)
                         : const Color(0x99464646))
                     : const Color(0xCC282828),
                 borderRadius: BorderRadius.only(

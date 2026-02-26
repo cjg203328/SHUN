@@ -7,7 +7,7 @@ import '../widgets/profile_tab.dart';
 
 class MainScreen extends StatefulWidget {
   final int initialIndex;
-  
+
   const MainScreen({super.key, this.initialIndex = 0});
 
   @override
@@ -16,7 +16,7 @@ class MainScreen extends StatefulWidget {
 
 class _MainScreenState extends State<MainScreen> {
   late int _currentIndex;
-  
+
   final List<Widget> _tabs = const [
     MatchTab(),
     MessagesTab(),
@@ -58,10 +58,10 @@ class _MainScreenState extends State<MainScreen> {
       ),
     );
   }
-  
+
   Widget _buildNavItem(int index, String label, IconData icon) {
     final isSelected = _currentIndex == index;
-    
+
     return GestureDetector(
       onTap: () => setState(() => _currentIndex = index),
       behavior: HitTestBehavior.opaque,
@@ -72,7 +72,8 @@ class _MainScreenState extends State<MainScreen> {
           children: [
             Icon(
               icon,
-              color: isSelected ? AppColors.textPrimary : AppColors.textTertiary,
+              color:
+                  isSelected ? AppColors.textPrimary : AppColors.textTertiary,
               size: 24,
             ),
             const SizedBox(height: 4),
@@ -81,7 +82,8 @@ class _MainScreenState extends State<MainScreen> {
               style: TextStyle(
                 fontSize: 12,
                 fontWeight: FontWeight.w300,
-                color: isSelected ? AppColors.textPrimary : AppColors.textTertiary,
+                color:
+                    isSelected ? AppColors.textPrimary : AppColors.textTertiary,
                 letterSpacing: 0.5,
               ),
             ),
@@ -91,4 +93,3 @@ class _MainScreenState extends State<MainScreen> {
     );
   }
 }
-

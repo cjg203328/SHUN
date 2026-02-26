@@ -7,7 +7,7 @@ class User {
   final bool isOnline; // 是否在线
   final bool hasLocationPermission; // 是否开启位置权限
   final DateTime? lastOnlineTime; // 最后在线时间
-  
+
   User({
     required this.id,
     required this.nickname,
@@ -18,7 +18,7 @@ class User {
     this.hasLocationPermission = false,
     this.lastOnlineTime,
   });
-  
+
   // 复制用户并修改某些字段
   User copyWith({
     bool? isOnline,
@@ -33,11 +33,12 @@ class User {
       distance: distance ?? this.distance,
       status: status,
       isOnline: isOnline ?? this.isOnline,
-      hasLocationPermission: hasLocationPermission ?? this.hasLocationPermission,
+      hasLocationPermission:
+          hasLocationPermission ?? this.hasLocationPermission,
       lastOnlineTime: lastOnlineTime ?? this.lastOnlineTime,
     );
   }
-  
+
   factory User.fromJson(Map<String, dynamic> json) {
     return User(
       id: json['id'],
@@ -47,12 +48,12 @@ class User {
       status: json['status'],
       isOnline: json['isOnline'] ?? false,
       hasLocationPermission: json['hasLocationPermission'] ?? false,
-      lastOnlineTime: json['lastOnlineTime'] != null 
+      lastOnlineTime: json['lastOnlineTime'] != null
           ? DateTime.parse(json['lastOnlineTime'])
           : null,
     );
   }
-  
+
   Map<String, dynamic> toJson() {
     return {
       'id': id,
@@ -78,7 +79,7 @@ class Message {
   final bool isBurnAfterReading; // 是否阅后即焚
   final bool isRead; // 是否已读（用于阅后即焚）
   final ImageQuality? imageQuality; // 图片质量
-  
+
   Message({
     required this.id,
     required this.content,
@@ -91,7 +92,7 @@ class Message {
     this.isRead = false,
     this.imageQuality,
   });
-  
+
   // 复制消息并修改某些字段
   Message copyWith({
     MessageStatus? status,
@@ -110,7 +111,7 @@ class Message {
       imageQuality: imageQuality,
     );
   }
-  
+
   factory Message.fromJson(Map<String, dynamic> json) {
     return Message(
       id: json['id'],
@@ -136,7 +137,7 @@ class Message {
           : null,
     );
   }
-  
+
   Map<String, dynamic> toJson() {
     return {
       'id': id,
@@ -154,19 +155,19 @@ class Message {
 }
 
 enum MessageStatus {
-  sending,  // 发送中
-  sent,     // 已发送
-  failed,   // 发送失败
+  sending, // 发送中
+  sent, // 已发送
+  failed, // 发送失败
 }
 
 enum MessageType {
-  text,     // 文本消息
-  image,    // 图片消息
+  text, // 文本消息
+  image, // 图片消息
 }
 
 enum ImageQuality {
-  original,    // 原图
-  compressed,  // 1080p压缩
+  original, // 原图
+  compressed, // 1080p压缩
 }
 
 class ChatThread {
@@ -179,7 +180,7 @@ class ChatThread {
   final bool isFriend; // 是否已成为好友
   final bool isUnfollowed; // 是否被取关
   final int messagesSinceUnfollow; // 取关后发送的消息数
-  
+
   ChatThread({
     required this.id,
     required this.otherUser,
@@ -191,35 +192,37 @@ class ChatThread {
     this.isUnfollowed = false,
     this.messagesSinceUnfollow = 0,
   });
-  
+
   bool get isExpired => DateTime.now().isAfter(expiresAt);
-  
+
   Duration get timeRemaining => expiresAt.difference(DateTime.now());
-  
+
   // 是否解锁头像
-  bool get hasUnlockedAvatar => intimacyPoints >= 20;
-  
+  bool get hasUnlockedAvatar => true;
+
   // 是否解锁昵称
-  bool get hasUnlockedNickname => intimacyPoints >= 50;
-  
-  // 是否解锁个人签名
-  bool get hasUnlockedSignature => intimacyPoints >= 100;
-  
-  // 是否解锁主页
-  bool get hasUnlockedProfile => intimacyPoints >= 150;
-  
-  // 是否解锁主页背景
-  bool get hasUnlockedBackground => intimacyPoints >= 200;
-  
-  // 是否可以互关
-  bool get canAddFriend => intimacyPoints >= 250;
-  
+  bool get hasUnlockedNickname => true;
+
+  // 阶段一：解锁主页查看权限
+  bool get hasUnlockedSignature => hasUnlockedProfile;
+
+  // 阶段一：解锁主页（需要一定互动分和最短聊天时长）
+  bool get hasUnlockedProfile =>
+      intimacyPoints >= 40 && DateTime.now().difference(createdAt).inMinutes >= 3;
+
+  // 阶段一：同步解锁背景
+  bool get hasUnlockedBackground => hasUnlockedProfile;
+
+  // 阶段二：解锁互关权限 + 语音权限
+  bool get canAddFriend =>
+      intimacyPoints >= 140 && DateTime.now().difference(createdAt).inMinutes >= 12;
+
   // 是否可以发送消息（取关后限制）
   bool get canSendMessage {
     if (!isUnfollowed) return true;
     return messagesSinceUnfollow < 3;
   }
-  
+
   factory ChatThread.fromJson(Map<String, dynamic> json) {
     return ChatThread(
       id: json['id'],
@@ -233,7 +236,7 @@ class ChatThread {
       messagesSinceUnfollow: json['messagesSinceUnfollow'] ?? 0,
     );
   }
-  
+
   Map<String, dynamic> toJson() {
     return {
       'id': id,
@@ -256,7 +259,7 @@ class Friend {
   final String? remark; // 备注名
   final int chatCount; // 聊天次数
   final int totalMinutes; // 累计聊天时长（分钟）
-  
+
   Friend({
     required this.id,
     required this.user,
@@ -265,9 +268,9 @@ class Friend {
     this.chatCount = 0,
     this.totalMinutes = 0,
   });
-  
+
   String get displayName => remark ?? user.nickname;
-  
+
   factory Friend.fromJson(Map<String, dynamic> json) {
     return Friend(
       id: json['id'],
@@ -278,7 +281,7 @@ class Friend {
       totalMinutes: json['totalMinutes'] ?? 0,
     );
   }
-  
+
   Map<String, dynamic> toJson() {
     return {
       'id': id,
@@ -297,7 +300,7 @@ class FriendRequest {
   final String? message;
   final DateTime createdAt;
   final FriendRequestStatus status;
-  
+
   FriendRequest({
     required this.id,
     required this.fromUser,
@@ -305,7 +308,7 @@ class FriendRequest {
     required this.createdAt,
     this.status = FriendRequestStatus.pending,
   });
-  
+
   factory FriendRequest.fromJson(Map<String, dynamic> json) {
     return FriendRequest(
       id: json['id'],
@@ -318,7 +321,7 @@ class FriendRequest {
       ),
     );
   }
-  
+
   Map<String, dynamic> toJson() {
     return {
       'id': id,
@@ -335,4 +338,3 @@ enum FriendRequestStatus {
   accepted,
   rejected,
 }
-

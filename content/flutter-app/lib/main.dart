@@ -8,6 +8,7 @@ import 'providers/chat_provider.dart';
 import 'providers/friend_provider.dart';
 import 'services/storage_service.dart';
 import 'utils/permission_manager.dart';
+import 'package:go_router/go_router.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -26,15 +27,21 @@ class SunliaoApp extends StatefulWidget {
 }
 
 class _SunliaoAppState extends State<SunliaoApp> with WidgetsBindingObserver {
+  late final AuthProvider _authProvider;
+  late final GoRouter _router;
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _authProvider = AuthProvider();
+    _router = AppRouter.createRouter(_authProvider);
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _authProvider.dispose();
     super.dispose();
   }
 
@@ -50,7 +57,7 @@ class _SunliaoAppState extends State<SunliaoApp> with WidgetsBindingObserver {
   Widget build(BuildContext context) {
     return MultiProvider(
       providers: [
-        ChangeNotifierProvider(create: (_) => AuthProvider()),
+        ChangeNotifierProvider<AuthProvider>.value(value: _authProvider),
         ChangeNotifierProvider(create: (_) => MatchProvider()),
         ChangeNotifierProvider(create: (_) => ChatProvider()),
         ChangeNotifierProvider(create: (_) => FriendProvider()),
@@ -59,7 +66,7 @@ class _SunliaoAppState extends State<SunliaoApp> with WidgetsBindingObserver {
         title: '瞬',
         debugShowCheckedModeBanner: false,
         theme: AppTheme.darkTheme,
-        routerConfig: AppRouter.router,
+        routerConfig: _router,
       ),
     );
   }

@@ -17,36 +17,28 @@ enum IntimacyLevel {
 
 /// 亲密度解锁内容
 class IntimacyUnlock {
-  static const int unlockAvatar = 20;        // 20分解锁头像
-  static const int unlockNickname = 50;      // 50分解锁昵称
-  static const int unlockSignature = 100;    // 100分解锁个人签名
-  static const int unlockProfile = 150;      // 150分解锁主页
-  static const int unlockBackground = 200;   // 200分解锁主页背景
-  static const int canAddFriend = 250;       // 250分可以互关（约35分钟）
-  
+  static const int unlockProfile = 40; // 阶段一：主页权限
+  static const int canAddFriend = 140; // 阶段二：互关+语音
+
   /// 获取下一个解锁项
   static String? getNextUnlock(int points) {
-    if (points < unlockAvatar) return '头像';
-    if (points < unlockNickname) return '昵称';
-    if (points < unlockSignature) return '个人签名';
-    if (points < unlockProfile) return '主页';
-    if (points < unlockBackground) return '主页背景';
-    if (points < canAddFriend) return '互关权限';
+    if (points < unlockProfile) return '主页权限';
+    if (points < canAddFriend) return '互关与语音';
     return null;
   }
-  
+
   /// 获取解锁进度百分比
   static double getProgress(int points) {
     if (points >= canAddFriend) return 1.0;
     return points / canAddFriend;
   }
-  
+
   /// 获取当前等级
   static IntimacyLevel getLevel(int points) {
-    if (points >= 200) return IntimacyLevel.bestFriend;
-    if (points >= 150) return IntimacyLevel.closeFriend;
-    if (points >= 100) return IntimacyLevel.friend;
-    if (points >= 50) return IntimacyLevel.acquaintance;
+    if (points >= canAddFriend) return IntimacyLevel.bestFriend;
+    if (points >= unlockProfile) return IntimacyLevel.closeFriend;
+    if (points >= 20) return IntimacyLevel.friend;
+    if (points >= 8) return IntimacyLevel.acquaintance;
     return IntimacyLevel.stranger;
   }
 }
@@ -59,29 +51,29 @@ class IntimacyCalculator {
     if (length < 5) return 1;
     if (length < 20) return 2;
     if (length < 50) return 3;
-    return 5;
+    return 4;
   }
-  
+
   /// 接收消息获得的亲密度
   static int receiveMessage(String content) {
     return sendMessage(content);
   }
-  
+
   /// 连续对话奖励（5分钟内互动）
   static int continuousChat() {
-    return 3;
+    return 1;
   }
-  
+
   /// 深夜聊天奖励（23:00-6:00）
   static int lateNightChat() {
     final hour = DateTime.now().hour;
     if (hour >= 23 || hour < 6) return 2;
     return 0;
   }
-  
+
   /// 首次对话奖励
   static int firstChat() {
-    return 10;
+    return 6;
   }
 }
 
@@ -89,7 +81,7 @@ class IntimacyCalculator {
 class IntimacyChangeAnimation extends StatefulWidget {
   final int change;
   final VoidCallback? onComplete;
-  
+
   const IntimacyChangeAnimation({
     super.key,
     required this.change,
@@ -97,7 +89,8 @@ class IntimacyChangeAnimation extends StatefulWidget {
   });
 
   @override
-  State<IntimacyChangeAnimation> createState() => _IntimacyChangeAnimationState();
+  State<IntimacyChangeAnimation> createState() =>
+      _IntimacyChangeAnimationState();
 }
 
 class _IntimacyChangeAnimationState extends State<IntimacyChangeAnimation>
@@ -188,7 +181,7 @@ class _IntimacyChangeAnimationState extends State<IntimacyChangeAnimation>
               borderRadius: BorderRadius.circular(20),
               boxShadow: [
                 BoxShadow(
-                  color: const Color(0xFFFF7043).withOpacity(0.4),
+                  color: const Color(0xFFFF7043).withValues(alpha: 0.4),
                   blurRadius: 12,
                   offset: const Offset(0, 4),
                 ),
@@ -225,7 +218,7 @@ class _IntimacyChangeAnimationState extends State<IntimacyChangeAnimation>
 class IntimacyProgressBar extends StatelessWidget {
   final int points;
   final bool showLabel;
-  
+
   const IntimacyProgressBar({
     super.key,
     required this.points,
@@ -237,10 +230,10 @@ class IntimacyProgressBar extends StatelessWidget {
     final progress = IntimacyUnlock.getProgress(points);
     final level = IntimacyUnlock.getLevel(points);
     final nextUnlock = IntimacyUnlock.getNextUnlock(points);
-    
+
     // 根据等级选择渐变色
     final gradientColors = _getGradientColors(level);
-    
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -250,7 +243,8 @@ class IntimacyProgressBar extends StatelessWidget {
             children: [
               // 左侧：等级标签
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
                     colors: gradientColors,
@@ -260,7 +254,7 @@ class IntimacyProgressBar extends StatelessWidget {
                   borderRadius: BorderRadius.circular(12),
                   boxShadow: [
                     BoxShadow(
-                      color: gradientColors[0].withOpacity(0.3),
+                      color: gradientColors[0].withValues(alpha: 0.3),
                       blurRadius: 8,
                       offset: const Offset(0, 2),
                     ),
@@ -287,7 +281,7 @@ class IntimacyProgressBar extends StatelessWidget {
                   ],
                 ),
               ),
-              
+
               // 右侧：进度提示
               if (nextUnlock != null)
                 Text(
@@ -295,7 +289,7 @@ class IntimacyProgressBar extends StatelessWidget {
                   style: TextStyle(
                     fontSize: 11,
                     fontWeight: FontWeight.w300,
-                    color: Colors.white.withOpacity(0.5),
+                    color: Colors.white.withValues(alpha: 0.5),
                     letterSpacing: 0.3,
                   ),
                 ),
@@ -303,12 +297,12 @@ class IntimacyProgressBar extends StatelessWidget {
           ),
           const SizedBox(height: 12),
         ],
-        
+
         // 进度条容器
         Container(
           height: 8,
           decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.08),
+            color: Colors.white.withValues(alpha: 0.08),
             borderRadius: BorderRadius.circular(4),
           ),
           child: Stack(
@@ -326,7 +320,7 @@ class IntimacyProgressBar extends StatelessWidget {
                     borderRadius: BorderRadius.circular(4),
                     boxShadow: [
                       BoxShadow(
-                        color: gradientColors[1].withOpacity(0.4),
+                        color: gradientColors[1].withValues(alpha: 0.4),
                         blurRadius: 6,
                         spreadRadius: 0,
                       ),
@@ -334,7 +328,7 @@ class IntimacyProgressBar extends StatelessWidget {
                   ),
                 ),
               ),
-              
+
               // 光晕效果
               if (progress > 0)
                 Positioned(
@@ -349,8 +343,8 @@ class IntimacyProgressBar extends StatelessWidget {
                         decoration: BoxDecoration(
                           gradient: RadialGradient(
                             colors: [
-                              Colors.white.withOpacity(0.6),
-                              Colors.white.withOpacity(0.0),
+                              Colors.white.withValues(alpha: 0.6),
+                              Colors.white.withValues(alpha: 0.0),
                             ],
                           ),
                           borderRadius: BorderRadius.circular(4),
@@ -362,7 +356,7 @@ class IntimacyProgressBar extends StatelessWidget {
             ],
           ),
         ),
-        
+
         // 底部进度数值
         if (showLabel) ...[
           const SizedBox(height: 8),
@@ -374,7 +368,7 @@ class IntimacyProgressBar extends StatelessWidget {
                 style: TextStyle(
                   fontSize: 11,
                   fontWeight: FontWeight.w300,
-                  color: Colors.white.withOpacity(0.4),
+                  color: Colors.white.withValues(alpha: 0.4),
                   letterSpacing: 0.5,
                 ),
               ),
@@ -383,7 +377,7 @@ class IntimacyProgressBar extends StatelessWidget {
                 style: TextStyle(
                   fontSize: 11,
                   fontWeight: FontWeight.w400,
-                  color: Colors.white.withOpacity(0.5),
+                  color: Colors.white.withValues(alpha: 0.5),
                   letterSpacing: 0.3,
                 ),
               ),
@@ -393,7 +387,7 @@ class IntimacyProgressBar extends StatelessWidget {
       ],
     );
   }
-  
+
   // 根据等级获取渐变色
   List<Color> _getGradientColors(IntimacyLevel level) {
     switch (level) {
@@ -424,7 +418,7 @@ class IntimacyProgressBar extends StatelessWidget {
         ];
     }
   }
-  
+
   // 根据等级获取图标
   IconData _getLevelIcon(IntimacyLevel level) {
     switch (level) {
@@ -440,22 +434,10 @@ class IntimacyProgressBar extends StatelessWidget {
         return Icons.auto_awesome;
     }
   }
-  
+
   int _getPointsToNext(int points) {
-    if (points < IntimacyUnlock.unlockAvatar) {
-      return IntimacyUnlock.unlockAvatar - points;
-    }
-    if (points < IntimacyUnlock.unlockNickname) {
-      return IntimacyUnlock.unlockNickname - points;
-    }
-    if (points < IntimacyUnlock.unlockSignature) {
-      return IntimacyUnlock.unlockSignature - points;
-    }
     if (points < IntimacyUnlock.unlockProfile) {
       return IntimacyUnlock.unlockProfile - points;
-    }
-    if (points < IntimacyUnlock.unlockBackground) {
-      return IntimacyUnlock.unlockBackground - points;
     }
     if (points < IntimacyUnlock.canAddFriend) {
       return IntimacyUnlock.canAddFriend - points;
@@ -463,4 +445,3 @@ class IntimacyProgressBar extends StatelessWidget {
     return 0;
   }
 }
-

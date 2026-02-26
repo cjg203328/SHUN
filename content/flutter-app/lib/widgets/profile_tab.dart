@@ -17,17 +17,17 @@ class ProfileTab extends StatefulWidget {
 class _ProfileTabState extends State<ProfileTab> {
   String? _avatarPath;
   String? _backgroundPath;
-  
+
   @override
   void initState() {
     super.initState();
     _loadImages();
   }
-  
+
   Future<void> _loadImages() async {
     final avatarPath = await ImageUploadService.getAvatarPath();
     final backgroundPath = await ImageUploadService.getBackgroundPath();
-    
+
     if (mounted) {
       setState(() {
         _avatarPath = avatarPath;
@@ -71,14 +71,16 @@ class _ProfileTabState extends State<ProfileTab> {
                                     Icon(
                                       Icons.add_photo_alternate_outlined,
                                       size: 40,
-                                      color: AppColors.textTertiary.withOpacity(0.5),
+                                      color: AppColors.textTertiary
+                                          .withValues(alpha: 0.5),
                                     ),
                                     const SizedBox(height: 8),
                                     Text(
                                       '点击设置背景',
                                       style: TextStyle(
                                         fontSize: 13,
-                                        color: AppColors.textTertiary.withOpacity(0.5),
+                                        color: AppColors.textTertiary
+                                            .withValues(alpha: 0.5),
                                       ),
                                     ),
                                   ],
@@ -90,7 +92,7 @@ class _ProfileTabState extends State<ProfileTab> {
                                 child: Container(
                                   padding: const EdgeInsets.all(6),
                                   decoration: BoxDecoration(
-                                    color: Colors.black.withOpacity(0.5),
+                                    color: Colors.black.withValues(alpha: 0.5),
                                     shape: BoxShape.circle,
                                   ),
                                   child: const Icon(
@@ -102,7 +104,7 @@ class _ProfileTabState extends State<ProfileTab> {
                               ),
                       ),
                     ),
-                    
+
                     // 个人信息
                     Container(
                       margin: const EdgeInsets.only(top: 140),
@@ -130,11 +132,13 @@ class _ProfileTabState extends State<ProfileTab> {
                                         ? Image.file(
                                             File(_avatarPath!),
                                             fit: BoxFit.cover,
-                                            errorBuilder: (context, error, stackTrace) {
+                                            errorBuilder:
+                                                (context, error, stackTrace) {
                                               return Center(
                                                 child: Text(
                                                   authProvider.avatar,
-                                                  style: const TextStyle(fontSize: 48),
+                                                  style: const TextStyle(
+                                                      fontSize: 48),
                                                 ),
                                               );
                                             },
@@ -142,7 +146,8 @@ class _ProfileTabState extends State<ProfileTab> {
                                         : Center(
                                             child: Text(
                                               authProvider.avatar,
-                                              style: const TextStyle(fontSize: 48),
+                                              style:
+                                                  const TextStyle(fontSize: 48),
                                             ),
                                           ),
                                   ),
@@ -170,9 +175,9 @@ class _ProfileTabState extends State<ProfileTab> {
                               ],
                             ),
                           ),
-                          
+
                           const SizedBox(height: 20),
-                          
+
                           // 昵称
                           GestureDetector(
                             onTap: () => _showEditNickname(context),
@@ -197,9 +202,9 @@ class _ProfileTabState extends State<ProfileTab> {
                               ],
                             ),
                           ),
-                          
+
                           const SizedBox(height: 8),
-                          
+
                           // 手机号
                           Text(
                             authProvider.phone ?? '未登录',
@@ -209,9 +214,9 @@ class _ProfileTabState extends State<ProfileTab> {
                               color: AppColors.textTertiary,
                             ),
                           ),
-                          
+
                           const SizedBox(height: 24),
-                          
+
                           // 状态
                           GestureDetector(
                             onTap: () => _showEditStatus(context),
@@ -257,7 +262,7 @@ class _ProfileTabState extends State<ProfileTab> {
                   ],
                 ),
               ),
-              
+
               // 功能列表
               SliverToBoxAdapter(
                 child: Container(
@@ -278,7 +283,7 @@ class _ProfileTabState extends State<ProfileTab> {
                   ),
                 ),
               ),
-              
+
               const SliverToBoxAdapter(child: SizedBox(height: 40)),
             ],
           );
@@ -286,11 +291,11 @@ class _ProfileTabState extends State<ProfileTab> {
       ),
     );
   }
-  
+
   // 修改头像
   Future<void> _changeAvatar() async {
     final imageFile = await ImageUploadService.pickAvatar(context);
-    
+
     if (imageFile != null && mounted) {
       setState(() {
         _avatarPath = imageFile.path;
@@ -298,11 +303,11 @@ class _ProfileTabState extends State<ProfileTab> {
       AppToast.show(context, '头像已更新');
     }
   }
-  
+
   // 修改背景
   Future<void> _changeBackground() async {
     final imageFile = await ImageUploadService.pickBackground(context);
-    
+
     if (imageFile != null && mounted) {
       setState(() {
         _backgroundPath = imageFile.path;
@@ -347,11 +352,11 @@ class _ProfileTabState extends State<ProfileTab> {
       ),
     );
   }
-  
+
   void _showEditNickname(BuildContext context) async {
     final authProvider = context.read<AuthProvider>();
     final controller = TextEditingController(text: authProvider.nickname);
-    
+
     final result = await showDialog<bool>(
       context: context,
       builder: (dialogContext) {
@@ -436,7 +441,7 @@ class _ProfileTabState extends State<ProfileTab> {
         );
       },
     );
-    
+
     if (result == true && context.mounted) {
       final nickname = controller.text.trim();
       if (nickname.isNotEmpty) {
@@ -446,10 +451,10 @@ class _ProfileTabState extends State<ProfileTab> {
         }
       }
     }
-    
+
     controller.dispose();
   }
-  
+
   void _showEditStatus(BuildContext context) async {
     final statuses = [
       '想找人聊聊',
@@ -459,7 +464,7 @@ class _ProfileTabState extends State<ProfileTab> {
       '深夜emo',
       '随便聊聊',
     ];
-    
+
     await showDialog(
       context: context,
       builder: (context) => Dialog(
@@ -485,34 +490,34 @@ class _ProfileTabState extends State<ProfileTab> {
               ),
               const SizedBox(height: 12),
               ...statuses.map((status) => InkWell(
-                onTap: () async {
-                  Navigator.pop(context);
-                  await context.read<AuthProvider>().updateStatus(status);
-                  if (context.mounted) {
-                    AppToast.show(context, '状态已更新');
-                  }
-                },
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 24,
-                    vertical: 16,
-                  ),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          status,
-                          style: const TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w300,
-                            color: AppColors.textPrimary,
-                          ),
-                        ),
+                    onTap: () async {
+                      Navigator.pop(context);
+                      await context.read<AuthProvider>().updateStatus(status);
+                      if (context.mounted) {
+                        AppToast.show(context, '状态已更新');
+                      }
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 24,
+                        vertical: 16,
                       ),
-                    ],
-                  ),
-                ),
-              )),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              status,
+                              style: const TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w300,
+                                color: AppColors.textPrimary,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  )),
             ],
           ),
         ),

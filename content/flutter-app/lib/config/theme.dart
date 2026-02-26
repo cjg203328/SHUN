@@ -5,22 +5,22 @@ class AppColors {
   static const pureBlack = Color(0xFF000000);
   static const cardBg = Color(0xFF1A1A1A);
   static const darkBg = Color(0xFF0A0A0A);
-  
+
   // 文字色
   static const textPrimary = Color(0xFFFFFFFF);
   static const textSecondary = Color(0x99FFFFFF);
   static const textTertiary = Color(0x66FFFFFF);
   static const textDisabled = Color(0x33FFFFFF);
-  
+
   // 品牌色
   static const brandBlue = Color(0xFF4A90E2);
   static const deepSeaBlue = Color(0xFF2E5C8A);
-  
+
   // 功能色
   static const success = Color(0xFF52C41A);
   static const warning = Color(0xFFFFAA00);
   static const error = Color(0xFFFF4D4F);
-  
+
   // 半透明
   static const white05 = Color(0x0DFFFFFF);
   static const white08 = Color(0x14FFFFFF);
@@ -36,7 +36,6 @@ class AppTheme {
       scaffoldBackgroundColor: AppColors.pureBlack,
       primaryColor: AppColors.brandBlue,
       fontFamily: 'PingFang',
-      
       textTheme: const TextTheme(
         displayLarge: TextStyle(
           fontSize: 40,
@@ -75,7 +74,6 @@ class AppTheme {
           color: AppColors.textTertiary,
         ),
       ),
-      
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
           backgroundColor: AppColors.textPrimary,
@@ -92,7 +90,6 @@ class AppTheme {
           ),
         ),
       ),
-      
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
         fillColor: AppColors.white05,
@@ -108,7 +105,8 @@ class AppTheme {
           borderRadius: BorderRadius.circular(14),
           borderSide: const BorderSide(color: AppColors.brandBlue),
         ),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
         hintStyle: const TextStyle(
           color: AppColors.textTertiary,
           fontSize: 16,
@@ -118,5 +116,3 @@ class AppTheme {
     );
   }
 }
-
-

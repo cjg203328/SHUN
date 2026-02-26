@@ -2,7 +2,8 @@ import 'package:flutter/material.dart';
 import '../config/theme.dart';
 
 class AppToast {
-  static void show(BuildContext context, String message, {bool isError = false}) {
+  static void show(BuildContext context, String message,
+      {bool isError = false}) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
@@ -15,8 +16,8 @@ class AppToast {
           ),
           textAlign: TextAlign.center,
         ),
-        backgroundColor: isError 
-            ? AppColors.error.withOpacity(0.15)
+        backgroundColor: isError
+            ? AppColors.error.withValues(alpha: 0.15)
             : AppColors.white12,
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(
@@ -73,7 +74,7 @@ class AppDialog {
                 ),
                 textAlign: TextAlign.center,
               ),
-              
+
               if (content != null) ...[
                 const SizedBox(height: 12),
                 Text(
@@ -88,9 +89,9 @@ class AppDialog {
                   textAlign: TextAlign.center,
                 ),
               ],
-              
+
               const SizedBox(height: 32),
-              
+
               // 按钮
               Row(
                 children: [
@@ -121,8 +122,8 @@ class AppDialog {
                       onPressed: () => Navigator.pop(context, true),
                       style: TextButton.styleFrom(
                         padding: const EdgeInsets.symmetric(vertical: 16),
-                        backgroundColor: isDanger 
-                            ? AppColors.error.withOpacity(0.15)
+                        backgroundColor: isDanger
+                            ? AppColors.error.withValues(alpha: 0.15)
                             : AppColors.white12,
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(12),
@@ -133,8 +134,8 @@ class AppDialog {
                         style: TextStyle(
                           fontSize: 15,
                           fontWeight: FontWeight.w300,
-                          color: isDanger 
-                              ? AppColors.error 
+                          color: isDanger
+                              ? AppColors.error
                               : AppColors.textPrimary,
                           letterSpacing: 1,
                         ),
@@ -149,7 +150,7 @@ class AppDialog {
       ),
     );
   }
-  
+
   static Future<String?> showMessageActions(
     BuildContext context, {
     required bool isMe,
@@ -176,7 +177,6 @@ class AppDialog {
                 text: '复制',
                 onTap: () => Navigator.pop(context, 'copy'),
               ),
-              
               if (isMe && canRecall)
                 _buildActionItem(
                   context,
@@ -185,9 +185,7 @@ class AppDialog {
                   onTap: () => Navigator.pop(context, 'recall'),
                   isDanger: true,
                 ),
-              
               const SizedBox(height: 8),
-              
               _buildActionItem(
                 context,
                 icon: Icons.close,
@@ -200,7 +198,7 @@ class AppDialog {
       ),
     );
   }
-  
+
   static Widget _buildActionItem(
     BuildContext context, {
     required IconData icon,
@@ -237,5 +235,3 @@ class AppDialog {
     );
   }
 }
-
-

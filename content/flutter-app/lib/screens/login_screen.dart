@@ -30,21 +30,21 @@ class _LoginScreenState extends State<LoginScreen> {
       AppToast.show(context, '请输入正确的手机号');
       return;
     }
-    
+
     setState(() {
       _codeSent = true;
       _countdown = 60;
     });
-    
+
     // 倒计时
     Future.doWhile(() async {
       await Future.delayed(const Duration(seconds: 1));
       if (!mounted) return false;
-      
+
       setState(() {
         _countdown--;
       });
-      
+
       return _countdown > 0;
     });
   }
@@ -55,16 +55,16 @@ class _LoginScreenState extends State<LoginScreen> {
       _phoneController.text,
       _codeController.text,
     );
-    
+
     if (!mounted) return;
-    
+
     if (success) {
       context.go('/main');
     } else {
       AppToast.show(context, '验证码错误，请输入123456', isError: true);
     }
   }
-  
+
   void _showAgreement(BuildContext context, String title) {
     showModalBottomSheet(
       context: context,
@@ -101,13 +101,14 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                   ),
                   IconButton(
-                    icon: const Icon(Icons.close, color: AppColors.textSecondary),
+                    icon:
+                        const Icon(Icons.close, color: AppColors.textSecondary),
                     onPressed: () => Navigator.pop(context),
                   ),
                 ],
               ),
             ),
-            
+
             // 内容
             Expanded(
               child: SingleChildScrollView(
@@ -129,7 +130,7 @@ class _LoginScreenState extends State<LoginScreen> {
       ),
     );
   }
-  
+
   String _getAgreementContent(String title) {
     if (title == '用户协议') {
       return '''
@@ -280,7 +281,7 @@ class _LoginScreenState extends State<LoginScreen> {
           child: Column(
             children: [
               const SizedBox(height: 60),
-              
+
               // Logo
               Container(
                 width: 80,
@@ -295,25 +296,25 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                   boxShadow: [
                     BoxShadow(
-                      color: AppColors.brandBlue.withOpacity(0.5),
+                      color: AppColors.brandBlue.withValues(alpha: 0.5),
                       blurRadius: 50,
                       spreadRadius: 10,
                     ),
                   ],
                 ),
               ),
-              
+
               const SizedBox(height: 40),
-              
+
               Text('瞬', style: Theme.of(context).textTheme.displayLarge),
               const SizedBox(height: 12),
               Text(
                 '每个夜晚都是新的开始',
                 style: Theme.of(context).textTheme.bodyMedium,
               ),
-              
+
               const SizedBox(height: 60),
-              
+
               // 登录表单
               Container(
                 padding: const EdgeInsets.all(32),
@@ -336,9 +337,9 @@ class _LoginScreenState extends State<LoginScreen> {
                         counterText: '',
                       ),
                     ),
-                    
+
                     const SizedBox(height: 20),
-                    
+
                     Text('验证码', style: Theme.of(context).textTheme.bodyMedium),
                     const SizedBox(height: 10),
                     Row(
@@ -358,23 +359,24 @@ class _LoginScreenState extends State<LoginScreen> {
                         ElevatedButton(
                           onPressed: _countdown > 0 ? null : _sendCode,
                           style: ElevatedButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
-                            backgroundColor: _countdown > 0 
-                                ? AppColors.white05 
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 24, vertical: 14),
+                            backgroundColor: _countdown > 0
+                                ? AppColors.white05
                                 : AppColors.white12,
                           ),
                           child: Text(
                             _countdown > 0 ? '${_countdown}s' : '发送验证码',
                             style: TextStyle(
-                              color: _countdown > 0 
-                                  ? AppColors.textDisabled 
+                              color: _countdown > 0
+                                  ? AppColors.textDisabled
                                   : AppColors.textSecondary,
                             ),
                           ),
                         ),
                       ],
                     ),
-                    
+
                     if (_codeSent) ...[
                       const SizedBox(height: 8),
                       Text(
@@ -382,22 +384,22 @@ class _LoginScreenState extends State<LoginScreen> {
                         style: Theme.of(context).textTheme.bodySmall,
                       ),
                     ],
-                    
+
                     const SizedBox(height: 30),
-                    
+
                     SizedBox(
                       width: double.infinity,
                       child: ElevatedButton(
-                        onPressed: _phoneController.text.length == 11 && 
-                                   _codeController.text.length == 6
+                        onPressed: _phoneController.text.length == 11 &&
+                                _codeController.text.length == 6
                             ? _login
                             : null,
                         child: const Text('登录'),
                       ),
                     ),
-                    
+
                     const SizedBox(height: 20),
-                    
+
                     // 用户协议和隐私政策
                     Center(
                       child: Wrap(
@@ -412,10 +414,13 @@ class _LoginScreenState extends State<LoginScreen> {
                             onTap: () => _showAgreement(context, '用户协议'),
                             child: Text(
                               '《用户协议》',
-                              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                color: AppColors.brandBlue,
-                                decoration: TextDecoration.underline,
-                              ),
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .bodySmall
+                                  ?.copyWith(
+                                    color: AppColors.brandBlue,
+                                    decoration: TextDecoration.underline,
+                                  ),
                             ),
                           ),
                           Text(
@@ -426,10 +431,13 @@ class _LoginScreenState extends State<LoginScreen> {
                             onTap: () => _showAgreement(context, '隐私政策'),
                             child: Text(
                               '《隐私政策》',
-                              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                color: AppColors.brandBlue,
-                                decoration: TextDecoration.underline,
-                              ),
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .bodySmall
+                                  ?.copyWith(
+                                    color: AppColors.brandBlue,
+                                    decoration: TextDecoration.underline,
+                                  ),
                             ),
                           ),
                         ],
@@ -445,4 +453,3 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 }
-

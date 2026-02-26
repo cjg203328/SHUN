@@ -8,9 +8,10 @@ import '../models/models.dart';
 
 class ImageHelper {
   static final ImagePicker _picker = ImagePicker();
-  
+
   /// 显示图片来源选择对话框（使用Dialog避免层级冲突）
-  static Future<ImageSource?> showImageSourceSelector(BuildContext context) async {
+  static Future<ImageSource?> showImageSourceSelector(
+      BuildContext context) async {
     return await showDialog<ImageSource>(
       context: context,
       builder: (context) => Dialog(
@@ -48,7 +49,7 @@ class ImageHelper {
       ),
     );
   }
-  
+
   static Widget _buildSourceItem(
     BuildContext context, {
     required IconData icon,
@@ -83,7 +84,7 @@ class ImageHelper {
       ),
     );
   }
-  
+
   /// 从相册选择图片
   static Future<File?> pickImageFromGallery() async {
     try {
@@ -92,7 +93,7 @@ class ImageHelper {
         maxWidth: 4096,
         maxHeight: 4096,
       );
-      
+
       if (image != null) {
         return File(image.path);
       }
@@ -102,7 +103,7 @@ class ImageHelper {
       return null;
     }
   }
-  
+
   /// 拍照获取图片
   static Future<File?> pickImageFromCamera() async {
     try {
@@ -111,7 +112,7 @@ class ImageHelper {
         maxWidth: 4096,
         maxHeight: 4096,
       );
-      
+
       if (image != null) {
         return File(image.path);
       }
@@ -121,7 +122,7 @@ class ImageHelper {
       return null;
     }
   }
-  
+
   /// 压缩图片
   static Future<File> compressImage(
     File imageFile,
@@ -131,15 +132,15 @@ class ImageHelper {
       // 读取图片
       final bytes = await imageFile.readAsBytes();
       final image = img.decodeImage(bytes);
-      
+
       if (image == null) {
         return imageFile;
       }
-      
+
       // 根据质量选择压缩参数
       img.Image resized;
       int jpegQuality;
-      
+
       if (quality == ImageQuality.original) {
         // 原图：不压缩，只限制最大尺寸为4K
         if (image.width > 3840 || image.height > 2160) {
@@ -165,23 +166,23 @@ class ImageHelper {
         }
         jpegQuality = 85;
       }
-      
+
       // 保存压缩后的图片
       final tempDir = await getTemporaryDirectory();
       final timestamp = DateTime.now().millisecondsSinceEpoch;
       final compressedPath = '${tempDir.path}/compressed_$timestamp.jpg';
-      
+
       final compressedBytes = img.encodeJpg(resized, quality: jpegQuality);
       final compressedFile = File(compressedPath);
       await compressedFile.writeAsBytes(compressedBytes);
-      
+
       return compressedFile;
     } catch (e) {
       print('压缩图片失败: $e');
       return imageFile;
     }
   }
-  
+
   /// 获取图片文件大小（MB）
   static Future<double> getImageSize(File imageFile) async {
     try {
@@ -191,14 +192,15 @@ class ImageHelper {
       return 0;
     }
   }
-  
+
   /// 显示图片质量选择对话框（使用Dialog避免层级冲突）
   static Future<ImageQuality?> showQualitySelector(
     BuildContext context,
     File imageFile,
   ) async {
     final originalSize = await getImageSize(imageFile);
-    
+    if (!context.mounted) return null;
+
     return await showDialog<ImageQuality>(
       context: context,
       builder: (context) => Dialog(
@@ -221,20 +223,22 @@ class ImageHelper {
                 ),
               ),
               const SizedBox(height: 24),
-              
+
               // 1080p选项（推荐）
               _buildQualityOption(
                 context,
                 quality: ImageQuality.compressed,
                 title: '1080p',
                 subtitle: '推荐，适合快速发送',
-                size: originalSize > 2 ? '约${(originalSize * 0.3).toStringAsFixed(1)}MB' : '小于1MB',
+                size: originalSize > 2
+                    ? '约${(originalSize * 0.3).toStringAsFixed(1)}MB'
+                    : '小于1MB',
                 isRecommended: true,
                 onTap: () => Navigator.pop(context, ImageQuality.compressed),
               ),
-              
+
               const SizedBox(height: 12),
-              
+
               // 原图选项
               _buildQualityOption(
                 context,
@@ -245,9 +249,9 @@ class ImageHelper {
                 isRecommended: false,
                 onTap: () => Navigator.pop(context, ImageQuality.original),
               ),
-              
+
               const SizedBox(height: 24),
-              
+
               // 取消按钮
               SizedBox(
                 width: double.infinity,
@@ -276,7 +280,7 @@ class ImageHelper {
       ),
     );
   }
-  
+
   static Widget _buildQualityOption(
     BuildContext context, {
     required ImageQuality quality,
@@ -295,8 +299,8 @@ class ImageHelper {
           color: AppColors.white05,
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
-            color: isRecommended 
-                ? AppColors.brandBlue.withOpacity(0.3)
+            color: isRecommended
+                ? AppColors.brandBlue.withValues(alpha: 0.3)
                 : AppColors.white08,
           ),
         ),
@@ -324,7 +328,7 @@ class ImageHelper {
                             vertical: 2,
                           ),
                           decoration: BoxDecoration(
-                            color: AppColors.brandBlue.withOpacity(0.2),
+                            color: AppColors.brandBlue.withValues(alpha: 0.2),
                             borderRadius: BorderRadius.circular(4),
                           ),
                           child: const Text(
@@ -365,4 +369,3 @@ class ImageHelper {
     );
   }
 }
-

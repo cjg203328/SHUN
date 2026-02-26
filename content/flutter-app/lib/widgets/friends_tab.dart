@@ -72,7 +72,7 @@ class FriendsTab extends StatelessWidget {
       body: Consumer<FriendProvider>(
         builder: (context, friendProvider, child) {
           final friends = friendProvider.friendList;
-          
+
           if (friends.isEmpty) {
             return Center(
               child: Column(
@@ -82,26 +82,26 @@ class FriendsTab extends StatelessWidget {
                     '👥',
                     style: TextStyle(
                       fontSize: 64,
-                      color: AppColors.textTertiary.withOpacity(0.3),
+                      color: AppColors.textTertiary.withValues(alpha: 0.3),
                     ),
                   ),
                   const SizedBox(height: 24),
                   Text(
                     '暂无好友',
                     style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                      color: AppColors.textTertiary,
-                    ),
+                          color: AppColors.textTertiary,
+                        ),
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    '与陌生人聊天满30分钟后可添加好友',
+                    '持续互动并达到阶段二后可互关',
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
                 ],
               ),
             );
           }
-          
+
           return ListView.builder(
             itemCount: friends.length,
             itemBuilder: (context, index) {
@@ -118,7 +118,7 @@ class FriendsTab extends StatelessWidget {
                     intimacyPoints: 250, // 好友默认满亲密度
                     isFriend: true,
                   );
-                  
+
                   context.read<ChatProvider>().addThread(thread);
                   // 从好友页进入聊天，返回时应该回到好友页
                   context.push('/chat/${thread.id}').then((_) {
@@ -137,7 +137,7 @@ class FriendsTab extends StatelessWidget {
       ),
     );
   }
-  
+
   void _showFriendRequests(BuildContext context) {
     showModalBottomSheet(
       context: context,
@@ -170,7 +170,8 @@ class FriendsTab extends StatelessWidget {
                   ),
                   const Spacer(),
                   IconButton(
-                    icon: const Icon(Icons.close, color: AppColors.textSecondary),
+                    icon:
+                        const Icon(Icons.close, color: AppColors.textSecondary),
                     onPressed: () => Navigator.pop(context),
                   ),
                 ],
@@ -180,21 +181,22 @@ class FriendsTab extends StatelessWidget {
               child: Consumer<FriendProvider>(
                 builder: (context, friendProvider, child) {
                   final requests = friendProvider.pendingRequests;
-                  
+
                   if (requests.isEmpty) {
                     return Center(
                       child: Padding(
                         padding: const EdgeInsets.all(40),
                         child: Text(
                           '暂无好友请求',
-                          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                            color: AppColors.textTertiary,
-                          ),
+                          style:
+                              Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                    color: AppColors.textTertiary,
+                                  ),
                         ),
                       ),
                     );
                   }
-                  
+
                   return ListView.builder(
                     shrinkWrap: true,
                     itemCount: requests.length,
@@ -210,7 +212,7 @@ class FriendsTab extends StatelessWidget {
       ),
     );
   }
-  
+
   void _showFriendOptions(BuildContext context, Friend friend) async {
     final action = await showModalBottomSheet<String>(
       context: context,
@@ -253,6 +255,13 @@ class FriendsTab extends StatelessWidget {
                 onTap: () => Navigator.pop(context, 'unfollow'),
                 isDanger: true,
               ),
+              _buildActionItem(
+                context,
+                icon: Icons.block_outlined,
+                text: '拉黑',
+                onTap: () => Navigator.pop(context, 'block'),
+                isDanger: true,
+              ),
               const SizedBox(height: 8),
               _buildActionItem(
                 context,
@@ -265,11 +274,11 @@ class FriendsTab extends StatelessWidget {
         ),
       ),
     );
-    
+
     if (action == 'remark' && context.mounted) {
       _showSetRemarkDialog(context, friend);
     } else if (action == 'profile' && context.mounted) {
-      AppToast.show(context, '个人主页功能即将上线');
+      _showFriendProfile(context, friend);
     } else if (action == 'unfollow' && context.mounted) {
       final confirm = await AppDialog.showConfirm(
         context,
@@ -278,7 +287,7 @@ class FriendsTab extends StatelessWidget {
         confirmText: '取关',
         isDanger: true,
       );
-      
+
       if (confirm == true && context.mounted) {
         context.read<FriendProvider>().removeFriend(friend.id);
         // 如果有聊天会话，也要更新
@@ -297,17 +306,164 @@ class FriendsTab extends StatelessWidget {
         confirmText: '删除',
         isDanger: true,
       );
-      
+
       if (confirm == true && context.mounted) {
         context.read<FriendProvider>().removeFriend(friend.id);
         AppToast.show(context, '已删除好友');
       }
+    } else if (action == 'block' && context.mounted) {
+      final confirm = await AppDialog.showConfirm(
+        context,
+        title: '确认拉黑该好友？',
+        content: '拉黑后不会再匹配到TA，可在设置-黑名单中手动取消。',
+        confirmText: '拉黑',
+        isDanger: true,
+      );
+
+      if (confirm == true && context.mounted) {
+        await context.read<FriendProvider>().blockUser(friend.id);
+        if (!context.mounted) return;
+        context.read<ChatProvider>().deleteThread(friend.id);
+        AppToast.show(context, '已拉黑');
+      }
     }
   }
-  
+
+  void _showFriendProfile(BuildContext context, Friend friend) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (context) => Container(
+        height: MediaQuery.of(context).size.height * 0.82,
+        decoration: const BoxDecoration(
+          color: AppColors.pureBlack,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        child: Column(
+          children: [
+            Stack(
+              children: [
+                Container(
+                  height: 210,
+                  width: double.infinity,
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [
+                        AppColors.white12,
+                        AppColors.white05,
+                      ],
+                    ),
+                  ),
+                  alignment: Alignment.bottomCenter,
+                  padding: const EdgeInsets.only(bottom: 18),
+                  child: Container(
+                    width: 88,
+                    height: 88,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: AppColors.white08,
+                      border: Border.all(color: AppColors.pureBlack, width: 3),
+                    ),
+                    child: Center(
+                      child: Text(
+                        friend.user.avatar ?? '👤',
+                        style: const TextStyle(fontSize: 40),
+                      ),
+                    ),
+                  ),
+                ),
+                Positioned(
+                  right: 8,
+                  top: 8,
+                  child: IconButton(
+                    onPressed: () => Navigator.pop(context),
+                    icon: const Icon(Icons.close, color: AppColors.textPrimary),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            Text(
+              friend.displayName,
+              style: const TextStyle(
+                fontSize: 21,
+                fontWeight: FontWeight.w300,
+                color: AppColors.textPrimary,
+              ),
+            ),
+            if (friend.remark != null) ...[
+              const SizedBox(height: 6),
+              Text(
+                '昵称：${friend.user.nickname}',
+                style: const TextStyle(
+                  fontSize: 13,
+                  color: AppColors.textSecondary,
+                ),
+              ),
+            ],
+            const SizedBox(height: 18),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: _buildInfoCard('累计聊天', '${friend.chatCount} 次'),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: _buildInfoCard('总时长', '${friend.totalMinutes} 分钟'),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 10),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: _buildInfoCard('状态', friend.user.status),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildInfoCard(String title, String value) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: AppColors.white05,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: const TextStyle(
+              fontSize: 12,
+              color: AppColors.textTertiary,
+            ),
+          ),
+          const SizedBox(height: 5),
+          Text(
+            value,
+            style: const TextStyle(
+              fontSize: 14,
+              color: AppColors.textPrimary,
+              fontWeight: FontWeight.w300,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _showSetRemarkDialog(BuildContext context, Friend friend) async {
     final controller = TextEditingController(text: friend.remark ?? '');
-    
+
     final result = await showModalBottomSheet<bool>(
       context: context,
       backgroundColor: Colors.transparent,
@@ -399,19 +555,19 @@ class FriendsTab extends StatelessWidget {
         ),
       ),
     );
-    
+
     if (result == true && context.mounted) {
       final remark = controller.text.trim();
       context.read<FriendProvider>().setRemark(
-        friend.id,
-        remark.isEmpty ? null : remark,
-      );
+            friend.id,
+            remark.isEmpty ? null : remark,
+          );
       AppToast.show(context, '备注已保存');
     }
-    
+
     controller.dispose();
   }
-  
+
   Widget _buildActionItem(
     BuildContext context, {
     required IconData icon,
@@ -453,7 +609,7 @@ class _FriendItem extends StatelessWidget {
   final Friend friend;
   final VoidCallback onTap;
   final VoidCallback onLongPress;
-  
+
   const _FriendItem({
     required this.friend,
     required this.onTap,
@@ -481,21 +637,23 @@ class _FriendItem extends StatelessWidget {
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 color: AppColors.white08,
-                border: Border.all(color: AppColors.brandBlue.withOpacity(0.3), width: 2),
+                border: Border.all(
+                    color: AppColors.brandBlue.withValues(alpha: 0.3),
+                    width: 2),
               ),
-              child: const Center(
+              child: Center(
                 child: Text(
-                  '👤',
-                  style: TextStyle(
+                  friend.user.avatar ?? '👤',
+                  style: const TextStyle(
                     fontSize: 28,
                     color: AppColors.textPrimary,
                   ),
                 ),
               ),
             ),
-            
+
             const SizedBox(width: 16),
-            
+
             // 内容
             Expanded(
               child: Column(
@@ -523,7 +681,7 @@ class _FriendItem extends StatelessWidget {
                 ],
               ),
             ),
-            
+
             // 箭头
             const Icon(
               Icons.chevron_right,
@@ -539,7 +697,7 @@ class _FriendItem extends StatelessWidget {
 
 class _FriendRequestItem extends StatelessWidget {
   final FriendRequest request;
-  
+
   const _FriendRequestItem({required this.request});
 
   @override
@@ -561,16 +719,16 @@ class _FriendRequestItem extends StatelessWidget {
               shape: BoxShape.circle,
               color: AppColors.white08,
             ),
-            child: const Center(
+            child: Center(
               child: Text(
-                '👤',
-                style: TextStyle(fontSize: 24),
+                request.fromUser.avatar ?? '👤',
+                style: const TextStyle(fontSize: 24),
               ),
             ),
           ),
-          
+
           const SizedBox(width: 12),
-          
+
           // 内容
           Expanded(
             child: Column(
@@ -600,19 +758,22 @@ class _FriendRequestItem extends StatelessWidget {
               ],
             ),
           ),
-          
+
           const SizedBox(width: 12),
-          
+
           // 按钮
           Row(
             children: [
               TextButton(
                 onPressed: () {
-                  context.read<FriendProvider>().rejectFriendRequest(request.id);
+                  context
+                      .read<FriendProvider>()
+                      .rejectFriendRequest(request.id);
                   AppToast.show(context, '已拒绝');
                 },
                 style: TextButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                   backgroundColor: AppColors.white05,
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(8),
@@ -630,12 +791,15 @@ class _FriendRequestItem extends StatelessWidget {
               const SizedBox(width: 8),
               TextButton(
                 onPressed: () {
-                  context.read<FriendProvider>().acceptFriendRequest(request.id);
+                  context
+                      .read<FriendProvider>()
+                      .acceptFriendRequest(request.id);
                   AppToast.show(context, '已添加为好友');
                 },
                 style: TextButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  backgroundColor: AppColors.brandBlue.withOpacity(0.2),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  backgroundColor: AppColors.brandBlue.withValues(alpha: 0.2),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(8),
                   ),
@@ -656,4 +820,3 @@ class _FriendRequestItem extends StatelessWidget {
     );
   }
 }
-

@@ -51,7 +51,7 @@ class _MessagesTabState extends State<MessagesTab> {
       body: Consumer<ChatProvider>(
         builder: (context, chatProvider, child) {
           final threads = chatProvider.threads.values.toList();
-          
+
           if (threads.isEmpty) {
             return Center(
               child: Column(
@@ -61,15 +61,15 @@ class _MessagesTabState extends State<MessagesTab> {
                     '💬',
                     style: TextStyle(
                       fontSize: 64,
-                      color: AppColors.textTertiary.withOpacity(0.3),
+                      color: AppColors.textTertiary.withValues(alpha: 0.3),
                     ),
                   ),
                   const SizedBox(height: 24),
                   Text(
                     '暂无消息',
                     style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                      color: AppColors.textTertiary,
-                    ),
+                          color: AppColors.textTertiary,
+                        ),
                   ),
                   const SizedBox(height: 8),
                   Text(
@@ -80,14 +80,14 @@ class _MessagesTabState extends State<MessagesTab> {
               ),
             );
           }
-          
+
           return ListView.builder(
             itemCount: threads.length,
             itemBuilder: (context, index) {
               final thread = threads[index];
               final messages = chatProvider.getMessages(thread.id);
               final lastMessage = messages.isNotEmpty ? messages.last : null;
-              
+
               return Dismissible(
                 key: Key(thread.id),
                 direction: DismissDirection.endToStart,
@@ -107,7 +107,7 @@ class _MessagesTabState extends State<MessagesTab> {
                   padding: const EdgeInsets.only(right: 20),
                   child: Icon(
                     Icons.delete_outline,
-                    color: AppColors.error.withOpacity(0.5),
+                    color: AppColors.error.withValues(alpha: 0.5),
                     size: 28,
                   ),
                 ),
@@ -141,7 +141,7 @@ class _ThreadItem extends StatelessWidget {
   final ChatThread thread;
   final Message? lastMessage;
   final VoidCallback onTap;
-  
+
   const _ThreadItem({
     required this.thread,
     required this.lastMessage,
@@ -152,7 +152,7 @@ class _ThreadItem extends StatelessWidget {
   Widget build(BuildContext context) {
     final isOnline = thread.otherUser.isOnline;
     final isFriend = thread.isFriend;
-    
+
     return InkWell(
       onTap: onTap,
       child: Container(
@@ -162,7 +162,7 @@ class _ThreadItem extends StatelessWidget {
           gradient: isOnline && !isFriend
               ? LinearGradient(
                   colors: [
-                    AppColors.brandBlue.withOpacity(0.03),
+                    AppColors.brandBlue.withValues(alpha: 0.03),
                     Colors.transparent,
                   ],
                   begin: Alignment.centerLeft,
@@ -186,25 +186,23 @@ class _ThreadItem extends StatelessWidget {
                     color: AppColors.white08,
                     // 好友：蓝色边框
                     border: Border.all(
-                      color: isFriend 
-                          ? AppColors.brandBlue.withOpacity(0.5)
+                      color: isFriend
+                          ? AppColors.brandBlue.withValues(alpha: 0.5)
                           : AppColors.white05,
                       width: 2,
                     ),
                   ),
                   child: Center(
                     child: Text(
-                      '👤',
-                      style: TextStyle(
+                      thread.otherUser.avatar ?? '👤',
+                      style: const TextStyle(
                         fontSize: 28,
-                        color: thread.hasUnlockedAvatar
-                            ? AppColors.textPrimary 
-                            : AppColors.textTertiary.withOpacity(0.3),
+                        color: AppColors.textPrimary,
                       ),
                     ),
                   ),
                 ),
-                
+
                 // 在线状态绿点
                 if (isOnline)
                   Positioned(
@@ -222,7 +220,8 @@ class _ThreadItem extends StatelessWidget {
                         ),
                         boxShadow: [
                           BoxShadow(
-                            color: const Color(0xFF4CAF50).withOpacity(0.5),
+                            color:
+                                const Color(0xFF4CAF50).withValues(alpha: 0.5),
                             blurRadius: 4,
                             spreadRadius: 1,
                           ),
@@ -230,7 +229,7 @@ class _ThreadItem extends StatelessWidget {
                       ),
                     ),
                   ),
-                
+
                 // 未读数角标
                 if (thread.unreadCount > 0)
                   Positioned(
@@ -247,7 +246,9 @@ class _ThreadItem extends StatelessWidget {
                         minHeight: 20,
                       ),
                       child: Text(
-                        thread.unreadCount > 99 ? '99+' : '${thread.unreadCount}',
+                        thread.unreadCount > 99
+                            ? '99+'
+                            : '${thread.unreadCount}',
                         style: const TextStyle(
                           fontSize: 10,
                           fontWeight: FontWeight.w500,
@@ -259,9 +260,9 @@ class _ThreadItem extends StatelessWidget {
                   ),
               ],
             ),
-            
+
             const SizedBox(width: 16),
-            
+
             // 内容
             Expanded(
               child: Column(
@@ -274,19 +275,15 @@ class _ThreadItem extends StatelessWidget {
                           children: [
                             // 昵称
                             Text(
-                              thread.hasUnlockedNickname
-                                  ? thread.otherUser.nickname 
-                                  : '神秘人',
-                              style: TextStyle(
+                              thread.otherUser.nickname,
+                              style: const TextStyle(
                                 fontSize: 16,
                                 fontWeight: FontWeight.w400,
-                                color: thread.hasUnlockedNickname
-                                    ? AppColors.textPrimary
-                                    : AppColors.textTertiary,
+                                color: AppColors.textPrimary,
                               ),
                             ),
                             const SizedBox(width: 8),
-                            
+
                             // 好友标签
                             if (isFriend)
                               Container(
@@ -295,7 +292,8 @@ class _ThreadItem extends StatelessWidget {
                                   vertical: 2,
                                 ),
                                 decoration: BoxDecoration(
-                                  color: AppColors.brandBlue.withOpacity(0.15),
+                                  color: AppColors.brandBlue
+                                      .withValues(alpha: 0.15),
                                   borderRadius: BorderRadius.circular(4),
                                 ),
                                 child: const Text(
@@ -307,7 +305,7 @@ class _ThreadItem extends StatelessWidget {
                                   ),
                                 ),
                               ),
-                            
+
                             // 在线标识（仅陌生人显示）
                             if (isOnline && !isFriend)
                               Container(
@@ -317,7 +315,8 @@ class _ThreadItem extends StatelessWidget {
                                   vertical: 2,
                                 ),
                                 decoration: BoxDecoration(
-                                  color: const Color(0xFF4CAF50).withOpacity(0.15),
+                                  color: const Color(0xFF4CAF50)
+                                      .withValues(alpha: 0.15),
                                   borderRadius: BorderRadius.circular(4),
                                 ),
                                 child: const Text(
@@ -347,8 +346,8 @@ class _ThreadItem extends StatelessWidget {
                           style: TextStyle(
                             fontSize: 14,
                             fontWeight: FontWeight.w300,
-                            color: thread.unreadCount > 0 
-                                ? AppColors.textSecondary 
+                            color: thread.unreadCount > 0
+                                ? AppColors.textSecondary
                                 : AppColors.textTertiary,
                           ),
                           maxLines: 1,
@@ -358,9 +357,10 @@ class _ThreadItem extends StatelessWidget {
                       if (!isFriend) ...[
                         const SizedBox(width: 8),
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 6, vertical: 2),
                           decoration: BoxDecoration(
-                            color: Colors.orange.withOpacity(0.15),
+                            color: Colors.orange.withValues(alpha: 0.15),
                             borderRadius: BorderRadius.circular(8),
                           ),
                           child: Row(
@@ -386,7 +386,7 @@ class _ThreadItem extends StatelessWidget {
                       ],
                     ],
                   ),
-                  
+
                   // 倒计时（仅陌生人显示）
                   if (!isFriend) ...[
                     const SizedBox(height: 6),
@@ -406,7 +406,7 @@ class _ThreadItem extends StatelessWidget {
                             fontSize: 12,
                             fontWeight: FontWeight.w300,
                             color: thread.timeRemaining.inHours < 3
-                                ? AppColors.error 
+                                ? AppColors.error
                                 : AppColors.textTertiary,
                           ),
                         ),
@@ -426,7 +426,7 @@ class _ThreadItem extends StatelessWidget {
     if (time == null) return '';
     final now = DateTime.now();
     final diff = now.difference(time);
-    
+
     if (diff.inMinutes < 1) return '刚刚';
     if (diff.inHours < 1) return '${diff.inMinutes}分钟前';
     if (diff.inDays < 1) return '${diff.inHours}小时前';
@@ -437,6 +437,6 @@ class _ThreadItem extends StatelessWidget {
     if (duration.isNegative) return '已过期';
     final hours = duration.inHours;
     final minutes = duration.inMinutes % 60;
-    return '剩余 $hours小时${minutes}分钟';
+    return '剩余 $hours小时$minutes分钟';
   }
 }

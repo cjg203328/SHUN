@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import '../config/theme.dart';
 import '../providers/match_provider.dart';
 import '../providers/chat_provider.dart';
+import '../providers/friend_provider.dart';
 import '../models/models.dart';
 import '../utils/permission_manager.dart';
-import 'app_toast.dart';
 
 class MatchTab extends StatefulWidget {
   const MatchTab({super.key});
@@ -14,11 +15,12 @@ class MatchTab extends StatefulWidget {
   State<MatchTab> createState() => _MatchTabState();
 }
 
-class _MatchTabState extends State<MatchTab> with SingleTickerProviderStateMixin {
+class _MatchTabState extends State<MatchTab>
+    with SingleTickerProviderStateMixin {
   late AnimationController _orbController;
   final TextEditingController _greetingController = TextEditingController();
   String? _selectedQuickGreeting;
-  
+
   final List<String> _quickGreetings = ['嗨', '你好', '在吗', '聊聊', '失眠了', '晚安'];
 
   @override
@@ -47,25 +49,26 @@ class _MatchTabState extends State<MatchTab> with SingleTickerProviderStateMixin
             if (matchProvider.matchedUser != null) {
               return _buildFullScreenMatchCard(matchProvider);
             }
-            
+
             // 未匹配时显示匹配界面
             return Center(
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 40),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 20, vertical: 40),
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
                     // 顶部情感化文案 + 次数显示
                     _buildHeader(matchProvider),
-                    
+
                     const SizedBox(height: 60),
-                    
+
                     // 光球
                     _buildMatchOrb(matchProvider),
-                    
+
                     const SizedBox(height: 60),
-                    
+
                     // 按钮
                     _buildMatchButton(matchProvider),
                   ],
@@ -96,7 +99,7 @@ class _MatchTabState extends State<MatchTab> with SingleTickerProviderStateMixin
           textAlign: TextAlign.center,
         ),
         const SizedBox(height: 16),
-        
+
         // 副标题
         Text(
           '此刻有人也在等待相遇',
@@ -109,9 +112,9 @@ class _MatchTabState extends State<MatchTab> with SingleTickerProviderStateMixin
           ),
           textAlign: TextAlign.center,
         ),
-        
+
         const SizedBox(height: 48),
-        
+
         // 次数显示区域
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 20),
@@ -142,16 +145,16 @@ class _MatchTabState extends State<MatchTab> with SingleTickerProviderStateMixin
             ],
           ),
         ),
-        
+
         const SizedBox(height: 8),
-        
+
         // 说明文字
         Text(
           provider.matchCount > 0 ? '今日剩余机会' : '明日 9:00 重置',
           style: TextStyle(
             fontSize: 12,
             fontWeight: FontWeight.w300,
-            color: AppColors.textTertiary.withOpacity(0.6),
+            color: AppColors.textTertiary.withValues(alpha: 0.6),
             letterSpacing: 2,
           ),
           textAlign: TextAlign.center,
@@ -171,23 +174,28 @@ class _MatchTabState extends State<MatchTab> with SingleTickerProviderStateMixin
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               gradient: RadialGradient(
-                colors: provider.isMatching ? [
-                  AppColors.textPrimary.withOpacity(0.15),
-                  AppColors.textPrimary.withOpacity(0.08),
-                  AppColors.textPrimary.withOpacity(0.03),
-                ] : [
-                  AppColors.textPrimary.withOpacity(0.08),
-                  AppColors.textPrimary.withOpacity(0.03),
-                  AppColors.textPrimary.withOpacity(0.01),
-                ],
+                colors: provider.isMatching
+                    ? [
+                        AppColors.textPrimary.withValues(alpha: 0.15),
+                        AppColors.textPrimary.withValues(alpha: 0.08),
+                        AppColors.textPrimary.withValues(alpha: 0.03),
+                      ]
+                    : [
+                        AppColors.textPrimary.withValues(alpha: 0.08),
+                        AppColors.textPrimary.withValues(alpha: 0.03),
+                        AppColors.textPrimary.withValues(alpha: 0.01),
+                      ],
               ),
-              boxShadow: provider.isMatching ? [
-                BoxShadow(
-                  color: AppColors.textPrimary.withOpacity(0.15 * _orbController.value),
-                  blurRadius: 60,
-                  spreadRadius: 20,
-                ),
-              ] : null,
+              boxShadow: provider.isMatching
+                  ? [
+                      BoxShadow(
+                        color: AppColors.textPrimary
+                            .withValues(alpha: 0.15 * _orbController.value),
+                        blurRadius: 60,
+                        spreadRadius: 20,
+                      ),
+                    ]
+                  : null,
             ),
           );
         },
@@ -200,7 +208,7 @@ class _MatchTabState extends State<MatchTab> with SingleTickerProviderStateMixin
     final user = provider.matchedUser!;
     final isOnline = user.isOnline;
     final hasLocation = user.hasLocationPermission;
-    
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
       child: Column(
@@ -226,7 +234,7 @@ class _MatchTabState extends State<MatchTab> with SingleTickerProviderStateMixin
                     vertical: 3,
                   ),
                   decoration: BoxDecoration(
-                    color: const Color(0xFF4CAF50).withOpacity(0.15),
+                    color: const Color(0xFF4CAF50).withValues(alpha: 0.15),
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: Row(
@@ -255,9 +263,9 @@ class _MatchTabState extends State<MatchTab> with SingleTickerProviderStateMixin
               ],
             ],
           ),
-          
+
           const SizedBox(height: 32),
-          
+
           // 用户信息卡片（紧凑版）
           Container(
             padding: const EdgeInsets.all(24),
@@ -265,18 +273,20 @@ class _MatchTabState extends State<MatchTab> with SingleTickerProviderStateMixin
               color: AppColors.cardBg,
               borderRadius: BorderRadius.circular(20),
               border: Border.all(
-                color: isOnline 
-                    ? const Color(0xFF4CAF50).withOpacity(0.2)
+                color: isOnline
+                    ? const Color(0xFF4CAF50).withValues(alpha: 0.2)
                     : AppColors.white08,
               ),
               // 在线用户：微妙的发光效果
-              boxShadow: isOnline ? [
-                BoxShadow(
-                  color: const Color(0xFF4CAF50).withOpacity(0.1),
-                  blurRadius: 20,
-                  spreadRadius: 0,
-                ),
-              ] : null,
+              boxShadow: isOnline
+                  ? [
+                      BoxShadow(
+                        color: const Color(0xFF4CAF50).withValues(alpha: 0.1),
+                        blurRadius: 20,
+                        spreadRadius: 0,
+                      ),
+                    ]
+                  : null,
             ),
             child: Column(
               children: [
@@ -291,13 +301,16 @@ class _MatchTabState extends State<MatchTab> with SingleTickerProviderStateMixin
                         color: AppColors.white08,
                         border: Border.all(
                           color: isOnline
-                              ? const Color(0xFF4CAF50).withOpacity(0.3)
+                              ? const Color(0xFF4CAF50).withValues(alpha: 0.3)
                               : AppColors.white05,
                           width: 2,
                         ),
                       ),
-                      child: const Center(
-                        child: Text('👤', style: TextStyle(fontSize: 40)),
+                      child: Center(
+                        child: Text(
+                          user.avatar ?? '👤',
+                          style: const TextStyle(fontSize: 40),
+                        ),
                       ),
                     ),
                     // 在线绿点
@@ -320,27 +333,28 @@ class _MatchTabState extends State<MatchTab> with SingleTickerProviderStateMixin
                       ),
                   ],
                 ),
-                
+
                 const SizedBox(height: 16),
-                
+
                 // 昵称
-                const Text(
-                  '匿名',
-                  style: TextStyle(
+                Text(
+                  user.nickname,
+                  style: const TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.w300,
                     color: AppColors.textPrimary,
                   ),
                 ),
-                
+
                 const SizedBox(height: 12),
-                
+
                 // 状态和距离
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 16, vertical: 6),
                       decoration: BoxDecoration(
                         color: AppColors.white08,
                         borderRadius: BorderRadius.circular(16),
@@ -381,16 +395,16 @@ class _MatchTabState extends State<MatchTab> with SingleTickerProviderStateMixin
               ],
             ),
           ),
-          
+
           const SizedBox(height: 24),
-          
+
           // 招呼语区域（紧凑版）
           Expanded(
             child: _buildCompactGreetingSection(),
           ),
-          
+
           const SizedBox(height: 16),
-          
+
           // 底部按钮
           _buildActionButtons(provider),
         ],
@@ -414,7 +428,7 @@ class _MatchTabState extends State<MatchTab> with SingleTickerProviderStateMixin
           ),
         ),
         const SizedBox(height: 16),
-        
+
         // 快捷语（仅在未自定义时显示）
         if (_greetingController.text.isEmpty)
           Wrap(
@@ -422,7 +436,7 @@ class _MatchTabState extends State<MatchTab> with SingleTickerProviderStateMixin
             runSpacing: 8,
             children: _quickGreetings.map((greeting) {
               final isSelected = _selectedQuickGreeting == greeting;
-              
+
               return GestureDetector(
                 onTap: () {
                   setState(() {
@@ -430,15 +444,12 @@ class _MatchTabState extends State<MatchTab> with SingleTickerProviderStateMixin
                   });
                 },
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                   decoration: BoxDecoration(
-                    color: isSelected 
-                        ? AppColors.white12 
-                        : AppColors.white05,
+                    color: isSelected ? AppColors.white12 : AppColors.white05,
                     border: Border.all(
-                      color: isSelected 
-                          ? AppColors.white20 
-                          : AppColors.white08,
+                      color: isSelected ? AppColors.white20 : AppColors.white08,
                     ),
                     borderRadius: BorderRadius.circular(10),
                   ),
@@ -447,8 +458,8 @@ class _MatchTabState extends State<MatchTab> with SingleTickerProviderStateMixin
                     style: TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.w300,
-                      color: isSelected 
-                          ? AppColors.textPrimary 
+                      color: isSelected
+                          ? AppColors.textPrimary
                           : AppColors.textSecondary,
                     ),
                   ),
@@ -456,11 +467,11 @@ class _MatchTabState extends State<MatchTab> with SingleTickerProviderStateMixin
               );
             }).toList(),
           ),
-        
+
         // 自定义输入（仅在未选择快捷语时显示）
         if (_selectedQuickGreeting == null) ...[
           const SizedBox(height: 12),
-          
+
           // 自定义输入框
           TextField(
             controller: _greetingController,
@@ -500,7 +511,7 @@ class _MatchTabState extends State<MatchTab> with SingleTickerProviderStateMixin
             },
           ),
         ],
-        
+
         // 已选择快捷语时，显示切换按钮
         if (_selectedQuickGreeting != null) ...[
           const SizedBox(height: 12),
@@ -527,6 +538,7 @@ class _MatchTabState extends State<MatchTab> with SingleTickerProviderStateMixin
     );
   }
 
+  // ignore: unused_element
   Widget _buildGreetingSection() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -544,7 +556,8 @@ class _MatchTabState extends State<MatchTab> with SingleTickerProviderStateMixin
                 letterSpacing: 1,
               ),
             ),
-            if (_greetingController.text.isEmpty && _selectedQuickGreeting == null)
+            if (_greetingController.text.isEmpty &&
+                _selectedQuickGreeting == null)
               Text(
                 '选一个或自己写',
                 style: TextStyle(
@@ -557,7 +570,7 @@ class _MatchTabState extends State<MatchTab> with SingleTickerProviderStateMixin
           ],
         ),
         const SizedBox(height: 20),
-        
+
         // 快捷语（仅在未自定义时显示）
         if (_greetingController.text.isEmpty)
           Wrap(
@@ -565,7 +578,7 @@ class _MatchTabState extends State<MatchTab> with SingleTickerProviderStateMixin
             runSpacing: 10,
             children: _quickGreetings.map((greeting) {
               final isSelected = _selectedQuickGreeting == greeting;
-              
+
               return GestureDetector(
                 onTap: () {
                   setState(() {
@@ -573,15 +586,12 @@ class _MatchTabState extends State<MatchTab> with SingleTickerProviderStateMixin
                   });
                 },
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
                   decoration: BoxDecoration(
-                    color: isSelected 
-                        ? AppColors.white12 
-                        : AppColors.white05,
+                    color: isSelected ? AppColors.white12 : AppColors.white05,
                     border: Border.all(
-                      color: isSelected 
-                          ? AppColors.white20 
-                          : AppColors.white08,
+                      color: isSelected ? AppColors.white20 : AppColors.white08,
                     ),
                     borderRadius: BorderRadius.circular(12),
                   ),
@@ -590,8 +600,8 @@ class _MatchTabState extends State<MatchTab> with SingleTickerProviderStateMixin
                     style: TextStyle(
                       fontSize: 15,
                       fontWeight: FontWeight.w300,
-                      color: isSelected 
-                          ? AppColors.textPrimary 
+                      color: isSelected
+                          ? AppColors.textPrimary
                           : AppColors.textSecondary,
                     ),
                   ),
@@ -599,12 +609,11 @@ class _MatchTabState extends State<MatchTab> with SingleTickerProviderStateMixin
               );
             }).toList(),
           ),
-        
+
         // 自定义输入提示（仅在未选择快捷语时显示）
         if (_selectedQuickGreeting == null) ...[
-          if (_greetingController.text.isEmpty)
-            const SizedBox(height: 20),
-          
+          if (_greetingController.text.isEmpty) const SizedBox(height: 20),
+
           if (_greetingController.text.isEmpty)
             GestureDetector(
               onTap: () {
@@ -639,9 +648,9 @@ class _MatchTabState extends State<MatchTab> with SingleTickerProviderStateMixin
                 ),
               ),
             ),
-          
+
           const SizedBox(height: 16),
-          
+
           // 自定义输入框
           TextField(
             controller: _greetingController,
@@ -670,7 +679,7 @@ class _MatchTabState extends State<MatchTab> with SingleTickerProviderStateMixin
             },
           ),
         ],
-        
+
         // 已选择快捷语时，显示切换按钮
         if (_selectedQuickGreeting != null) ...[
           const SizedBox(height: 20),
@@ -706,8 +715,9 @@ class _MatchTabState extends State<MatchTab> with SingleTickerProviderStateMixin
     } else {
       buttonText = '开始匹配';
     }
-    
-    final showLocationTip = PermissionManager.getSessionLocationPermission() == false;
+
+    final showLocationTip =
+        PermissionManager.getSessionLocationPermission() == false;
 
     return Column(
       children: [
@@ -720,20 +730,23 @@ class _MatchTabState extends State<MatchTab> with SingleTickerProviderStateMixin
                     if (provider.isMatching) {
                       provider.cancelMatch();
                     } else {
-                      await PermissionManager.requestLocationPermission(context);
+                      await PermissionManager.requestLocationPermission(
+                          context);
                       if (!mounted) return;
 
                       // 刷新按钮下方提示，避免反复弹出底部浮层覆盖交互按钮
                       setState(() {});
-                      provider.startMatch();
-                    }
-                  },
+                       final blockedUserIds =
+                           context.read<FriendProvider>().blockedUserIds;
+                       provider.startMatch(excludedUserIds: blockedUserIds);
+                     }
+                   },
             style: ElevatedButton.styleFrom(
               padding: const EdgeInsets.symmetric(vertical: 16),
               backgroundColor: provider.isMatching
                   ? AppColors.white12
-                  : provider.matchCount > 0 
-                      ? AppColors.textPrimary 
+                  : provider.matchCount > 0
+                      ? AppColors.textPrimary
                       : AppColors.white05,
               foregroundColor: provider.isMatching
                   ? AppColors.textPrimary
@@ -770,10 +783,10 @@ class _MatchTabState extends State<MatchTab> with SingleTickerProviderStateMixin
   }
 
   Widget _buildActionButtons(MatchProvider provider) {
-    final greeting = _greetingController.text.trim().isNotEmpty 
+    final greeting = _greetingController.text.trim().isNotEmpty
         ? _greetingController.text.trim()
         : _selectedQuickGreeting ?? '你好';
-    
+
     return Row(
       children: [
         Expanded(
@@ -813,15 +826,42 @@ class _MatchTabState extends State<MatchTab> with SingleTickerProviderStateMixin
                 expiresAt: DateTime.now().add(const Duration(hours: 24)),
                 intimacyPoints: 0, // 初始亲密度为0
               );
-              
+
               context.read<ChatProvider>().addThread(thread);
               context.read<ChatProvider>().sendMessage(thread.id, greeting);
-              
+
               // 清除匹配卡片，留在匹配页，不跳转
               provider.clearMatchedUser();
-              
-              // 显示提示
-              AppToast.show(context, '招呼已发送');
+
+              // 显示可操作回调，用户能直接进入会话
+              ScaffoldMessenger.of(context).hideCurrentSnackBar();
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(
+                    '已向 ${thread.otherUser.nickname} 发送招呼',
+                    style: const TextStyle(
+                      fontSize: 14,
+                      color: AppColors.textPrimary,
+                      fontWeight: FontWeight.w300,
+                    ),
+                  ),
+                  backgroundColor: AppColors.white12,
+                  behavior: SnackBarBehavior.floating,
+                  margin:
+                      const EdgeInsets.only(left: 20, right: 20, bottom: 84),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  action: SnackBarAction(
+                    label: '去聊天',
+                    textColor: AppColors.brandBlue,
+                    onPressed: () {
+                      context.push('/chat/${thread.id}');
+                    },
+                  ),
+                  duration: const Duration(seconds: 3),
+                ),
+              );
             },
             style: ElevatedButton.styleFrom(
               padding: const EdgeInsets.symmetric(vertical: 14),

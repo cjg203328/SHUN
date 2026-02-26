@@ -8,13 +8,14 @@ import '../widgets/app_toast.dart';
 
 class ImageUploadService {
   static final ImagePicker _picker = ImagePicker();
-  
+
   // 存储键
   static const String _avatarPathKey = 'user_avatar_path';
   static const String _backgroundPathKey = 'user_background_path';
-  
+
   /// 显示图片来源选择对话框（主流APP样式）
-  static Future<ImageSource?> showImageSourceDialog(BuildContext context) async {
+  static Future<ImageSource?> showImageSourceDialog(
+      BuildContext context) async {
     return await showDialog<ImageSource>(
       context: context,
       builder: (context) => Dialog(
@@ -33,13 +34,13 @@ class ImageUploadService {
                 style: TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.w400,
-                  color: Colors.white.withOpacity(0.9),
+                  color: Colors.white.withValues(alpha: 0.9),
                 ),
               ),
             ),
-            
+
             const Divider(height: 1, color: Color(0xFF2E2E2E)),
-            
+
             // 拍照
             InkWell(
               onTap: () => Navigator.pop(context, ImageSource.camera),
@@ -51,7 +52,7 @@ class ImageUploadService {
                     Icon(
                       Icons.camera_alt_outlined,
                       size: 22,
-                      color: Colors.white.withOpacity(0.8),
+                      color: Colors.white.withValues(alpha: 0.8),
                     ),
                     const SizedBox(width: 12),
                     Text(
@@ -59,16 +60,16 @@ class ImageUploadService {
                       style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.w300,
-                        color: Colors.white.withOpacity(0.9),
+                        color: Colors.white.withValues(alpha: 0.9),
                       ),
                     ),
                   ],
                 ),
               ),
             ),
-            
+
             const Divider(height: 1, color: Color(0xFF2E2E2E)),
-            
+
             // 从相册选择
             InkWell(
               onTap: () => Navigator.pop(context, ImageSource.gallery),
@@ -80,7 +81,7 @@ class ImageUploadService {
                     Icon(
                       Icons.photo_library_outlined,
                       size: 22,
-                      color: Colors.white.withOpacity(0.8),
+                      color: Colors.white.withValues(alpha: 0.8),
                     ),
                     const SizedBox(width: 12),
                     Text(
@@ -88,16 +89,16 @@ class ImageUploadService {
                       style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.w300,
-                        color: Colors.white.withOpacity(0.9),
+                        color: Colors.white.withValues(alpha: 0.9),
                       ),
                     ),
                   ],
                 ),
               ),
             ),
-            
+
             const Divider(height: 1, color: Color(0xFF2E2E2E)),
-            
+
             // 取消
             InkWell(
               onTap: () => Navigator.pop(context),
@@ -108,7 +109,7 @@ class ImageUploadService {
                   style: TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.w300,
-                    color: Colors.white.withOpacity(0.6),
+                    color: Colors.white.withValues(alpha: 0.6),
                   ),
                 ),
               ),
@@ -118,13 +119,14 @@ class ImageUploadService {
       ),
     );
   }
-  
+
   /// 选择头像（完整流程）
   static Future<File?> pickAvatar(BuildContext context) async {
     // 1. 显示来源选择
     final source = await showImageSourceDialog(context);
+    if (!context.mounted) return null;
     if (source == null) return null;
-    
+
     // 2. 请求权限
     bool hasPermission = false;
     if (source == ImageSource.camera) {
@@ -132,14 +134,14 @@ class ImageUploadService {
     } else {
       hasPermission = await PermissionManager.requestPhotosPermission(context);
     }
-    
+
     if (!hasPermission) {
       if (context.mounted) {
         AppToast.show(context, '需要相应权限才能选择图片');
       }
       return null;
     }
-    
+
     // 3. 选择图片
     try {
       final XFile? image = await _picker.pickImage(
@@ -148,15 +150,15 @@ class ImageUploadService {
         maxHeight: 1024,
         imageQuality: 90,
       );
-      
+
       if (image == null) return null;
-      
+
       // 4. 保存到应用目录
       final savedFile = await _saveToAppDirectory(File(image.path), 'avatar');
-      
+
       // 5. 持久化存储路径
       await _saveAvatarPath(savedFile.path);
-      
+
       return savedFile;
     } catch (e) {
       print('选择头像失败: $e');
@@ -166,13 +168,14 @@ class ImageUploadService {
       return null;
     }
   }
-  
+
   /// 选择背景图片（完整流程）
   static Future<File?> pickBackground(BuildContext context) async {
     // 1. 显示来源选择
     final source = await showImageSourceDialog(context);
+    if (!context.mounted) return null;
     if (source == null) return null;
-    
+
     // 2. 请求权限
     bool hasPermission = false;
     if (source == ImageSource.camera) {
@@ -180,14 +183,14 @@ class ImageUploadService {
     } else {
       hasPermission = await PermissionManager.requestPhotosPermission(context);
     }
-    
+
     if (!hasPermission) {
       if (context.mounted) {
         AppToast.show(context, '需要相应权限才能选择图片');
       }
       return null;
     }
-    
+
     // 3. 选择图片
     try {
       final XFile? image = await _picker.pickImage(
@@ -196,15 +199,16 @@ class ImageUploadService {
         maxHeight: 1080,
         imageQuality: 85,
       );
-      
+
       if (image == null) return null;
-      
+
       // 4. 保存到应用目录
-      final savedFile = await _saveToAppDirectory(File(image.path), 'background');
-      
+      final savedFile =
+          await _saveToAppDirectory(File(image.path), 'background');
+
       // 5. 持久化存储路径
       await _saveBackgroundPath(savedFile.path);
-      
+
       return savedFile;
     } catch (e) {
       print('选择背景失败: $e');
@@ -214,17 +218,17 @@ class ImageUploadService {
       return null;
     }
   }
-  
+
   /// 保存图片到应用目录
   static Future<File> _saveToAppDirectory(File sourceFile, String type) async {
     final appDir = await getApplicationDocumentsDirectory();
     final timestamp = DateTime.now().millisecondsSinceEpoch;
     final fileName = '${type}_$timestamp.jpg';
     final targetPath = '${appDir.path}/$fileName';
-    
+
     // 复制文件
     final targetFile = await sourceFile.copy(targetPath);
-    
+
     // 删除旧文件（如果存在）
     if (type == 'avatar') {
       final oldPath = await getAvatarPath();
@@ -245,34 +249,34 @@ class ImageUploadService {
         }
       }
     }
-    
+
     return targetFile;
   }
-  
+
   /// 保存头像路径
   static Future<void> _saveAvatarPath(String path) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_avatarPathKey, path);
   }
-  
+
   /// 保存背景路径
   static Future<void> _saveBackgroundPath(String path) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_backgroundPathKey, path);
   }
-  
+
   /// 获取头像路径
   static Future<String?> getAvatarPath() async {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getString(_avatarPathKey);
   }
-  
+
   /// 获取背景路径
   static Future<String?> getBackgroundPath() async {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getString(_backgroundPathKey);
   }
-  
+
   /// 清除头像
   static Future<void> clearAvatar() async {
     final path = await getAvatarPath();
@@ -283,11 +287,11 @@ class ImageUploadService {
         print('删除头像失败: $e');
       }
     }
-    
+
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_avatarPathKey);
   }
-  
+
   /// 清除背景
   static Future<void> clearBackground() async {
     final path = await getBackgroundPath();
@@ -298,18 +302,18 @@ class ImageUploadService {
         print('删除背景失败: $e');
       }
     }
-    
+
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_backgroundPathKey);
   }
-  
+
   /// 检查文件是否存在
   static Future<bool> avatarExists() async {
     final path = await getAvatarPath();
     if (path == null) return false;
     return await File(path).exists();
   }
-  
+
   /// 检查背景是否存在
   static Future<bool> backgroundExists() async {
     final path = await getBackgroundPath();
@@ -317,4 +321,3 @@ class ImageUploadService {
     return await File(path).exists();
   }
 }
-
