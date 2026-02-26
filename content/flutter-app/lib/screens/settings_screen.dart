@@ -283,7 +283,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       builder: (context) => Dialog(
         backgroundColor: AppColors.cardBg,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(20),
+          borderRadius: AppOverlay.dialogBorderRadius,
         ),
         child: Padding(
           padding: const EdgeInsets.all(24),
@@ -383,7 +383,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       builder: (context) => Dialog(
         backgroundColor: AppColors.cardBg,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(20),
+          borderRadius: AppOverlay.dialogBorderRadius,
         ),
         child: Padding(
           padding: const EdgeInsets.all(24),
@@ -523,7 +523,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       builder: (context) => Dialog(
         backgroundColor: AppColors.cardBg,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(20),
+          borderRadius: AppOverlay.dialogBorderRadius,
         ),
         child: Padding(
           padding: const EdgeInsets.all(24),
@@ -675,7 +675,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       builder: (context) => Dialog(
         backgroundColor: AppColors.cardBg,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(20),
+          borderRadius: AppOverlay.dialogBorderRadius,
         ),
         child: Padding(
           padding: const EdgeInsets.all(24),
@@ -735,14 +735,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
+      sheetAnimationStyle: AppDialog.sheetAnimationStyle,
       builder: (context) => Container(
         constraints: BoxConstraints(
           maxHeight: MediaQuery.of(context).size.height * 0.72,
         ),
-        decoration: BoxDecoration(
-          color: AppColors.cardBg,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-        ),
+        decoration: AppDialog.sheetDecoration(),
         child: Column(
           children: [
             Padding(
@@ -891,15 +889,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
+      sheetAnimationStyle: AppDialog.sheetAnimationStyle,
       builder: (sheetContext) => Padding(
         padding: EdgeInsets.only(
           bottom: MediaQuery.of(sheetContext).viewInsets.bottom,
         ),
         child: Container(
-          decoration: BoxDecoration(
-            color: AppColors.cardBg,
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-          ),
+          decoration: AppDialog.sheetDecoration(),
           padding: const EdgeInsets.all(24),
           child: SafeArea(
             child: Column(
@@ -1000,15 +996,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
+      sheetAnimationStyle: AppDialog.sheetAnimationStyle,
       builder: (sheetContext) => Padding(
         padding: EdgeInsets.only(
           bottom: MediaQuery.of(sheetContext).viewInsets.bottom,
         ),
         child: Container(
-          decoration: BoxDecoration(
-            color: AppColors.cardBg,
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-          ),
+          decoration: AppDialog.sheetDecoration(),
           padding: const EdgeInsets.all(24),
           child: SafeArea(
             child: Column(
@@ -1123,7 +1117,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       builder: (context) => Dialog(
         backgroundColor: AppColors.cardBg,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(20),
+          borderRadius: AppOverlay.dialogBorderRadius,
         ),
         child: Padding(
           padding: const EdgeInsets.all(24),

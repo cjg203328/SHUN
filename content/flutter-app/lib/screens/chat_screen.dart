@@ -47,20 +47,15 @@ class _ChatScreenState extends State<ChatScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _chatProvider = context.read<ChatProvider>();
       _chatProvider?.addListener(_handleChatProviderChanged);
+      _chatProvider?.setActiveThread(widget.threadId);
 
-      // 不要立即清零未读数，等用户滚动到底部或停留一段时间后再清零
+      // 进入会话即视为已查看，未读立即清零
       final thread = _chatProvider?.getThread(widget.threadId);
       if (thread != null) {
         _lastIntimacyPoints = thread.intimacyPoints;
         _lastMessageCount =
             _chatProvider?.getMessages(widget.threadId).length ?? 0;
-
-        // 延迟1秒后清零未读数（给用户时间看到消息）
-        Future.delayed(const Duration(seconds: 1), () {
-          if (mounted) {
-            _chatProvider?.markAsRead(widget.threadId);
-          }
-        });
+        _chatProvider?.markAsRead(widget.threadId);
       }
     });
   }
@@ -68,6 +63,7 @@ class _ChatScreenState extends State<ChatScreen> {
   @override
   void dispose() {
     _chatProvider?.removeListener(_handleChatProviderChanged);
+    _chatProvider?.clearActiveThread(widget.threadId);
     _inputController.dispose();
     _scrollController.dispose();
     super.dispose();
@@ -112,6 +108,10 @@ class _ChatScreenState extends State<ChatScreen> {
         _chatProvider?.getMessages(widget.threadId).length ?? 0;
     if (messageCount != _lastMessageCount) {
       _lastMessageCount = messageCount;
+      // 只要用户仍停留在当前会话页面，新增消息立刻按已读处理
+      if ((thread?.unreadCount ?? 0) > 0) {
+        _chatProvider?.markAsRead(widget.threadId);
+      }
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) {
           _scrollToBottom();
@@ -216,7 +216,7 @@ class _ChatScreenState extends State<ChatScreen> {
                   } else if (value == 'add_friend') {
                     _showAddFriendDialog(context, thread.otherUser);
                   } else if (value == 'profile') {
-                    _showUserProfile(context, thread.otherUser);
+                    _showUserProfile(context, thread);
                   } else if (value == 'remark') {
                     _showSetRemarkDialog(context, thread.otherUser.id);
                   } else if (value == 'unfollow') {
@@ -232,11 +232,10 @@ class _ChatScreenState extends State<ChatScreen> {
                   final canAddFriend = !isFriend && !isBlocked && thread.canAddFriend;
 
                   return [
-                    if (thread.hasUnlockedProfile)
-                      PopupMenuItem(
-                        value: 'profile',
-                        child: _buildMenuItem(Icons.person_outline, '个人主页'),
-                      ),
+                    PopupMenuItem(
+                      value: 'profile',
+                      child: _buildMenuItem(Icons.person_outline, '个人主页'),
+                    ),
                     if (canCall)
                       PopupMenuItem(
                         value: 'call',
@@ -562,6 +561,7 @@ class _ChatScreenState extends State<ChatScreen> {
       backgroundColor: Colors.transparent,
       isDismissible: false,
       enableDrag: false,
+      sheetAnimationStyle: AppDialog.sheetAnimationStyle,
       builder: (context) => _VoiceCallSheet(user: user),
     );
   }
@@ -573,17 +573,13 @@ class _ChatScreenState extends State<ChatScreen> {
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
+      sheetAnimationStyle: AppDialog.sheetAnimationStyle,
       builder: (context) => Padding(
         padding: EdgeInsets.only(
           bottom: MediaQuery.of(context).viewInsets.bottom,
         ),
         child: Container(
-          decoration: BoxDecoration(
-            color: AppColors.cardBg,
-            borderRadius: const BorderRadius.vertical(
-              top: Radius.circular(24),
-            ),
-          ),
+          decoration: AppDialog.sheetDecoration(),
           padding: const EdgeInsets.all(24),
           child: SafeArea(
             child: Column(
@@ -709,132 +705,207 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
-  void _showUserProfile(BuildContext context, User user) {
+  void _showUserProfile(BuildContext context, ChatThread thread) {
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
-      builder: (context) => Container(
-        height: MediaQuery.of(context).size.height * 0.88,
-        decoration: const BoxDecoration(
-          color: AppColors.pureBlack,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-        ),
-        child: Column(
-          children: [
-            Stack(
+      sheetAnimationStyle: AppDialog.sheetAnimationStyle,
+      builder: (sheetContext) => Consumer2<ChatProvider, FriendProvider>(
+        builder: (sheetContext, chatProvider, friendProvider, child) {
+          final currentThread = chatProvider.getThread(thread.id) ?? thread;
+          final user = currentThread.otherUser;
+          final isFriend = friendProvider.isFriend(user.id);
+          final isBlocked = friendProvider.isBlocked(user.id);
+          final canOpenFullProfile = currentThread.hasUnlockedProfile;
+          final canFollow = !isFriend && !isBlocked && currentThread.canAddFriend;
+
+          final pointsToUnlock = _getPointsToNextUnlock(currentThread.intimacyPoints);
+          final chatMinutes = DateTime.now().difference(currentThread.createdAt).inMinutes;
+          final minutesToUnlock = chatMinutes >= 3 ? 0 : 3 - chatMinutes;
+
+          return Container(
+            height: MediaQuery.of(sheetContext).size.height * 0.88,
+            decoration: AppDialog.sheetDecoration(color: AppColors.pureBlack),
+            child: Column(
               children: [
-                Container(
-                  height: 220,
-                  width: double.infinity,
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: [
-                        AppColors.white12,
-                        AppColors.white05,
+                Stack(
+                  children: [
+                    Container(
+                      height: 220,
+                      width: double.infinity,
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: [
+                            canOpenFullProfile ? AppColors.white12 : AppColors.white08,
+                            AppColors.white05,
+                          ],
+                        ),
+                      ),
+                      alignment: Alignment.bottomCenter,
+                      padding: const EdgeInsets.only(bottom: 22),
+                      child: Container(
+                        width: 92,
+                        height: 92,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: AppColors.white08,
+                          border: Border.all(color: AppColors.pureBlack, width: 3),
+                        ),
+                        child: Center(
+                          child: Text(
+                            user.avatar ?? '👤',
+                            style: const TextStyle(fontSize: 42),
+                          ),
+                        ),
+                      ),
+                    ),
+                    Positioned(
+                      right: 8,
+                      top: 8,
+                      child: IconButton(
+                        onPressed: () => Navigator.pop(sheetContext),
+                        icon: const Icon(Icons.close, color: AppColors.textPrimary),
+                      ),
+                    ),
+                  ],
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 18, 20, 0),
+                  child: Column(
+                    children: [
+                      Text(
+                        user.nickname,
+                        style: const TextStyle(
+                          fontSize: 22,
+                          fontWeight: FontWeight.w300,
+                          color: AppColors.textPrimary,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        user.status,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w300,
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 18),
+                if (!canOpenFullProfile)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    child: Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: AppColors.white05,
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: Text(
+                        '继续互动后可查看完整主页\n还差$pointsToUnlock分${minutesToUnlock > 0 ? '，至少再聊$minutesToUnlock分钟' : ''}',
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w300,
+                          color: AppColors.textSecondary,
+                          height: 1.6,
+                        ),
+                      ),
+                    ),
+                  )
+                else ...[
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: _buildProfileInfoCard(
+                            title: '在线状态',
+                            value: user.isOnline ? '在线中' : '最近在线',
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: _buildProfileInfoCard(
+                            title: '距离',
+                            value: user.distance,
+                          ),
+                        ),
                       ],
                     ),
                   ),
-                  alignment: Alignment.bottomCenter,
-                  padding: const EdgeInsets.only(bottom: 22),
-                  child: Container(
-                    width: 92,
-                    height: 92,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: AppColors.white08,
-                      border: Border.all(color: AppColors.pureBlack, width: 3),
+                  const SizedBox(height: 14),
+                  Expanded(
+                    child: Container(
+                      width: double.infinity,
+                      margin: const EdgeInsets.symmetric(horizontal: 20),
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: AppColors.white05,
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: const Text(
+                        '主页已解锁：可查看背景、状态与基础资料。持续互动可解锁互关和语音通话。',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w300,
+                          color: AppColors.textSecondary,
+                          height: 1.6,
+                        ),
+                      ),
                     ),
-                    child: Center(
+                  ),
+                ],
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 12, 20, 18),
+                  child: SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: canFollow
+                          ? () {
+                              Navigator.pop(sheetContext);
+                              _showAddFriendDialog(context, user);
+                            }
+                          : null,
+                      style: ElevatedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        backgroundColor: canFollow
+                            ? AppColors.white12
+                            : AppColors.white05,
+                        foregroundColor: canFollow
+                            ? AppColors.textPrimary
+                            : AppColors.textDisabled,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
                       child: Text(
-                        user.avatar ?? '👤',
-                        style: const TextStyle(fontSize: 42),
+                        isFriend
+                            ? '已互关'
+                            : isBlocked
+                                ? '已拉黑'
+                                : currentThread.canAddFriend
+                                    ? '关注并互关'
+                                    : '继续聊天解锁互关',
+                        style: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w300,
+                        ),
                       ),
                     ),
                   ),
                 ),
-                Positioned(
-                  right: 8,
-                  top: 8,
-                  child: IconButton(
-                    onPressed: () => Navigator.pop(context),
-                    icon: const Icon(Icons.close, color: AppColors.textPrimary),
-                  ),
-                ),
               ],
             ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 18, 20, 0),
-              child: Column(
-                children: [
-                  Text(
-                    user.nickname,
-                    style: const TextStyle(
-                      fontSize: 22,
-                      fontWeight: FontWeight.w300,
-                      color: AppColors.textPrimary,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    user.status,
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w300,
-                      color: AppColors.textSecondary,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 18),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: _buildProfileInfoCard(
-                      title: '在线状态',
-                      value: user.isOnline ? '在线中' : '最近在线',
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: _buildProfileInfoCard(
-                      title: '距离',
-                      value: user.distance,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 18),
-            Expanded(
-              child: Container(
-                width: double.infinity,
-                margin: const EdgeInsets.symmetric(horizontal: 20),
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: AppColors.white05,
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: const Text(
-                  '主页内容已解锁，可查看背景与基本资料。后续将继续完善更多互动页签。',
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w300,
-                    color: AppColors.textSecondary,
-                    height: 1.6,
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
-          ],
-        ),
+          );
+        },
       ),
     );
   }
@@ -881,17 +952,13 @@ class _ChatScreenState extends State<ChatScreen> {
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
+      sheetAnimationStyle: AppDialog.sheetAnimationStyle,
       builder: (context) => Padding(
         padding: EdgeInsets.only(
           bottom: MediaQuery.of(context).viewInsets.bottom,
         ),
         child: Container(
-          decoration: BoxDecoration(
-            color: AppColors.cardBg,
-            borderRadius: const BorderRadius.vertical(
-              top: Radius.circular(24),
-            ),
-          ),
+          decoration: AppDialog.sheetDecoration(),
           padding: const EdgeInsets.all(24),
           child: SafeArea(
             child: Column(
@@ -1008,10 +1075,7 @@ class _VoiceCallSheetState extends State<_VoiceCallSheet> {
   @override
   Widget build(BuildContext context) {
     return Container(
-      decoration: const BoxDecoration(
-        color: AppColors.pureBlack,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
+      decoration: AppDialog.sheetDecoration(color: AppColors.pureBlack),
       padding: const EdgeInsets.fromLTRB(24, 24, 24, 28),
       child: SafeArea(
         child: Column(

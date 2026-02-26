@@ -143,16 +143,12 @@ class FriendsTab extends StatelessWidget {
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
+      sheetAnimationStyle: AppDialog.sheetAnimationStyle,
       builder: (context) => Container(
         constraints: BoxConstraints(
           maxHeight: MediaQuery.of(context).size.height * 0.7,
         ),
-        decoration: BoxDecoration(
-          color: AppColors.cardBg,
-          borderRadius: const BorderRadius.vertical(
-            top: Radius.circular(24),
-          ),
-        ),
+        decoration: AppDialog.sheetDecoration(),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -217,13 +213,9 @@ class FriendsTab extends StatelessWidget {
     final action = await showModalBottomSheet<String>(
       context: context,
       backgroundColor: Colors.transparent,
+      sheetAnimationStyle: AppDialog.sheetAnimationStyle,
       builder: (context) => Container(
-        decoration: BoxDecoration(
-          color: AppColors.cardBg,
-          borderRadius: const BorderRadius.vertical(
-            top: Radius.circular(24),
-          ),
-        ),
+        decoration: AppDialog.sheetDecoration(),
         padding: const EdgeInsets.symmetric(vertical: 16),
         child: SafeArea(
           child: Column(
@@ -334,12 +326,10 @@ class FriendsTab extends StatelessWidget {
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
+      sheetAnimationStyle: AppDialog.sheetAnimationStyle,
       builder: (context) => Container(
         height: MediaQuery.of(context).size.height * 0.82,
-        decoration: const BoxDecoration(
-          color: AppColors.pureBlack,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-        ),
+        decoration: AppDialog.sheetDecoration(color: AppColors.pureBlack),
         child: Column(
           children: [
             Stack(
@@ -468,17 +458,13 @@ class FriendsTab extends StatelessWidget {
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
+      sheetAnimationStyle: AppDialog.sheetAnimationStyle,
       builder: (context) => Padding(
         padding: EdgeInsets.only(
           bottom: MediaQuery.of(context).viewInsets.bottom,
         ),
         child: Container(
-          decoration: BoxDecoration(
-            color: AppColors.cardBg,
-            borderRadius: const BorderRadius.vertical(
-              top: Radius.circular(24),
-            ),
-          ),
+          decoration: AppDialog.sheetDecoration(),
           padding: const EdgeInsets.all(24),
           child: SafeArea(
             child: Column(

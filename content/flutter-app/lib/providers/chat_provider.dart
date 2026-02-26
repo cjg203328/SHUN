@@ -10,6 +10,7 @@ class ChatProvider extends ChangeNotifier {
   final Map<String, ChatThread> _threads = {};
   final Map<String, DateTime> _lastMessageTime = {}; // 记录最后消息时间
   final Map<String, bool> _deletedThreads = {}; // 软删除的会话
+  String? _activeThreadId; // 当前正在浏览的会话
 
   Map<String, ChatThread> get threads {
     // 过滤掉已软删除的会话
@@ -23,6 +24,17 @@ class ChatProvider extends ChangeNotifier {
 
   ChatThread? getThread(String threadId) {
     return _threads[threadId];
+  }
+
+  void setActiveThread(String threadId) {
+    _activeThreadId = threadId;
+    markAsRead(threadId);
+  }
+
+  void clearActiveThread(String threadId) {
+    if (_activeThreadId == threadId) {
+      _activeThreadId = null;
+    }
   }
 
   void addThread(ChatThread thread) {
@@ -185,6 +197,7 @@ class ChatProvider extends ChangeNotifier {
 
     final content = replies[DateTime.now().second % replies.length];
 
+    final isActiveThread = _activeThreadId == threadId;
     final reply = Message(
       id: const Uuid().v4(),
       content: content,
@@ -192,22 +205,50 @@ class ChatProvider extends ChangeNotifier {
       timestamp: DateTime.now(),
       status: MessageStatus.sent,
       type: MessageType.text,
+      isRead: isActiveThread,
     );
 
     _messages[threadId]?.add(reply);
+    _deletedThreads[threadId] = false;
 
     // 增加亲密度
     _addIntimacy(threadId, content, false);
 
-    // 增加未读数
-    _updateThread(threadId,
-        unreadCount: (_threads[threadId]?.unreadCount ?? 0) + 1);
-
-    notifyListeners();
+    if (isActiveThread) {
+      // 正在查看会话时，收到新消息后立即视为已读
+      markAsRead(threadId);
+    } else {
+      // 未在会话页时才计入未读
+      _updateThread(
+        threadId,
+        unreadCount: (_threads[threadId]?.unreadCount ?? 0) + 1,
+      );
+    }
   }
 
   void markAsRead(String threadId) {
-    _updateThread(threadId, unreadCount: 0);
+    final messages = _messages[threadId];
+    var messageUpdated = false;
+
+    if (messages != null) {
+      for (var i = 0; i < messages.length; i++) {
+        final message = messages[i];
+        if (!message.isMe && !message.isRead) {
+          messages[i] = message.copyWith(isRead: true);
+          messageUpdated = true;
+        }
+      }
+    }
+
+    final currentUnread = _threads[threadId]?.unreadCount ?? 0;
+    if (currentUnread > 0) {
+      _updateThread(threadId, unreadCount: 0, notify: false);
+      messageUpdated = true;
+    }
+
+    if (messageUpdated) {
+      notifyListeners();
+    }
   }
 
   void markAsFriend(String threadId) {
@@ -241,6 +282,7 @@ class ChatProvider extends ChangeNotifier {
     bool? isFriend,
     bool? isUnfollowed,
     int? messagesSinceUnfollow,
+    bool notify = true,
   }) {
     final thread = _threads[threadId];
     if (thread == null) return;
@@ -257,7 +299,9 @@ class ChatProvider extends ChangeNotifier {
       messagesSinceUnfollow:
           messagesSinceUnfollow ?? thread.messagesSinceUnfollow,
     );
-    notifyListeners();
+    if (notify) {
+      notifyListeners();
+    }
   }
 
   void deleteThread(String threadId) {

@@ -363,7 +363,7 @@ class _ProfileTabState extends State<ProfileTab> {
         return Dialog(
           backgroundColor: AppColors.cardBg,
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20),
+            borderRadius: AppOverlay.dialogBorderRadius,
           ),
           child: Padding(
             padding: const EdgeInsets.all(24),
@@ -470,7 +470,7 @@ class _ProfileTabState extends State<ProfileTab> {
       builder: (context) => Dialog(
         backgroundColor: AppColors.cardBg,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(20),
+          borderRadius: AppOverlay.dialogBorderRadius,
         ),
         child: Padding(
           padding: const EdgeInsets.symmetric(vertical: 20),

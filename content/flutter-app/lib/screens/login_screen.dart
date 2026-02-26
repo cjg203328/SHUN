@@ -70,14 +70,10 @@ class _LoginScreenState extends State<LoginScreen> {
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
+      sheetAnimationStyle: AppDialog.sheetAnimationStyle,
       builder: (context) => Container(
         height: MediaQuery.of(context).size.height * 0.8,
-        decoration: BoxDecoration(
-          color: AppColors.cardBg,
-          borderRadius: const BorderRadius.vertical(
-            top: Radius.circular(24),
-          ),
-        ),
+        decoration: AppDialog.sheetDecoration(),
         child: Column(
           children: [
             // 标题栏

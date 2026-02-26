@@ -29,6 +29,28 @@ class AppColors {
   static const white20 = Color(0x33FFFFFF);
 }
 
+class AppOverlay {
+  static const BorderRadius sheetBorderRadius =
+      BorderRadius.vertical(top: Radius.circular(24));
+  static final BorderRadius dialogBorderRadius = BorderRadius.circular(22);
+  static const List<BoxShadow> softShadow = [
+    BoxShadow(
+      color: Color(0x66000000),
+      blurRadius: 28,
+      offset: Offset(0, -6),
+    ),
+    BoxShadow(
+      color: Color(0x33000000),
+      blurRadius: 10,
+      offset: Offset(0, -2),
+    ),
+  ];
+  static final AnimationStyle sheetAnimationStyle = AnimationStyle(
+    duration: Duration(milliseconds: 280),
+    reverseDuration: Duration(milliseconds: 220),
+  );
+}
+
 class AppTheme {
   static ThemeData get darkTheme {
     return ThemeData(
@@ -36,6 +58,30 @@ class AppTheme {
       scaffoldBackgroundColor: AppColors.pureBlack,
       primaryColor: AppColors.brandBlue,
       fontFamily: 'PingFang',
+      dialogTheme: DialogThemeData(
+        backgroundColor: AppColors.cardBg,
+        shape: RoundedRectangleBorder(
+          borderRadius: AppOverlay.dialogBorderRadius,
+        ),
+        elevation: 0,
+      ),
+      bottomSheetTheme: const BottomSheetThemeData(
+        backgroundColor: Colors.transparent,
+        modalBackgroundColor: Colors.transparent,
+        elevation: 0,
+        shape: RoundedRectangleBorder(
+          borderRadius: AppOverlay.sheetBorderRadius,
+        ),
+      ),
+      snackBarTheme: SnackBarThemeData(
+        behavior: SnackBarBehavior.floating,
+        backgroundColor: AppColors.cardBg.withValues(alpha: 0.96),
+        elevation: 0,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(14),
+          side: const BorderSide(color: AppColors.white12),
+        ),
+      ),
       textTheme: const TextTheme(
         displayLarge: TextStyle(
           fontSize: 40,

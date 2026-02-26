@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../config/theme.dart';
 import '../utils/permission_manager.dart';
 import '../widgets/app_toast.dart';
 
@@ -21,7 +22,7 @@ class ImageUploadService {
       builder: (context) => Dialog(
         backgroundColor: const Color(0xFF1E1E1E),
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: AppOverlay.dialogBorderRadius,
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,

@@ -354,6 +354,17 @@ class _ThreadItem extends StatelessWidget {
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
+                      if (thread.unreadCount == 0 && lastMessage != null) ...[
+                        const SizedBox(width: 8),
+                        Text(
+                          '已读',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w300,
+                            color: AppColors.textTertiary.withValues(alpha: 0.7),
+                          ),
+                        ),
+                      ],
                       if (!isFriend) ...[
                         const SizedBox(width: 8),
                         Container(

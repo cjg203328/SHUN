@@ -17,7 +17,7 @@ class ImageHelper {
       builder: (context) => Dialog(
         backgroundColor: AppColors.cardBg,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(20),
+          borderRadius: AppOverlay.dialogBorderRadius,
         ),
         child: Padding(
           padding: const EdgeInsets.symmetric(vertical: 20),
@@ -206,7 +206,7 @@ class ImageHelper {
       builder: (context) => Dialog(
         backgroundColor: AppColors.cardBg,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(20),
+          borderRadius: AppOverlay.dialogBorderRadius,
         ),
         child: Padding(
           padding: const EdgeInsets.all(24),

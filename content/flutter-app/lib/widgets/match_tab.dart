@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
@@ -20,6 +22,10 @@ class _MatchTabState extends State<MatchTab>
   late AnimationController _orbController;
   final TextEditingController _greetingController = TextEditingController();
   String? _selectedQuickGreeting;
+  Timer? _greetingBannerTimer;
+  String? _recentThreadId;
+  String _recentNickname = '';
+  bool _showGreetingBanner = false;
 
   final List<String> _quickGreetings = ['嗨', '你好', '在吗', '聊聊', '失眠了', '晚安'];
 
@@ -36,7 +42,24 @@ class _MatchTabState extends State<MatchTab>
   void dispose() {
     _orbController.dispose();
     _greetingController.dispose();
+    _greetingBannerTimer?.cancel();
     super.dispose();
+  }
+
+  void _showGreetingSentFeedback(ChatThread thread) {
+    _greetingBannerTimer?.cancel();
+    setState(() {
+      _recentThreadId = thread.id;
+      _recentNickname = thread.otherUser.nickname;
+      _showGreetingBanner = true;
+    });
+
+    _greetingBannerTimer = Timer(const Duration(seconds: 4), () {
+      if (!mounted) return;
+      setState(() {
+        _showGreetingBanner = false;
+      });
+    });
   }
 
   @override
@@ -67,7 +90,16 @@ class _MatchTabState extends State<MatchTab>
                     // 光球
                     _buildMatchOrb(matchProvider),
 
-                    const SizedBox(height: 60),
+                    const SizedBox(height: 34),
+
+                    AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 260),
+                      child: _showGreetingBanner
+                          ? _buildGreetingFeedback()
+                          : const SizedBox(height: 0),
+                    ),
+
+                    SizedBox(height: _showGreetingBanner ? 18 : 0),
 
                     // 按钮
                     _buildMatchButton(matchProvider),
@@ -782,6 +814,50 @@ class _MatchTabState extends State<MatchTab>
     );
   }
 
+  Widget _buildGreetingFeedback() {
+    return Container(
+      key: ValueKey<String>('greeting_$_recentThreadId'),
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: AppColors.white08,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.white12, width: 0.6),
+      ),
+      child: Row(
+        children: [
+          const Icon(
+            Icons.mark_chat_read_outlined,
+            size: 16,
+            color: AppColors.textSecondary,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              '已向 $_recentNickname 发送招呼',
+              style: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w300,
+                color: AppColors.textSecondary,
+              ),
+            ),
+          ),
+          TextButton(
+            onPressed: _recentThreadId == null
+                ? null
+                : () => context.push('/chat/$_recentThreadId'),
+            style: TextButton.styleFrom(
+              foregroundColor: AppColors.brandBlue,
+              minimumSize: Size.zero,
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+            ),
+            child: const Text('去聊天'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildActionButtons(MatchProvider provider) {
     final greeting = _greetingController.text.trim().isNotEmpty
         ? _greetingController.text.trim()
@@ -833,35 +909,8 @@ class _MatchTabState extends State<MatchTab>
               // 清除匹配卡片，留在匹配页，不跳转
               provider.clearMatchedUser();
 
-              // 显示可操作回调，用户能直接进入会话
-              ScaffoldMessenger.of(context).hideCurrentSnackBar();
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text(
-                    '已向 ${thread.otherUser.nickname} 发送招呼',
-                    style: const TextStyle(
-                      fontSize: 14,
-                      color: AppColors.textPrimary,
-                      fontWeight: FontWeight.w300,
-                    ),
-                  ),
-                  backgroundColor: AppColors.white12,
-                  behavior: SnackBarBehavior.floating,
-                  margin:
-                      const EdgeInsets.only(left: 20, right: 20, bottom: 84),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  action: SnackBarAction(
-                    label: '去聊天',
-                    textColor: AppColors.brandBlue,
-                    onPressed: () {
-                      context.push('/chat/${thread.id}');
-                    },
-                  ),
-                  duration: const Duration(seconds: 3),
-                ),
-              );
+              // 柔和提示，不遮挡底部主要操作
+              _showGreetingSentFeedback(thread);
             },
             style: ElevatedButton.styleFrom(
               padding: const EdgeInsets.symmetric(vertical: 14),
