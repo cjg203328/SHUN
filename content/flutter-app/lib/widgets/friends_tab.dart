@@ -315,8 +315,7 @@ class FriendsTab extends StatelessWidget {
       if (confirm == true && context.mounted) {
         await context.read<FriendProvider>().blockUser(friend.id);
         if (!context.mounted) return;
-        context.read<ChatProvider>().deleteThread(friend.id);
-        AppToast.show(context, '已拉黑');
+        AppToast.show(context, '已拉黑，聊天记录已保留');
       }
     }
   }

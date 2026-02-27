@@ -131,9 +131,15 @@ class ImageUploadService {
     // 2. 请求权限
     bool hasPermission = false;
     if (source == ImageSource.camera) {
-      hasPermission = await PermissionManager.requestCameraPermission(context);
+      hasPermission = await PermissionManager.requestCameraPermission(
+        context,
+        purpose: '拍摄照片设置头像',
+      );
     } else {
-      hasPermission = await PermissionManager.requestPhotosPermission(context);
+      hasPermission = await PermissionManager.requestPhotosPermission(
+        context,
+        purpose: '从相册选择照片设置头像',
+      );
     }
 
     if (!hasPermission) {
@@ -180,9 +186,15 @@ class ImageUploadService {
     // 2. 请求权限
     bool hasPermission = false;
     if (source == ImageSource.camera) {
-      hasPermission = await PermissionManager.requestCameraPermission(context);
+      hasPermission = await PermissionManager.requestCameraPermission(
+        context,
+        purpose: '拍摄照片设置主页背景',
+      );
     } else {
-      hasPermission = await PermissionManager.requestPhotosPermission(context);
+      hasPermission = await PermissionManager.requestPhotosPermission(
+        context,
+        purpose: '从相册选择图片设置主页背景',
+      );
     }
 
     if (!hasPermission) {

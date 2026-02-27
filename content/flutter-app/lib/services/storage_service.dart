@@ -1,10 +1,30 @@
 import 'package:shared_preferences/shared_preferences.dart';
+import 'app_install_guard.dart';
 
 class StorageService {
   static late SharedPreferences _prefs;
+  static const String _firstInstallTimeKey = 'first_install_time_ms';
 
   static Future<void> init() async {
     _prefs = await SharedPreferences.getInstance();
+    await _syncInstallState();
+  }
+
+  static Future<void> _syncInstallState() async {
+    final currentInstallTime = await AppInstallGuard.getFirstInstallTimeMs();
+    if (currentInstallTime == null) return;
+
+    final storedInstallTime = _prefs.getInt(_firstInstallTimeKey);
+    final isReinstallWithRestoredData =
+        storedInstallTime != null && storedInstallTime != currentInstallTime;
+
+    if (isReinstallWithRestoredData) {
+      await clearAuth();
+    }
+
+    if (storedInstallTime != currentInstallTime) {
+      await _prefs.setInt(_firstInstallTimeKey, currentInstallTime);
+    }
   }
 
   // 用户相关

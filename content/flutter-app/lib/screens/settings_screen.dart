@@ -824,6 +824,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           onPressed: () async {
                             await friendProvider.unblockUser(userId);
                             if (!context.mounted) return;
+                            context
+                                .read<ChatProvider>()
+                                .restoreConversationAfterUnblock(userId);
+                            if (!context.mounted) return;
                             AppToast.show(context, '已取消拉黑');
                           },
                           style: TextButton.styleFrom(

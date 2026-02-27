@@ -77,7 +77,7 @@ class Message {
   final MessageType type; // 消息类型
   final String? imagePath; // 图片路径（本地或网络）
   final bool isBurnAfterReading; // 是否阅后即焚
-  final bool isRead; // 是否已读（用于阅后即焚）
+  final bool isRead; // 已读状态（对方已读/阅后即焚）
   final ImageQuality? imageQuality; // 图片质量
 
   Message({
@@ -208,14 +208,19 @@ class ChatThread {
 
   // 阶段一：解锁主页（需要一定互动分和最短聊天时长）
   bool get hasUnlockedProfile =>
-      intimacyPoints >= 40 && DateTime.now().difference(createdAt).inMinutes >= 3;
+      intimacyPoints >= 40 &&
+      DateTime.now().difference(createdAt).inMinutes >= 3;
 
   // 阶段一：同步解锁背景
   bool get hasUnlockedBackground => hasUnlockedProfile;
 
+  // 图片消息权限：与主页解锁阶段保持一致
+  bool get canSendImage => hasUnlockedProfile;
+
   // 阶段二：解锁互关权限 + 语音权限
   bool get canAddFriend =>
-      intimacyPoints >= 140 && DateTime.now().difference(createdAt).inMinutes >= 12;
+      intimacyPoints >= 140 &&
+      DateTime.now().difference(createdAt).inMinutes >= 12;
 
   // 是否可以发送消息（取关后限制）
   bool get canSendMessage {

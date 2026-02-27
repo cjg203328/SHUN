@@ -11,7 +11,9 @@ class FriendProvider extends ChangeNotifier {
   Map<String, Friend> get friends => _friends;
   Set<String> get blockedUserIds => Set.unmodifiable(_blockedUserIds);
 
-  List<Friend> get friendList => _friends.values.toList()
+  List<Friend> get friendList => _friends.values
+      .where((friend) => !_blockedUserIds.contains(friend.id))
+      .toList()
     ..sort((a, b) => b.becameFriendAt.compareTo(a.becameFriendAt));
 
   List<FriendRequest> get pendingRequests => _requests.values
@@ -45,7 +47,8 @@ class FriendProvider extends ChangeNotifier {
 
   Future<void> blockUser(String userId) async {
     if (_blockedUserIds.add(userId)) {
-      _friends.remove(userId);
+      // 保留好友与历史数据，解除拉黑后可恢复
+      _requests.removeWhere((_, request) => request.fromUser.id == userId);
       await StorageService.saveBlockedUserIds(_blockedUserIds.toList());
       notifyListeners();
     }

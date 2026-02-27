@@ -14,8 +14,9 @@ class ChatProvider extends ChangeNotifier {
 
   Map<String, ChatThread> get threads {
     // 过滤掉已软删除的会话
-    return Map.fromEntries(_threads.entries
-        .where((entry) => !(_deletedThreads[entry.key] ?? false)));
+    return Map.fromEntries(_threads.entries.where((entry) =>
+        !(_deletedThreads[entry.key] ?? false) &&
+        (entry.value.isFriend || !entry.value.isExpired)));
   }
 
   List<Message> getMessages(String threadId) {
@@ -198,6 +199,7 @@ class ChatProvider extends ChangeNotifier {
     final content = replies[DateTime.now().second % replies.length];
 
     final isActiveThread = _activeThreadId == threadId;
+    _markPeerReadForOutgoing(threadId);
     final reply = Message(
       id: const Uuid().v4(),
       content: content,
@@ -205,7 +207,7 @@ class ChatProvider extends ChangeNotifier {
       timestamp: DateTime.now(),
       status: MessageStatus.sent,
       type: MessageType.text,
-      isRead: isActiveThread,
+      isRead: false,
     );
 
     _messages[threadId]?.add(reply);
@@ -227,19 +229,7 @@ class ChatProvider extends ChangeNotifier {
   }
 
   void markAsRead(String threadId) {
-    final messages = _messages[threadId];
     var messageUpdated = false;
-
-    if (messages != null) {
-      for (var i = 0; i < messages.length; i++) {
-        final message = messages[i];
-        if (!message.isMe && !message.isRead) {
-          messages[i] = message.copyWith(isRead: true);
-          messageUpdated = true;
-        }
-      }
-    }
-
     final currentUnread = _threads[threadId]?.unreadCount ?? 0;
     if (currentUnread > 0) {
       _updateThread(threadId, unreadCount: 0, notify: false);
@@ -247,6 +237,27 @@ class ChatProvider extends ChangeNotifier {
     }
 
     if (messageUpdated) {
+      notifyListeners();
+    }
+  }
+
+  // 对方消息到达可视为其已查看我们此前已发送的消息
+  void _markPeerReadForOutgoing(String threadId) {
+    final messages = _messages[threadId];
+    if (messages == null || messages.isEmpty) return;
+
+    var changed = false;
+    for (var i = 0; i < messages.length; i++) {
+      final message = messages[i];
+      if (message.isMe &&
+          message.status == MessageStatus.sent &&
+          !message.isRead) {
+        messages[i] = message.copyWith(isRead: true);
+        changed = true;
+      }
+    }
+
+    if (changed) {
       notifyListeners();
     }
   }
@@ -272,6 +283,33 @@ class ChatProvider extends ChangeNotifier {
       isUnfollowed: false,
       messagesSinceUnfollow: 0,
     );
+  }
+
+  /// 解除拉黑后恢复会话：
+  /// - 好友：直接恢复可见性并保留原会话
+  /// - 陌生人：恢复可见并重置为新的24小时有效期
+  void restoreConversationAfterUnblock(String userId) {
+    final thread = _threads[userId];
+    if (thread == null) return;
+
+    _deletedThreads[userId] = false;
+
+    if (!thread.isFriend) {
+      final now = DateTime.now();
+      _threads[userId] = ChatThread(
+        id: thread.id,
+        otherUser: thread.otherUser,
+        unreadCount: thread.unreadCount,
+        createdAt: now,
+        expiresAt: now.add(const Duration(hours: 24)),
+        intimacyPoints: thread.intimacyPoints,
+        isFriend: thread.isFriend,
+        isUnfollowed: false,
+        messagesSinceUnfollow: 0,
+      );
+    }
+
+    notifyListeners();
   }
 
   /// 统一更新Thread的方法
@@ -305,7 +343,9 @@ class ChatProvider extends ChangeNotifier {
   }
 
   void deleteThread(String threadId) {
-    // 软删除：标记为已删除，但保留数据
+    // 用户主动删除：清空消息，再隐藏会话入口
+    _messages[threadId] = <Message>[];
+    _updateThread(threadId, unreadCount: 0, notify: false);
     _deletedThreads[threadId] = true;
     notifyListeners();
   }
@@ -328,6 +368,9 @@ class ChatProvider extends ChangeNotifier {
 
     // 检查是否可以发送消息（取关限制）
     if (!thread.canSendMessage) {
+      return;
+    }
+    if (!thread.canSendImage) {
       return;
     }
 
@@ -399,15 +442,6 @@ class ChatProvider extends ChangeNotifier {
         if (message.isBurnAfterReading && !message.isRead) {
           messages[index] = message.copyWith(isRead: true);
           notifyListeners();
-
-          // 3秒后删除消息
-          Future.delayed(const Duration(seconds: 3), () {
-            final currentMessages = _messages[threadId];
-            if (currentMessages != null) {
-              currentMessages.removeWhere((msg) => msg.id == messageId);
-              notifyListeners();
-            }
-          });
         }
       }
     }

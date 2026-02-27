@@ -354,14 +354,18 @@ class _ThreadItem extends StatelessWidget {
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
-                      if (thread.unreadCount == 0 && lastMessage != null) ...[
+                      if (lastMessage != null &&
+                          lastMessage!.isMe &&
+                          lastMessage!.status == MessageStatus.sent) ...[
                         const SizedBox(width: 8),
                         Text(
-                          '已读',
+                          lastMessage!.isRead ? '对方已读' : '对方未读',
                           style: TextStyle(
                             fontSize: 11,
                             fontWeight: FontWeight.w300,
-                            color: AppColors.textTertiary.withValues(alpha: 0.7),
+                            color: lastMessage!.isRead
+                                ? AppColors.textTertiary.withValues(alpha: 0.7)
+                                : AppColors.textSecondary.withValues(alpha: 0.85),
                           ),
                         ),
                       ],

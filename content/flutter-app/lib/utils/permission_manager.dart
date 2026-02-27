@@ -65,7 +65,10 @@ class PermissionManager {
   }
 
   // 检查并请求相机权限
-  static Future<bool> requestCameraPermission(BuildContext context) async {
+  static Future<bool> requestCameraPermission(
+    BuildContext context, {
+    String purpose = '拍摄照片设置头像',
+  }) async {
     final status = await Permission.camera.status;
     if (!context.mounted) return false;
 
@@ -77,7 +80,7 @@ class PermissionManager {
       final shouldRequest = await _showPermissionDialog(
         context,
         title: '开启相机权限',
-        content: '开启相机权限后，你可以拍摄照片设置头像',
+        content: '开启相机权限后，你可以$purpose',
         icon: Icons.camera_alt_outlined,
       );
 
@@ -100,7 +103,10 @@ class PermissionManager {
   }
 
   // 检查并请求相册权限
-  static Future<bool> requestPhotosPermission(BuildContext context) async {
+  static Future<bool> requestPhotosPermission(
+    BuildContext context, {
+    String purpose = '从相册选择照片设置头像',
+  }) async {
     final status = Platform.isAndroid
         ? await Permission.photos.status
         : await Permission.photos.status;
@@ -116,7 +122,7 @@ class PermissionManager {
       final shouldRequest = await _showPermissionDialog(
         context,
         title: '开启相册权限',
-        content: '开启相册权限后，你可以从相册选择照片设置头像',
+        content: '开启相册权限后，你可以$purpose',
         icon: Icons.photo_library_outlined,
       );
 
