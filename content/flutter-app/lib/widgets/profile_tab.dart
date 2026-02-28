@@ -3,9 +3,10 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
 import '../config/theme.dart';
-import '../providers/auth_provider.dart';
+import '../core/feedback/app_feedback.dart';
+import '../core/ui/ui_tokens.dart';
+import '../providers/profile_provider.dart';
 import '../services/image_upload_service.dart';
-import 'app_toast.dart';
 
 class ProfileTab extends StatefulWidget {
   const ProfileTab({super.key});
@@ -33,6 +34,14 @@ class _ProfileTabState extends State<ProfileTab> {
         _avatarPath = avatarPath;
         _backgroundPath = backgroundPath;
       });
+
+      if (backgroundPath == null) {
+        final profileProvider = context.read<ProfileProvider>();
+        if (profileProvider.portraitFullscreenBackground ||
+            profileProvider.transparentHomepage) {
+          await profileProvider.updatePortraitFullscreenBackground(false);
+        }
+      }
     }
   }
 
@@ -40,8 +49,14 @@ class _ProfileTabState extends State<ProfileTab> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.pureBlack,
-      body: Consumer<AuthProvider>(
-        builder: (context, authProvider, child) {
+      body: Consumer<ProfileProvider>(
+        builder: (context, profileProvider, child) {
+          final screenHeight = MediaQuery.of(context).size.height;
+          final backgroundHeight = (screenHeight * 0.52).clamp(320.0, 460.0);
+          final profileTopOffset = backgroundHeight - 62;
+          final signatureText = profileProvider.signature.trim().isEmpty
+              ? '这个人很神秘，什么都没留下'
+              : profileProvider.signature.trim();
           return CustomScrollView(
             slivers: [
               // 顶部背景和个人信息区域
@@ -52,7 +67,7 @@ class _ProfileTabState extends State<ProfileTab> {
                     GestureDetector(
                       onTap: () => _changeBackground(),
                       child: Container(
-                        height: 200,
+                        height: backgroundHeight,
                         width: double.infinity,
                         decoration: BoxDecoration(
                           color: AppColors.white08,
@@ -62,6 +77,16 @@ class _ProfileTabState extends State<ProfileTab> {
                                   fit: BoxFit.cover,
                                 )
                               : null,
+                        ),
+                        foregroundDecoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                            colors: [
+                              Colors.black.withValues(alpha: 0.08),
+                              Colors.black.withValues(alpha: 0.5),
+                            ],
+                          ),
                         ),
                         child: _backgroundPath == null
                             ? Center(
@@ -107,7 +132,7 @@ class _ProfileTabState extends State<ProfileTab> {
 
                     // 个人信息
                     Container(
-                      margin: const EdgeInsets.only(top: 140),
+                      margin: EdgeInsets.only(top: profileTopOffset),
                       padding: const EdgeInsets.fromLTRB(20, 0, 20, 40),
                       child: Column(
                         children: [
@@ -136,7 +161,7 @@ class _ProfileTabState extends State<ProfileTab> {
                                                 (context, error, stackTrace) {
                                               return Center(
                                                 child: Text(
-                                                  authProvider.avatar,
+                                                  profileProvider.avatar,
                                                   style: const TextStyle(
                                                       fontSize: 48),
                                                 ),
@@ -145,7 +170,7 @@ class _ProfileTabState extends State<ProfileTab> {
                                           )
                                         : Center(
                                             child: Text(
-                                              authProvider.avatar,
+                                              profileProvider.avatar,
                                               style:
                                                   const TextStyle(fontSize: 48),
                                             ),
@@ -185,7 +210,7 @@ class _ProfileTabState extends State<ProfileTab> {
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
                                 Text(
-                                  authProvider.nickname,
+                                  profileProvider.nickname,
                                   style: const TextStyle(
                                     fontSize: 22,
                                     fontWeight: FontWeight.w300,
@@ -205,13 +230,44 @@ class _ProfileTabState extends State<ProfileTab> {
 
                           const SizedBox(height: 8),
 
-                          // 手机号
-                          Text(
-                            authProvider.phone ?? '未登录',
-                            style: const TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w300,
-                              color: AppColors.textTertiary,
+                          // 个性签名
+                          GestureDetector(
+                            onTap: () => _showEditSignature(context),
+                            child: Container(
+                              constraints: const BoxConstraints(maxWidth: 290),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 4,
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Flexible(
+                                    child: Text(
+                                      signatureText,
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                      textAlign: TextAlign.center,
+                                      style: const TextStyle(
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w300,
+                                        color: AppColors.textTertiary,
+                                        height: 1.35,
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 6),
+                                  const Padding(
+                                    padding: EdgeInsets.only(top: 2),
+                                    child: Icon(
+                                      Icons.edit,
+                                      size: 14,
+                                      color: AppColors.textTertiary,
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ),
                           ),
 
@@ -226,8 +282,15 @@ class _ProfileTabState extends State<ProfileTab> {
                                 vertical: 12,
                               ),
                               decoration: BoxDecoration(
-                                color: AppColors.white05,
+                                color: profileProvider.transparentHomepage
+                                    ? Colors.black.withValues(alpha: 0.28)
+                                    : AppColors.white05,
                                 borderRadius: BorderRadius.circular(20),
+                                border: Border.all(
+                                  color: profileProvider.transparentHomepage
+                                      ? AppColors.white08
+                                      : Colors.transparent,
+                                ),
                               ),
                               child: Row(
                                 mainAxisSize: MainAxisSize.min,
@@ -240,7 +303,7 @@ class _ProfileTabState extends State<ProfileTab> {
                                     ),
                                   ),
                                   Text(
-                                    authProvider.status,
+                                    profileProvider.status,
                                     style: const TextStyle(
                                       fontSize: 13,
                                       color: AppColors.textSecondary,
@@ -268,11 +331,25 @@ class _ProfileTabState extends State<ProfileTab> {
                 child: Container(
                   margin: const EdgeInsets.symmetric(horizontal: 20),
                   decoration: BoxDecoration(
-                    color: AppColors.white05,
+                    color: profileProvider.transparentHomepage
+                        ? Colors.black.withValues(alpha: 0.24)
+                        : AppColors.white05,
                     borderRadius: BorderRadius.circular(16),
+                    border: Border.all(
+                      color: profileProvider.transparentHomepage
+                          ? AppColors.white08
+                          : Colors.transparent,
+                    ),
                   ),
                   child: Column(
                     children: [
+                      _buildMenuSwitchItem(
+                        icon: Icons.layers_outlined,
+                        title: '透明主页',
+                        subtitle: '降低遮罩，突出背景图',
+                        value: profileProvider.transparentHomepage,
+                        onChanged: _setTransparentHomepage,
+                      ),
                       _buildMenuItem(
                         context,
                         icon: Icons.settings_outlined,
@@ -300,7 +377,7 @@ class _ProfileTabState extends State<ProfileTab> {
       setState(() {
         _avatarPath = imageFile.path;
       });
-      AppToast.show(context, '头像已更新');
+      AppFeedback.showToast(context, AppToastCode.saved, subject: '头像');
     }
   }
 
@@ -312,8 +389,18 @@ class _ProfileTabState extends State<ProfileTab> {
       setState(() {
         _backgroundPath = imageFile.path;
       });
-      AppToast.show(context, '背景已更新');
+      AppFeedback.showToast(context, AppToastCode.saved, subject: '背景');
     }
+  }
+
+  Future<void> _setTransparentHomepage(bool value) async {
+    await context.read<ProfileProvider>().updateTransparentHomepage(value);
+    if (!mounted) return;
+    AppFeedback.showToast(
+      context,
+      value ? AppToastCode.enabled : AppToastCode.disabled,
+      subject: '透明主页',
+    );
   }
 
   Widget _buildMenuItem(
@@ -353,9 +440,59 @@ class _ProfileTabState extends State<ProfileTab> {
     );
   }
 
+  Widget _buildMenuSwitchItem({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required bool value,
+    required ValueChanged<bool> onChanged,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+      child: Row(
+        children: [
+          Icon(icon, color: AppColors.textSecondary, size: 22),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w300,
+                    color: AppColors.textPrimary,
+                    letterSpacing: 0.5,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  subtitle,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: AppColors.textTertiary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Switch(
+            value: value,
+            onChanged: onChanged,
+            activeColor: AppColors.textPrimary,
+            activeTrackColor: AppColors.white20,
+            inactiveThumbColor: AppColors.textSecondary,
+            inactiveTrackColor: AppColors.white08,
+          ),
+        ],
+      ),
+    );
+  }
+
   void _showEditNickname(BuildContext context) async {
-    final authProvider = context.read<AuthProvider>();
-    final controller = TextEditingController(text: authProvider.nickname);
+    final profileProvider = context.read<ProfileProvider>();
+    final controller = TextEditingController(text: profileProvider.nickname);
 
     final result = await showDialog<bool>(
       context: context,
@@ -445,10 +582,112 @@ class _ProfileTabState extends State<ProfileTab> {
     if (result == true && context.mounted) {
       final nickname = controller.text.trim();
       if (nickname.isNotEmpty) {
-        await context.read<AuthProvider>().updateNickname(nickname);
+        await context.read<ProfileProvider>().updateNickname(nickname);
         if (context.mounted) {
-          AppToast.show(context, '昵称已保存');
+          AppFeedback.showToast(context, AppToastCode.saved, subject: '昵称');
         }
+      }
+    }
+
+    controller.dispose();
+  }
+
+  void _showEditSignature(BuildContext context) async {
+    final profileProvider = context.read<ProfileProvider>();
+    final controller = TextEditingController(text: profileProvider.signature);
+
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return Dialog(
+          backgroundColor: AppColors.cardBg,
+          shape: RoundedRectangleBorder(
+            borderRadius: AppOverlay.dialogBorderRadius,
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  '个性签名',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w400,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+                const SizedBox(height: 20),
+                TextField(
+                  controller: controller,
+                  maxLength: 30,
+                  autofocus: true,
+                  decoration: const InputDecoration(
+                    hintText: '输入你的签名',
+                    counterText: '',
+                  ),
+                ),
+                const SizedBox(height: 24),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextButton(
+                        onPressed: () => Navigator.pop(dialogContext, false),
+                        style: TextButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                          backgroundColor: AppColors.white05,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        child: const Text(
+                          '取消',
+                          style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w300,
+                            color: AppColors.textSecondary,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: TextButton(
+                        onPressed: () => Navigator.pop(dialogContext, true),
+                        style: TextButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                          backgroundColor: AppColors.white12,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        child: const Text(
+                          '保存',
+                          style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w300,
+                            color: AppColors.textPrimary,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+
+    if (result == true && context.mounted) {
+      final signature = controller.text.trim();
+      await context.read<ProfileProvider>().updateSignature(
+            signature.isEmpty ? '这个人很神秘，什么都没留下' : signature,
+          );
+      if (context.mounted) {
+        AppFeedback.showToast(context, AppToastCode.saved, subject: '签名');
       }
     }
 
@@ -492,9 +731,15 @@ class _ProfileTabState extends State<ProfileTab> {
               ...statuses.map((status) => InkWell(
                     onTap: () async {
                       Navigator.pop(context);
-                      await context.read<AuthProvider>().updateStatus(status);
+                      await context
+                          .read<ProfileProvider>()
+                          .updateStatus(status);
                       if (context.mounted) {
-                        AppToast.show(context, '状态已更新');
+                        AppFeedback.showToast(
+                          context,
+                          AppToastCode.saved,
+                          subject: '状态',
+                        );
                       }
                     },
                     child: Container(

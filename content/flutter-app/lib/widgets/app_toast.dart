@@ -1,10 +1,14 @@
 import 'package:flutter/material.dart';
 import '../config/theme.dart';
+import '../core/ui/ui_tokens.dart';
 
 class AppToast {
   static void show(BuildContext context, String message,
       {bool isError = false}) {
-    final bottomInset = MediaQuery.of(context).viewPadding.bottom + 92;
+    final mediaQuery = MediaQuery.of(context);
+    final safeBottom = mediaQuery.viewPadding.bottom;
+    final keyboardInset = mediaQuery.viewInsets.bottom;
+    final bottomInset = (keyboardInset > 0 ? keyboardInset : safeBottom) + 84;
     ScaffoldMessenger.of(context).hideCurrentSnackBar();
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -22,17 +26,16 @@ class AppToast {
             isError ? AppColors.error.withValues(alpha: 0.14) : AppColors.cardBg,
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(UiTokens.radiusMd),
           side: BorderSide(
             color: isError
                 ? AppColors.error.withValues(alpha: 0.28)
                 : AppColors.white12,
           ),
         ),
-        margin: const EdgeInsets.only(
-          left: 40,
-          right: 40,
-        ).copyWith(bottom: bottomInset),
+        margin: const EdgeInsets.symmetric(horizontal: 24).copyWith(
+          bottom: bottomInset,
+        ),
         padding: const EdgeInsets.symmetric(
           horizontal: 24,
           vertical: 16,
@@ -46,7 +49,8 @@ class AppToast {
 
 class AppDialog {
   static final AnimationStyle sheetAnimationStyle = AppOverlay.sheetAnimationStyle;
-  static const BorderRadius sheetBorderRadius = AppOverlay.sheetBorderRadius;
+  static const BorderRadius sheetBorderRadius =
+      BorderRadius.vertical(top: Radius.circular(UiTokens.radiusXl));
 
   static BoxDecoration sheetDecoration({Color color = AppColors.cardBg}) {
     return BoxDecoration(

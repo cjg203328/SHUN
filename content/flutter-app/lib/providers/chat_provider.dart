@@ -1,16 +1,44 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:uuid/uuid.dart';
 import '../models/models.dart';
+import '../repositories/app_data_repository.dart';
+import '../services/chat_service.dart';
 import '../utils/intimacy_system.dart';
 import '../utils/image_helper.dart';
 
 class ChatProvider extends ChangeNotifier {
+  final AppDataRepository _repository;
+  final ChatService _chatService;
   final Map<String, List<Message>> _messages = {};
   final Map<String, ChatThread> _threads = {};
   final Map<String, DateTime> _lastMessageTime = {}; // 记录最后消息时间
   final Map<String, bool> _deletedThreads = {}; // 软删除的会话
   String? _activeThreadId; // 当前正在浏览的会话
+  Timer? _persistTimer;
+  bool _isRestoring = false;
+
+  ChatProvider({
+    AppDataRepository? repository,
+    ChatService? chatService,
+  })  : _repository = repository ?? AppDataRepository.instance,
+        _chatService = chatService ?? ChatService() {
+    _restoreFromStorage();
+  }
+
+  @override
+  void dispose() {
+    _persistTimer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  void notifyListeners() {
+    super.notifyListeners();
+    if (_isRestoring) return;
+    _schedulePersist();
+  }
 
   Map<String, ChatThread> get threads {
     // 过滤掉已软删除的会话
@@ -25,6 +53,110 @@ class ChatProvider extends ChangeNotifier {
 
   ChatThread? getThread(String threadId) {
     return _threads[threadId];
+  }
+
+  void _schedulePersist() {
+    _persistTimer?.cancel();
+    _persistTimer = Timer(const Duration(milliseconds: 180), () {
+      _persistState();
+    });
+  }
+
+  Future<void> _persistState() async {
+    final snapshot = <String, dynamic>{
+      'threads': _threads.map((key, value) => MapEntry(key, value.toJson())),
+      'messages': _messages.map(
+        (key, value) => MapEntry(
+          key,
+          value.map((msg) => msg.toJson()).toList(),
+        ),
+      ),
+      'lastMessageTime': _lastMessageTime.map(
+        (key, value) => MapEntry(key, value.toIso8601String()),
+      ),
+      'deletedThreads': _deletedThreads,
+    };
+    await _repository.saveChatState(snapshot);
+  }
+
+  void _restoreFromStorage() {
+    final snapshot = _repository.loadChatState();
+    if (snapshot == null) return;
+
+    final rawThreads = snapshot['threads'];
+    final rawMessages = snapshot['messages'];
+    final rawLastMessageTime = snapshot['lastMessageTime'];
+    final rawDeletedThreads = snapshot['deletedThreads'];
+
+    _isRestoring = true;
+    try {
+      _threads.clear();
+      _messages.clear();
+      _lastMessageTime.clear();
+      _deletedThreads.clear();
+
+      if (rawThreads is Map) {
+        for (final entry in rawThreads.entries) {
+          final key = entry.key.toString();
+          final value = entry.value;
+          if (value is! Map) continue;
+          final threadJson = value.map(
+            (k, v) => MapEntry(k.toString(), v),
+          );
+          try {
+            _threads[key] = ChatThread.fromJson(threadJson);
+          } catch (_) {}
+        }
+      }
+
+      if (rawMessages is Map) {
+        for (final entry in rawMessages.entries) {
+          final key = entry.key.toString();
+          final value = entry.value;
+          if (value is! List) continue;
+          final parsed = <Message>[];
+          for (final item in value) {
+            if (item is! Map) continue;
+            try {
+              parsed.add(
+                Message.fromJson(
+                  item.map((k, v) => MapEntry(k.toString(), v)),
+                ),
+              );
+            } catch (_) {}
+          }
+          _messages[key] = parsed;
+        }
+      }
+
+      if (rawLastMessageTime is Map) {
+        for (final entry in rawLastMessageTime.entries) {
+          final key = entry.key.toString();
+          final value = entry.value;
+          if (value is! String) continue;
+          try {
+            _lastMessageTime[key] = DateTime.parse(value);
+          } catch (_) {}
+        }
+      }
+
+      if (rawDeletedThreads is Map) {
+        for (final entry in rawDeletedThreads.entries) {
+          _deletedThreads[entry.key.toString()] = entry.value == true;
+        }
+      }
+
+      for (final threadId in _threads.keys) {
+        _messages.putIfAbsent(threadId, () => <Message>[]);
+        _deletedThreads.putIfAbsent(threadId, () => false);
+      }
+    } finally {
+      _isRestoring = false;
+    }
+
+    if (_threads.isNotEmpty) {
+      notifyListeners();
+    }
   }
 
   void setActiveThread(String threadId) {
@@ -70,7 +202,7 @@ class ChatProvider extends ChangeNotifier {
     if (thread == null) return;
 
     // 检查是否可以发送消息（取关限制）
-    if (!thread.canSendMessage) {
+    if (!_chatService.canSendText(thread)) {
       // 不能发送，需要对方确认
       return;
     }
@@ -183,20 +315,7 @@ class ChatProvider extends ChangeNotifier {
   Future<void> _mockReply(String threadId) async {
     await Future.delayed(const Duration(seconds: 2));
 
-    final replies = [
-      '你好呀',
-      '在的',
-      '嗯嗯',
-      '哈哈哈',
-      '是啊',
-      '我也是',
-      '有点',
-      '还好吧',
-      '确实',
-      '对对对',
-    ];
-
-    final content = replies[DateTime.now().second % replies.length];
+    final content = _chatService.getMockReply();
 
     final isActiveThread = _activeThreadId == threadId;
     _markPeerReadForOutgoing(threadId);
@@ -367,10 +486,7 @@ class ChatProvider extends ChangeNotifier {
     if (thread == null) return;
 
     // 检查是否可以发送消息（取关限制）
-    if (!thread.canSendMessage) {
-      return;
-    }
-    if (!thread.canSendImage) {
+    if (!_chatService.canSendImage(thread)) {
       return;
     }
 

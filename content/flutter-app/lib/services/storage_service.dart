@@ -1,9 +1,12 @@
 import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:convert';
 import 'app_install_guard.dart';
 
 class StorageService {
   static late SharedPreferences _prefs;
   static const String _firstInstallTimeKey = 'first_install_time_ms';
+  static const String _chatStateKey = 'chat_state_v1';
+  static const String _dataSchemaVersionKey = 'app_data_schema_version';
 
   static Future<void> init() async {
     _prefs = await SharedPreferences.getInstance();
@@ -20,6 +23,7 @@ class StorageService {
 
     if (isReinstallWithRestoredData) {
       await clearAuth();
+      await clearChatState();
     }
 
     if (storedInstallTime != currentInstallTime) {
@@ -49,6 +53,40 @@ class StorageService {
     await _prefs.remove('token');
   }
 
+  // 聊天数据持久化
+  static Future<void> saveChatState(Map<String, dynamic> state) async {
+    await _prefs.setString(_chatStateKey, jsonEncode(state));
+  }
+
+  static Map<String, dynamic>? getChatState() {
+    final raw = _prefs.getString(_chatStateKey);
+    if (raw == null || raw.isEmpty) return null;
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is Map<String, dynamic>) {
+        return decoded;
+      }
+      if (decoded is Map) {
+        return decoded.map(
+          (key, value) => MapEntry(key.toString(), value),
+        );
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  static Future<void> clearChatState() async {
+    await _prefs.remove(_chatStateKey);
+  }
+
+  static Future<void> saveDataSchemaVersion(int version) async {
+    await _prefs.setInt(_dataSchemaVersionKey, version);
+  }
+
+  static int? getDataSchemaVersion() {
+    return _prefs.getInt(_dataSchemaVersionKey);
+  }
+
   // 用户资料
   static Future<void> saveNickname(String nickname) async {
     await _prefs.setString('nickname', nickname);
@@ -72,6 +110,14 @@ class StorageService {
 
   static String? getStatus() {
     return _prefs.getString('status');
+  }
+
+  static Future<void> saveSignature(String signature) async {
+    await _prefs.setString('signature', signature);
+  }
+
+  static String? getSignature() {
+    return _prefs.getString('signature');
   }
 
   // 匹配次数
@@ -125,6 +171,22 @@ class StorageService {
 
   static bool getVibrationEnabled() {
     return _prefs.getBool('vibration_enabled') ?? true;
+  }
+
+  static Future<void> saveTransparentHomepage(bool enabled) async {
+    await _prefs.setBool('transparent_homepage', enabled);
+  }
+
+  static bool getTransparentHomepage() {
+    return _prefs.getBool('transparent_homepage') ?? false;
+  }
+
+  static Future<void> savePortraitFullscreenBackground(bool enabled) async {
+    await _prefs.setBool('portrait_fullscreen_background', enabled);
+  }
+
+  static bool getPortraitFullscreenBackground() {
+    return _prefs.getBool('portrait_fullscreen_background') ?? false;
   }
 
   // 本地密码（演示）

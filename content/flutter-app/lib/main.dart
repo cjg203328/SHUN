@@ -6,6 +6,9 @@ import 'providers/auth_provider.dart';
 import 'providers/match_provider.dart';
 import 'providers/chat_provider.dart';
 import 'providers/friend_provider.dart';
+import 'providers/profile_provider.dart';
+import 'providers/settings_provider.dart';
+import 'repositories/app_data_repository.dart';
 import 'services/storage_service.dart';
 import 'utils/permission_manager.dart';
 import 'package:go_router/go_router.dart';
@@ -15,6 +18,7 @@ void main() async {
 
   // 初始化本地存储
   await StorageService.init();
+  await AppDataRepository.instance.bootstrap();
 
   runApp(const SunliaoApp());
 }
@@ -61,6 +65,8 @@ class _SunliaoAppState extends State<SunliaoApp> with WidgetsBindingObserver {
         ChangeNotifierProvider(create: (_) => MatchProvider()),
         ChangeNotifierProvider(create: (_) => ChatProvider()),
         ChangeNotifierProvider(create: (_) => FriendProvider()),
+        ChangeNotifierProvider(create: (_) => ProfileProvider()),
+        ChangeNotifierProvider(create: (_) => SettingsProvider()),
       ],
       child: MaterialApp.router(
         title: '瞬',

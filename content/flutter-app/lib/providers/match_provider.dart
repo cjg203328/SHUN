@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import '../models/models.dart';
-import '../services/storage_service.dart';
+import '../services/match_service.dart';
 
 class MatchProvider extends ChangeNotifier {
+  final MatchService _matchService;
   int _matchCount = 20;
   bool _isMatching = false;
   User? _matchedUser;
@@ -22,27 +23,27 @@ class MatchProvider extends ChangeNotifier {
     {'id': 'u_008', 'nickname': 'Kiki', 'avatar': '🐱', 'status': '今天心情不错'},
   ];
 
-  MatchProvider() {
+  MatchProvider({MatchService? matchService})
+      : _matchService = matchService ?? MatchService() {
     _loadMatchCount();
     _checkDailyReset();
   }
 
   void _loadMatchCount() {
-    _matchCount = StorageService.getMatchCount();
+    _matchCount = _matchService.loadState().matchCount;
     notifyListeners();
   }
 
   Future<void> _checkDailyReset() async {
-    final lastReset = StorageService.getLastResetDate();
+    final state = _matchService.loadState();
+    final lastReset = state.lastResetDate;
     final now = DateTime.now();
-
-    if (lastReset == null || (now.day != lastReset.day && now.hour >= 9)) {
-      // 每天9点重置
-      _matchCount = 20;
-      await StorageService.saveMatchCount(20);
-      await StorageService.saveLastResetDate(now);
-      notifyListeners();
-    }
+    _matchCount = await _matchService.ensureDailyReset(
+      now: now,
+      currentCount: _matchCount,
+      lastReset: lastReset,
+    );
+    notifyListeners();
   }
 
   Future<void> startMatch({Set<String>? excludedUserIds}) async {
@@ -78,7 +79,7 @@ class MatchProvider extends ChangeNotifier {
   void consumeMatch() {
     if (_matchCount > 0) {
       _matchCount--;
-      StorageService.saveMatchCount(_matchCount);
+      _matchService.saveMatchCount(_matchCount);
       notifyListeners();
     }
   }
@@ -93,8 +94,10 @@ class MatchProvider extends ChangeNotifier {
     final availableProfiles = _mockProfiles
         .where((profile) => !excluded.contains(profile['id']))
         .toList();
-    final profileList = availableProfiles.isNotEmpty ? availableProfiles : _mockProfiles;
-    final profile = profileList[DateTime.now().millisecond % profileList.length];
+    final profileList =
+        availableProfiles.isNotEmpty ? availableProfiles : _mockProfiles;
+    final profile =
+        profileList[DateTime.now().millisecond % profileList.length];
 
     // 70%概率匹配到在线用户（优先在线）
     final isOnline = DateTime.now().millisecond % 10 < 7;

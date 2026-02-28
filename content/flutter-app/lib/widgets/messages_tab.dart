@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
 import '../config/theme.dart';
+import '../core/feedback/app_feedback.dart';
+import '../core/ui/ui_tokens.dart';
 import '../providers/chat_provider.dart';
 import '../models/models.dart';
 import 'app_toast.dart';
@@ -16,12 +18,13 @@ class MessagesTab extends StatefulWidget {
 
 class _MessagesTabState extends State<MessagesTab> {
   Timer? _timer;
+  static const Duration _threadRefreshInterval = Duration(seconds: 30);
 
   @override
   void initState() {
     super.initState();
-    // 每秒更新倒计时
-    _timer = Timer.periodic(const Duration(seconds: 1), (_) {
+    // 会话剩余时长只需分钟级刷新，避免每秒触发整页重建
+    _timer = Timer.periodic(_threadRefreshInterval, (_) {
       if (mounted) setState(() {});
     });
   }
@@ -113,7 +116,11 @@ class _MessagesTabState extends State<MessagesTab> {
                 ),
                 onDismissed: (_) {
                   chatProvider.deleteThread(thread.id);
-                  AppToast.show(context, '对话已删除');
+                  AppFeedback.showToast(
+                    context,
+                    AppToastCode.deleted,
+                    subject: '对话',
+                  );
                 },
                 child: _ThreadItem(
                   thread: thread,
@@ -156,7 +163,7 @@ class _ThreadItem extends StatelessWidget {
     return InkWell(
       onTap: onTap,
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+        padding: UiTokens.cardPadding,
         decoration: BoxDecoration(
           // 在线陌生人：微妙的渐变背景吸引注意
           gradient: isOnline && !isFriend

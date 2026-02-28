@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import '../config/theme.dart';
+import '../core/feedback/app_feedback.dart';
 import '../providers/auth_provider.dart';
 import '../widgets/app_toast.dart';
 
@@ -27,7 +28,11 @@ class _LoginScreenState extends State<LoginScreen> {
 
   void _sendCode() {
     if (_phoneController.text.length != 11) {
-      AppToast.show(context, '请输入正确的手机号');
+      AppFeedback.showError(
+        context,
+        AppErrorCode.invalidInput,
+        detail: '请输入11位手机号后继续',
+      );
       return;
     }
 
@@ -61,7 +66,11 @@ class _LoginScreenState extends State<LoginScreen> {
     if (success) {
       context.go('/main');
     } else {
-      AppToast.show(context, '验证码错误，请输入123456', isError: true);
+      AppFeedback.showError(
+        context,
+        AppErrorCode.invalidInput,
+        detail: '验证码错误，请输入123456',
+      );
     }
   }
 
@@ -326,6 +335,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     const SizedBox(height: 10),
                     TextField(
                       controller: _phoneController,
+                      onChanged: (_) => setState(() {}),
                       keyboardType: TextInputType.phone,
                       maxLength: 11,
                       decoration: const InputDecoration(
@@ -343,6 +353,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         Expanded(
                           child: TextField(
                             controller: _codeController,
+                            onChanged: (_) => setState(() {}),
                             keyboardType: TextInputType.number,
                             maxLength: 6,
                             decoration: const InputDecoration(

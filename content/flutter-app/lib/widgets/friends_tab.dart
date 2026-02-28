@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
 import '../config/theme.dart';
+import '../core/feedback/app_feedback.dart';
 import '../providers/friend_provider.dart';
 import '../providers/chat_provider.dart';
 import '../models/models.dart';
@@ -288,7 +289,11 @@ class FriendsTab extends StatelessWidget {
         if (thread != null) {
           chatProvider.unfollowFriend(friend.id);
         }
-        AppToast.show(context, '已取关');
+        AppFeedback.showToast(
+          context,
+          AppToastCode.disabled,
+          subject: '互关',
+        );
       }
     } else if (action == 'delete' && context.mounted) {
       final confirm = await AppDialog.showConfirm(
@@ -301,7 +306,7 @@ class FriendsTab extends StatelessWidget {
 
       if (confirm == true && context.mounted) {
         context.read<FriendProvider>().removeFriend(friend.id);
-        AppToast.show(context, '已删除好友');
+        AppFeedback.showToast(context, AppToastCode.deleted, subject: '好友');
       }
     } else if (action == 'block' && context.mounted) {
       final confirm = await AppDialog.showConfirm(
@@ -315,7 +320,7 @@ class FriendsTab extends StatelessWidget {
       if (confirm == true && context.mounted) {
         await context.read<FriendProvider>().blockUser(friend.id);
         if (!context.mounted) return;
-        AppToast.show(context, '已拉黑，聊天记录已保留');
+        AppFeedback.showToast(context, AppToastCode.enabled, subject: '拉黑');
       }
     }
   }
@@ -547,7 +552,7 @@ class FriendsTab extends StatelessWidget {
             friend.id,
             remark.isEmpty ? null : remark,
           );
-      AppToast.show(context, '备注已保存');
+      AppFeedback.showToast(context, AppToastCode.saved, subject: '备注');
     }
 
     controller.dispose();
@@ -754,7 +759,11 @@ class _FriendRequestItem extends StatelessWidget {
                   context
                       .read<FriendProvider>()
                       .rejectFriendRequest(request.id);
-                  AppToast.show(context, '已拒绝');
+                  AppFeedback.showToast(
+                    context,
+                    AppToastCode.disabled,
+                    subject: '好友请求',
+                  );
                 },
                 style: TextButton.styleFrom(
                   padding:
@@ -779,7 +788,11 @@ class _FriendRequestItem extends StatelessWidget {
                   context
                       .read<FriendProvider>()
                       .acceptFriendRequest(request.id);
-                  AppToast.show(context, '已添加为好友');
+                  AppFeedback.showToast(
+                    context,
+                    AppToastCode.enabled,
+                    subject: '互关',
+                  );
                 },
                 style: TextButton.styleFrom(
                   padding:

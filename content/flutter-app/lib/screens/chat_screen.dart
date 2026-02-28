@@ -10,6 +10,9 @@ import '../providers/chat_provider.dart';
 import '../providers/friend_provider.dart';
 import '../models/models.dart';
 import '../widgets/app_toast.dart';
+import '../core/feedback/app_feedback.dart';
+import '../core/policy/feature_policy.dart';
+import '../core/ui/ui_tokens.dart';
 import '../utils/intimacy_system.dart';
 import '../utils/image_helper.dart';
 import '../utils/permission_manager.dart';
@@ -222,14 +225,21 @@ class _ChatScreenState extends State<ChatScreen> {
                         friendProvider.isFriend(thread.otherUser.id);
                     final isBlocked =
                         friendProvider.isBlocked(thread.otherUser.id);
+                    final canCall = FeaturePolicy.canVoiceCall(
+                      thread: thread,
+                      isFriend: isFriend,
+                      isBlocked: isBlocked,
+                    );
                     if (isBlocked) {
-                      AppToast.show(context, '请先解除拉黑后再发起语音');
-                    } else if (isFriend || thread.canAddFriend) {
+                      AppFeedback.showError(context, AppErrorCode.blocked);
+                    } else if (canCall) {
                       _handleVoiceCall(context, thread.otherUser);
                     } else {
-                      AppToast.show(
+                      AppFeedback.showError(
                         context,
-                        _getStageTwoUnlockHint(thread, '语音通话'),
+                        AppErrorCode.unlockRequired,
+                        detail:
+                            FeaturePolicy.stageTwoUnlockHint(thread, '语音通话'),
                       );
                     }
                   } else if (value == 'add_friend') {
@@ -237,16 +247,26 @@ class _ChatScreenState extends State<ChatScreen> {
                         friendProvider.isFriend(thread.otherUser.id);
                     final isBlocked =
                         friendProvider.isBlocked(thread.otherUser.id);
+                    final canMutualFollow = FeaturePolicy.canMutualFollow(
+                      thread: thread,
+                      isFriend: isFriend,
+                      isBlocked: isBlocked,
+                    );
                     if (isFriend) {
-                      AppToast.show(context, '你们已经互关了');
+                      AppFeedback.showToast(
+                        context,
+                        AppToastCode.enabled,
+                        subject: '互关',
+                      );
                     } else if (isBlocked) {
-                      AppToast.show(context, '请先解除拉黑后再互关');
-                    } else if (thread.canAddFriend) {
+                      AppFeedback.showError(context, AppErrorCode.blocked);
+                    } else if (canMutualFollow) {
                       _showAddFriendDialog(context, thread.otherUser);
                     } else {
-                      AppToast.show(
+                      AppFeedback.showError(
                         context,
-                        _getStageTwoUnlockHint(thread, '互关'),
+                        AppErrorCode.unlockRequired,
+                        detail: FeaturePolicy.stageTwoUnlockHint(thread, '互关'),
                       );
                     }
                   } else if (value == 'profile') {
@@ -263,10 +283,16 @@ class _ChatScreenState extends State<ChatScreen> {
                   final isFriend = friendProvider.isFriend(thread.otherUser.id);
                   final isBlocked =
                       friendProvider.isBlocked(thread.otherUser.id);
-                  final canCall =
-                      !isBlocked && (isFriend || thread.canAddFriend);
-                  final canAddFriend =
-                      !isFriend && !isBlocked && thread.canAddFriend;
+                  final canCall = FeaturePolicy.canVoiceCall(
+                    thread: thread,
+                    isFriend: isFriend,
+                    isBlocked: isBlocked,
+                  );
+                  final canAddFriend = FeaturePolicy.canMutualFollow(
+                    thread: thread,
+                    isFriend: isFriend,
+                    isBlocked: isBlocked,
+                  );
 
                   return [
                     PopupMenuItem(
@@ -334,60 +360,66 @@ class _ChatScreenState extends State<ChatScreen> {
 
               final remaining = 3 - thread.messagesSinceUnfollow;
 
-              return Container(
-                width: double.infinity,
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                decoration: BoxDecoration(
-                  color: AppColors.error.withValues(alpha: 0.1),
-                  border: Border(
-                    bottom: BorderSide(
-                      color: AppColors.error.withValues(alpha: 0.2),
-                      width: 0.5,
+              return Padding(
+                padding: const EdgeInsets.fromLTRB(14, 10, 14, 4),
+                child: Container(
+                  width: double.infinity,
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+                  decoration: BoxDecoration(
+                    color: AppColors.error.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(UiTokens.radiusSm),
+                    border: Border.all(
+                      color: AppColors.error.withValues(alpha: 0.22),
                     ),
                   ),
-                ),
-                child: Row(
-                  children: [
-                    Icon(
-                      Icons.info_outline,
-                      size: 16,
-                      color: AppColors.error.withValues(alpha: 0.8),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        remaining > 0
-                            ? '对方已取关，你还可以发送$remaining条消息'
-                            : '等待对方确认继续聊天',
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w300,
-                          color: AppColors.error.withValues(alpha: 0.9),
-                        ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.info_outline,
+                        size: 15,
+                        color: AppColors.error.withValues(alpha: 0.78),
                       ),
-                    ),
-                    if (remaining <= 0)
-                      TextButton(
-                        onPressed: () {
-                          // 这里可以添加提醒对方的功能
-                          AppToast.show(context, '已发送提醒');
-                        },
-                        style: TextButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 12, vertical: 4),
-                          minimumSize: Size.zero,
-                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        ),
+                      const SizedBox(width: 7),
+                      Expanded(
                         child: Text(
-                          '提醒',
+                          remaining > 0
+                              ? '对方已取关，还可发送$remaining条消息'
+                              : '等待对方确认后可继续聊天',
                           style: TextStyle(
                             fontSize: 12,
-                            color: AppColors.error.withValues(alpha: 0.9),
+                            fontWeight: FontWeight.w300,
+                            color: AppColors.error.withValues(alpha: 0.88),
                           ),
                         ),
                       ),
-                  ],
+                      if (remaining <= 0)
+                        TextButton(
+                          onPressed: () {
+                            AppFeedback.showToast(
+                              context,
+                              AppToastCode.sent,
+                              subject: '提醒',
+                            );
+                          },
+                          style: TextButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 3,
+                            ),
+                            minimumSize: Size.zero,
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          ),
+                          child: Text(
+                            '提醒',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: AppColors.error.withValues(alpha: 0.88),
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
                 ),
               );
             },
@@ -446,12 +478,17 @@ class _ChatScreenState extends State<ChatScreen> {
                 // 亲密度变化动画
                 if (_showIntimacyChange)
                   Positioned(
-                    top: 20,
+                    top: 8,
                     left: 0,
                     right: 0,
-                    child: Center(
-                      child: IntimacyChangeAnimation(
-                        change: _intimacyChange,
+                    child: IgnorePointer(
+                      child: SafeArea(
+                        bottom: false,
+                        child: Center(
+                          child: IntimacyChangeAnimation(
+                            change: _intimacyChange,
+                          ),
+                        ),
                       ),
                     ),
                   ),
@@ -464,152 +501,163 @@ class _ChatScreenState extends State<ChatScreen> {
             builder: (context, chatProvider, child) {
               final thread = chatProvider.getThread(widget.threadId);
               final canSend = thread?.canSendMessage ?? true;
-              final canSendImage = thread?.canSendImage ?? false;
+              final canSendImage =
+                  thread != null && FeaturePolicy.canSendImage(thread);
 
               return Container(
-                padding: const EdgeInsets.all(20),
+                padding: const EdgeInsets.fromLTRB(14, 8, 14, 10),
                 decoration: BoxDecoration(
                   color: AppColors.pureBlack,
-                  border: Border(
-                    top: BorderSide(color: AppColors.white05),
-                  ),
+                  border: Border(top: BorderSide(color: AppColors.white05)),
                 ),
                 child: SafeArea(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.end,
-                        children: [
-                          _buildImageAction(
-                            canSend: canSend,
-                            canSendImage: canSendImage,
-                            thread: thread,
-                          ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: TextField(
-                              controller: _inputController,
-                              maxLength: 300,
-                              maxLines: null,
-                              enabled: canSend,
-                              decoration: InputDecoration(
-                                hintText: canSend ? '说点什么...' : '无法发送消息',
-                                counterText: '',
-                                contentPadding: const EdgeInsets.symmetric(
-                                  horizontal: 18,
-                                  vertical: 14,
-                                ),
-                              ),
+                  top: false,
+                  child: Container(
+                    padding: const EdgeInsets.fromLTRB(10, 10, 10, 6),
+                    decoration: BoxDecoration(
+                      color: AppColors.cardBg.withValues(alpha: 0.95),
+                      borderRadius: BorderRadius.circular(UiTokens.radiusLg),
+                      border: Border.all(color: AppColors.white08),
+                      boxShadow: UiTokens.softShadow,
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            _buildImageAction(
+                              canSend: canSend,
+                              canSendImage: canSendImage,
+                              thread: thread,
                             ),
-                          ),
-                          const SizedBox(width: 12),
-                          Container(
-                            width: 48,
-                            height: 48,
-                            decoration: BoxDecoration(
-                              color: _hasText && canSend
-                                  ? AppColors.textPrimary
-                                  : AppColors.white05,
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: IconButton(
-                              icon: Icon(
-                                Icons.arrow_upward,
-                                color: _hasText && canSend
-                                    ? AppColors.pureBlack
-                                    : AppColors.textDisabled,
-                              ),
-                              onPressed: !_hasText || !canSend
-                                  ? null
-                                  : () {
-                                      final content =
-                                          _inputController.text.trim();
-                                      if (content.isNotEmpty) {
-                                        context
-                                            .read<ChatProvider>()
-                                            .sendMessage(
-                                              widget.threadId,
-                                              content,
-                                            );
-                                        _inputController.clear();
-                                        setState(() {
-                                          _hasText = false;
-                                        });
-                                      }
-                                    },
-                            ),
-                          ),
-                        ],
-                      ),
-                      AnimatedSwitcher(
-                        duration: const Duration(milliseconds: 260),
-                        switchInCurve: Curves.easeOutCubic,
-                        switchOutCurve: Curves.easeInCubic,
-                        transitionBuilder: (child, animation) {
-                          final offset = Tween<Offset>(
-                            begin: const Offset(0, 0.18),
-                            end: Offset.zero,
-                          ).animate(animation);
-                          return FadeTransition(
-                            opacity: animation,
-                            child:
-                                SlideTransition(position: offset, child: child),
-                          );
-                        },
-                        child: _isBurnAfterReadEnabled
-                            ? Padding(
-                                key: const ValueKey('burn_hint_on'),
-                                padding: const EdgeInsets.only(top: 10),
-                                child: Align(
-                                  alignment: Alignment.centerLeft,
-                                  child: Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 10,
-                                      vertical: 6,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      gradient: LinearGradient(
-                                        colors: [
-                                          AppColors.warning
-                                              .withValues(alpha: 0.18),
-                                          AppColors.warning
-                                              .withValues(alpha: 0.1),
-                                        ],
-                                      ),
-                                      borderRadius: BorderRadius.circular(10),
-                                      border: Border.all(
-                                        color: AppColors.warning
-                                            .withValues(alpha: 0.35),
-                                      ),
-                                    ),
-                                    child: const Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        Icon(
-                                          Icons.local_fire_department,
-                                          size: 13,
-                                          color: AppColors.warning,
-                                        ),
-                                        SizedBox(width: 6),
-                                        Text(
-                                          '闪图模式已开启，仅对下一张图片生效',
-                                          style: TextStyle(
-                                            fontSize: 11,
-                                            fontWeight: FontWeight.w300,
-                                            color: AppColors.textSecondary,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: TextField(
+                                controller: _inputController,
+                                maxLength: 300,
+                                maxLines: null,
+                                enabled: canSend,
+                                decoration: InputDecoration(
+                                  hintText: canSend ? '说点什么...' : '无法发送消息',
+                                  counterText: '',
+                                  contentPadding: const EdgeInsets.symmetric(
+                                    horizontal: 18,
+                                    vertical: 14,
                                   ),
                                 ),
-                              )
-                            : const SizedBox(
-                                key: ValueKey('burn_hint_off'),
                               ),
-                      ),
-                    ],
+                            ),
+                            const SizedBox(width: 10),
+                            Container(
+                              width: 48,
+                              height: 48,
+                              decoration: BoxDecoration(
+                                color: _hasText && canSend
+                                    ? AppColors.textPrimary
+                                    : AppColors.white05,
+                                borderRadius:
+                                    BorderRadius.circular(UiTokens.radiusSm),
+                                border: Border.all(color: AppColors.white08),
+                              ),
+                              child: IconButton(
+                                icon: Icon(
+                                  Icons.arrow_upward,
+                                  color: _hasText && canSend
+                                      ? AppColors.pureBlack
+                                      : AppColors.textDisabled,
+                                ),
+                                onPressed: !_hasText || !canSend
+                                    ? null
+                                    : () {
+                                        final content =
+                                            _inputController.text.trim();
+                                        if (content.isNotEmpty) {
+                                          context
+                                              .read<ChatProvider>()
+                                              .sendMessage(
+                                                widget.threadId,
+                                                content,
+                                              );
+                                          _inputController.clear();
+                                          setState(() {
+                                            _hasText = false;
+                                          });
+                                        }
+                                      },
+                              ),
+                            ),
+                          ],
+                        ),
+                        AnimatedSwitcher(
+                          duration: UiTokens.motionNormal,
+                          switchInCurve: Curves.easeOutCubic,
+                          switchOutCurve: Curves.easeInCubic,
+                          transitionBuilder: (child, animation) {
+                            final offset = Tween<Offset>(
+                              begin: const Offset(0, 0.18),
+                              end: Offset.zero,
+                            ).animate(animation);
+                            return FadeTransition(
+                              opacity: animation,
+                              child: SlideTransition(
+                                  position: offset, child: child),
+                            );
+                          },
+                          child: _isBurnAfterReadEnabled
+                              ? Padding(
+                                  key: const ValueKey('burn_hint_on'),
+                                  padding: const EdgeInsets.only(top: 8),
+                                  child: Align(
+                                    alignment: Alignment.centerLeft,
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 10,
+                                        vertical: 5,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        gradient: LinearGradient(
+                                          colors: [
+                                            AppColors.warning
+                                                .withValues(alpha: 0.18),
+                                            AppColors.warning
+                                                .withValues(alpha: 0.1),
+                                          ],
+                                        ),
+                                        borderRadius: BorderRadius.circular(10),
+                                        border: Border.all(
+                                          color: AppColors.warning
+                                              .withValues(alpha: 0.35),
+                                        ),
+                                      ),
+                                      child: const Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Icon(
+                                            Icons.local_fire_department,
+                                            size: 13,
+                                            color: AppColors.warning,
+                                          ),
+                                          SizedBox(width: 6),
+                                          Text(
+                                            '已开启闪图，仅下一张图片生效',
+                                            style: TextStyle(
+                                              fontSize: 11,
+                                              fontWeight: FontWeight.w300,
+                                              color: AppColors.textSecondary,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                )
+                              : const SizedBox(
+                                  key: ValueKey('burn_hint_off'),
+                                ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               );
@@ -624,8 +672,12 @@ class _ChatScreenState extends State<ChatScreen> {
     if (!canSend) return;
     final thread = context.read<ChatProvider>().getThread(widget.threadId);
     if (thread == null) return;
-    if (!thread.canSendImage) {
-      AppToast.show(context, _getProfileUnlockHint(thread, '图片消息'));
+    if (!FeaturePolicy.canSendImage(thread)) {
+      AppFeedback.showError(
+        context,
+        AppErrorCode.unlockRequired,
+        detail: FeaturePolicy.profileUnlockHint(thread, '图片消息'),
+      );
       return;
     }
 
@@ -648,7 +700,7 @@ class _ChatScreenState extends State<ChatScreen> {
     }
     if (!mounted) return;
     if (!hasPermission) {
-      AppToast.show(context, '未获得图片权限，无法发送图片', isError: true);
+      AppFeedback.showError(context, AppErrorCode.permissionDenied);
       return;
     }
 
@@ -668,9 +720,10 @@ class _ChatScreenState extends State<ChatScreen> {
         );
 
     if (!mounted) return;
-    AppToast.show(
+    AppFeedback.showToast(
       context,
-      _isBurnAfterReadEnabled ? '闪图已发送（对方可看5秒）' : '图片已发送',
+      AppToastCode.sent,
+      subject: _isBurnAfterReadEnabled ? '闪图（对方可看5秒）' : '图片',
     );
 
     if (_isBurnAfterReadEnabled) {
@@ -690,7 +743,7 @@ class _ChatScreenState extends State<ChatScreen> {
       clipBehavior: Clip.none,
       children: [
         AnimatedContainer(
-          duration: const Duration(milliseconds: 220),
+          duration: UiTokens.motionNormal,
           curve: Curves.easeOutCubic,
           width: 46,
           height: 46,
@@ -700,12 +753,21 @@ class _ChatScreenState extends State<ChatScreen> {
                     ? AppColors.warning.withValues(alpha: 0.18)
                     : AppColors.white08)
                 : AppColors.white05,
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(UiTokens.radiusSm),
             border: Border.all(
               color: _isBurnAfterReadEnabled
                   ? AppColors.warning.withValues(alpha: 0.5)
                   : AppColors.white08,
             ),
+            boxShadow: _isBurnAfterReadEnabled
+                ? [
+                    BoxShadow(
+                      color: AppColors.warning.withValues(alpha: 0.16),
+                      blurRadius: 10,
+                      offset: const Offset(0, 3),
+                    ),
+                  ]
+                : null,
           ),
           child: IconButton(
             icon: Icon(
@@ -720,20 +782,23 @@ class _ChatScreenState extends State<ChatScreen> {
             onPressed: canSend
                 ? () {
                     if (!canSendImage && thread != null) {
-                      AppToast.show(
-                          context, _getProfileUnlockHint(thread, '图片消息'));
+                      AppFeedback.showError(
+                        context,
+                        AppErrorCode.unlockRequired,
+                        detail: FeaturePolicy.profileUnlockHint(thread, '图片消息'),
+                      );
                       return;
                     }
                     _pickAndSendImage(canSend);
                   }
                 : null,
-            tooltip: canSendImage ? '发送图片' : '互动后解锁图片消息',
+            tooltip: canSendImage ? '发送图片' : '继续互动后解锁图片',
           ),
         ),
         if (!canSendImage)
           Positioned(
-            right: 10,
-            top: 10,
+            right: 9,
+            top: 9,
             child: Container(
               width: 14,
               height: 14,
@@ -750,15 +815,18 @@ class _ChatScreenState extends State<ChatScreen> {
             ),
           ),
         Positioned(
-          right: -4,
-          bottom: -4,
+          right: -2,
+          bottom: -2,
           child: InkWell(
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(UiTokens.radiusSm),
             onTap: canSend
                 ? () {
                     if (!canSendImage && thread != null) {
-                      AppToast.show(
-                          context, _getProfileUnlockHint(thread, '闪图模式'));
+                      AppFeedback.showError(
+                        context,
+                        AppErrorCode.unlockRequired,
+                        detail: FeaturePolicy.profileUnlockHint(thread, '闪图模式'),
+                      );
                       return;
                     }
                     HapticFeedback.selectionClick();
@@ -772,7 +840,7 @@ class _ChatScreenState extends State<ChatScreen> {
                 begin: 1,
                 end: _isBurnAfterReadEnabled ? 1.08 : 1,
               ),
-              duration: const Duration(milliseconds: 220),
+              duration: UiTokens.motionNormal,
               curve: Curves.easeOutBack,
               builder: (context, scale, child) {
                 return Transform.scale(scale: scale, child: child);
@@ -818,41 +886,13 @@ class _ChatScreenState extends State<ChatScreen> {
       return thread.otherUser.isOnline ? '好友 · 在线' : '好友 · 私聊中';
     }
 
-    final nextUnlock = IntimacyUnlock.getNextUnlock(thread.intimacyPoints);
+    final nextUnlock = FeaturePolicy.nextUnlockName(thread);
     if (nextUnlock == null) {
       return '聊得很投缘';
     }
 
-    final pointsToNext = _getPointsToNextUnlock(thread.intimacyPoints);
+    final pointsToNext = FeaturePolicy.pointsToNextUnlock(thread);
     return '轻聊中 · 距离解锁$nextUnlock还差$pointsToNext分';
-  }
-
-  int _getPointsToNextUnlock(int points) {
-    if (points < IntimacyUnlock.unlockProfile) {
-      return IntimacyUnlock.unlockProfile - points;
-    }
-    if (points < IntimacyUnlock.canAddFriend) {
-      return IntimacyUnlock.canAddFriend - points;
-    }
-    return 0;
-  }
-
-  String _getProfileUnlockHint(ChatThread thread, String featureName) {
-    final pointsToUnlock =
-        (IntimacyUnlock.unlockProfile - thread.intimacyPoints).clamp(0, 9999);
-    final chatMinutes = DateTime.now().difference(thread.createdAt).inMinutes;
-    final minutesToUnlock = (3 - chatMinutes).clamp(0, 9999);
-    final minutePart = minutesToUnlock > 0 ? '，至少再聊$minutesToUnlock分钟' : '';
-    return '继续互动解锁$featureName：还差$pointsToUnlock分$minutePart';
-  }
-
-  String _getStageTwoUnlockHint(ChatThread thread, String featureName) {
-    final pointsToUnlock =
-        (IntimacyUnlock.canAddFriend - thread.intimacyPoints).clamp(0, 9999);
-    final chatMinutes = DateTime.now().difference(thread.createdAt).inMinutes;
-    final minutesToUnlock = (12 - chatMinutes).clamp(0, 9999);
-    final minutePart = minutesToUnlock > 0 ? '，至少再聊$minutesToUnlock分钟' : '';
-    return '继续互动解锁$featureName：还差$pointsToUnlock分$minutePart';
   }
 
   Widget _buildMenuItem(IconData icon, String text, {bool isDanger = false}) {
@@ -890,7 +930,7 @@ class _ChatScreenState extends State<ChatScreen> {
           await PermissionManager.requestMicrophonePermission(context);
       if (!context.mounted) return;
       if (!hasPermission) {
-        AppToast.show(context, '未获得麦克风权限，无法发起语音', isError: true);
+        AppFeedback.showError(context, AppErrorCode.permissionDenied);
         return;
       }
 
@@ -1008,7 +1048,11 @@ class _ChatScreenState extends State<ChatScreen> {
             user,
             controller.text.trim().isEmpty ? null : controller.text.trim(),
           );
-      AppToast.show(context, '好友请求已发送');
+      AppFeedback.showToast(
+        context,
+        AppToastCode.sent,
+        subject: '好友请求',
+      );
     }
 
     controller.dispose();
@@ -1026,7 +1070,11 @@ class _ChatScreenState extends State<ChatScreen> {
     if (confirm == true && context.mounted) {
       context.read<ChatProvider>().unfollowFriend(thread.id);
       context.read<FriendProvider>().removeFriend(thread.otherUser.id);
-      AppToast.show(context, '已取关');
+      AppFeedback.showToast(
+        context,
+        AppToastCode.disabled,
+        subject: '互关',
+      );
     }
   }
 
@@ -1042,7 +1090,11 @@ class _ChatScreenState extends State<ChatScreen> {
     if (confirm == true && context.mounted) {
       await context.read<FriendProvider>().blockUser(thread.otherUser.id);
       if (!context.mounted) return;
-      AppToast.show(context, '已拉黑，聊天记录已保留');
+      AppFeedback.showToast(
+        context,
+        AppToastCode.enabled,
+        subject: '拉黑',
+      );
       context.pop();
     }
   }
@@ -1059,15 +1111,18 @@ class _ChatScreenState extends State<ChatScreen> {
           final user = currentThread.otherUser;
           final isFriend = friendProvider.isFriend(user.id);
           final isBlocked = friendProvider.isBlocked(user.id);
-          final canOpenFullProfile = currentThread.hasUnlockedProfile;
-          final canFollow =
-              !isFriend && !isBlocked && currentThread.canAddFriend;
+          final canOpenFullProfile =
+              FeaturePolicy.canOpenProfile(currentThread);
+          final canFollow = FeaturePolicy.canMutualFollow(
+            thread: currentThread,
+            isFriend: isFriend,
+            isBlocked: isBlocked,
+          );
 
           final pointsToUnlock =
-              _getPointsToNextUnlock(currentThread.intimacyPoints);
-          final chatMinutes =
-              DateTime.now().difference(currentThread.createdAt).inMinutes;
-          final minutesToUnlock = chatMinutes >= 3 ? 0 : 3 - chatMinutes;
+              FeaturePolicy.profilePointsRemaining(currentThread);
+          final minutesToUnlock =
+              FeaturePolicy.profileMinutesRemaining(currentThread);
 
           return Container(
             height: MediaQuery.of(sheetContext).size.height * 0.88,
@@ -1219,13 +1274,17 @@ class _ChatScreenState extends State<ChatScreen> {
                     child: ElevatedButton(
                       onPressed: (!isFriend && !isBlocked)
                           ? () {
-                              if (currentThread.canAddFriend) {
+                              if (canFollow) {
                                 Navigator.pop(sheetContext);
                                 _showAddFriendDialog(context, user);
                               } else {
-                                AppToast.show(
+                                AppFeedback.showError(
                                   context,
-                                  _getStageTwoUnlockHint(currentThread, '互关权限'),
+                                  AppErrorCode.unlockRequired,
+                                  detail: FeaturePolicy.stageTwoUnlockHint(
+                                    currentThread,
+                                    '互关权限',
+                                  ),
                                 );
                               }
                             }
@@ -1249,7 +1308,7 @@ class _ChatScreenState extends State<ChatScreen> {
                             ? '已互关'
                             : isBlocked
                                 ? '已拉黑'
-                                : currentThread.canAddFriend
+                                : canFollow
                                     ? '关注并互关'
                                     : '继续聊天解锁互关',
                         style: const TextStyle(
@@ -1403,7 +1462,7 @@ class _ChatScreenState extends State<ChatScreen> {
             userId,
             remark.isEmpty ? null : remark,
           );
-      AppToast.show(context, '备注已保存');
+      AppFeedback.showToast(context, AppToastCode.saved, subject: '备注');
     }
 
     controller.dispose();
@@ -1505,7 +1564,11 @@ class _VoiceCallSheetState extends State<_VoiceCallSheet> {
                   isDanger: true,
                   onTap: () {
                     Navigator.pop(context);
-                    AppToast.show(context, '通话已结束');
+                    AppFeedback.showToast(
+                      context,
+                      AppToastCode.disabled,
+                      subject: '通话',
+                    );
                   },
                 ),
               ],
@@ -1615,13 +1678,17 @@ class _MessageBubble extends StatelessWidget {
                     if (action == 'copy') {
                       if (message.type != MessageType.text) {
                         if (!context.mounted) return;
-                        AppToast.show(context, '图片消息暂不支持复制');
+                        AppFeedback.showError(
+                          context,
+                          AppErrorCode.notSupported,
+                          detail: '图片消息暂不支持复制',
+                        );
                         return;
                       }
                       await Clipboard.setData(
                           ClipboardData(text: message.content));
                       if (!context.mounted) return;
-                      AppToast.show(context, '已复制');
+                      AppFeedback.showToast(context, AppToastCode.copied);
                     } else if (action == 'recall') {
                       if (!context.mounted) return;
                       final confirm = await AppDialog.showConfirm(
@@ -1636,15 +1703,19 @@ class _MessageBubble extends StatelessWidget {
                         context
                             .read<ChatProvider>()
                             .recallMessage(threadId, message.id);
-                        AppToast.show(context, '已撤回');
+                        AppFeedback.showToast(
+                          context,
+                          AppToastCode.deleted,
+                          subject: '消息',
+                        );
                       }
                     }
                   },
             child: Container(
-              margin: const EdgeInsets.only(bottom: 12),
+              margin: const EdgeInsets.only(bottom: 10),
               padding: isImage
                   ? const EdgeInsets.all(6)
-                  : const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  : const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
               constraints: BoxConstraints(
                 maxWidth:
                     MediaQuery.of(context).size.width * (isImage ? 0.64 : 0.7),
@@ -1653,18 +1724,26 @@ class _MessageBubble extends StatelessWidget {
                 color: message.isMe
                     ? (message.status == MessageStatus.failed
                         ? AppColors.error.withValues(alpha: 0.2)
-                        : const Color(0x99464646))
-                    : const Color(0xCC282828),
+                        : const Color(0xAA4A4A4A))
+                    : const Color(0xCC262626),
                 borderRadius: BorderRadius.only(
-                  topLeft: const Radius.circular(18),
-                  topRight: const Radius.circular(18),
+                  topLeft: const Radius.circular(UiTokens.radiusMd),
+                  topRight: const Radius.circular(UiTokens.radiusMd),
                   bottomLeft: message.isMe
-                      ? const Radius.circular(18)
-                      : const Radius.circular(4),
+                      ? const Radius.circular(UiTokens.radiusMd)
+                      : const Radius.circular(UiTokens.radiusXs),
                   bottomRight: message.isMe
-                      ? const Radius.circular(4)
-                      : const Radius.circular(18),
+                      ? const Radius.circular(UiTokens.radiusXs)
+                      : const Radius.circular(UiTokens.radiusMd),
                 ),
+                border: Border.all(color: AppColors.white08),
+                boxShadow: const [
+                  BoxShadow(
+                    color: Color(0x33000000),
+                    blurRadius: 8,
+                    offset: Offset(0, 2),
+                  ),
+                ],
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -1703,11 +1782,11 @@ class _MessageBubble extends StatelessWidget {
           ),
           if (message.isMe && message.status == MessageStatus.sending) ...[
             Container(
-              margin: const EdgeInsets.only(left: 8, bottom: 12),
-              width: 16,
-              height: 16,
+              margin: const EdgeInsets.only(left: 8, bottom: 10),
+              width: 14,
+              height: 14,
               child: CircularProgressIndicator(
-                strokeWidth: 2,
+                strokeWidth: 1.8,
                 valueColor: AlwaysStoppedAnimation<Color>(
                   AppColors.textTertiary,
                 ),
@@ -1727,13 +1806,17 @@ class _MessageBubble extends StatelessWidget {
 
   Future<void> _handleImageTap(BuildContext context) async {
     if (_isIncomingBurnRead) {
-      AppToast.show(context, '图片已焚毁');
+      AppFeedback.showToast(context, AppToastCode.deleted, subject: '闪图');
       return;
     }
 
     final imagePath = message.imagePath;
     if (imagePath == null || imagePath.isEmpty) {
-      AppToast.show(context, '图片加载失败', isError: true);
+      AppFeedback.showError(
+        context,
+        AppErrorCode.invalidInput,
+        detail: '图片不可用，请重新发送',
+      );
       return;
     }
 
@@ -1787,7 +1870,7 @@ class _MessageBubble extends StatelessWidget {
     final imageWidth = imageHeight * 0.8;
 
     return ClipRRect(
-      borderRadius: BorderRadius.circular(14),
+      borderRadius: BorderRadius.circular(UiTokens.radiusSm),
       child: Stack(
         children: [
           _buildImageWidget(
@@ -1866,8 +1949,15 @@ class _MessageBubble extends StatelessWidget {
       width: 172,
       height: 198,
       decoration: BoxDecoration(
-        color: AppColors.white05,
-        borderRadius: BorderRadius.circular(14),
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            AppColors.warning.withValues(alpha: 0.14),
+            AppColors.warning.withValues(alpha: 0.06),
+          ],
+        ),
+        borderRadius: BorderRadius.circular(UiTokens.radiusSm),
         border: Border.all(color: AppColors.warning.withValues(alpha: 0.4)),
       ),
       child: const Column(
@@ -1898,7 +1988,7 @@ class _MessageBubble extends StatelessWidget {
       height: 88,
       decoration: BoxDecoration(
         color: AppColors.white05,
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(UiTokens.radiusSm),
         border: Border.all(color: AppColors.white12),
       ),
       child: const Row(
@@ -1932,7 +2022,7 @@ class _MessageBubble extends StatelessWidget {
       child: Container(
         decoration: BoxDecoration(
           color: AppColors.white05,
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(UiTokens.radiusSm),
           border: Border.all(color: AppColors.white08),
         ),
         child: const Center(
@@ -2048,20 +2138,20 @@ class _ImagePreviewScreenState extends State<_ImagePreviewScreen> {
                 child: Center(
                   child: Container(
                     padding: const EdgeInsets.symmetric(
-                      horizontal: 14,
-                      vertical: 6,
+                      horizontal: 12,
+                      vertical: 5,
                     ),
                     decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.5),
-                      borderRadius: BorderRadius.circular(10),
+                      color: Colors.black.withValues(alpha: 0.42),
+                      borderRadius: BorderRadius.circular(UiTokens.radiusSm),
                       border: Border.all(
-                        color: AppColors.warning.withValues(alpha: 0.35),
+                        color: AppColors.warning.withValues(alpha: 0.3),
                       ),
                     ),
                     child: Text(
                       '闪图剩余 $_secondsLeft 秒',
                       style: const TextStyle(
-                        fontSize: 12,
+                        fontSize: 11,
                         color: AppColors.textPrimary,
                         fontWeight: FontWeight.w300,
                       ),

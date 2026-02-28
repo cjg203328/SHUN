@@ -5,10 +5,13 @@ import '../config/theme.dart';
 import '../providers/auth_provider.dart';
 import '../providers/friend_provider.dart';
 import '../providers/chat_provider.dart';
+import '../providers/settings_provider.dart';
 import '../services/image_upload_service.dart';
 import '../services/storage_service.dart';
 import '../utils/permission_manager.dart';
 import '../widgets/app_toast.dart';
+import '../core/feedback/app_feedback.dart';
+import '../core/ui/ui_tokens.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -18,18 +21,6 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
-  bool _isInvisibleMode = false;
-  bool _notificationEnabled = true;
-  bool _vibrationEnabled = true;
-
-  @override
-  void initState() {
-    super.initState();
-    _isInvisibleMode = StorageService.getInvisibleMode();
-    _notificationEnabled = StorageService.getNotificationEnabled();
-    _vibrationEnabled = StorageService.getVibrationEnabled();
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -50,225 +41,235 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ),
         centerTitle: true,
       ),
-      body: ListView(
-        children: [
-          const SizedBox(height: 20),
+      body: Consumer<SettingsProvider>(
+        builder: (context, settingsProvider, child) => ListView(
+          children: [
+            const SizedBox(height: 20),
 
-          // 个人资料
-          _buildSectionTitle('个人资料'),
-          Container(
-            margin: const EdgeInsets.symmetric(horizontal: 20),
-            decoration: BoxDecoration(
-              color: AppColors.white05,
-              borderRadius: BorderRadius.circular(16),
+            // 个人资料
+            _buildSectionTitle('个人资料'),
+            Container(
+              margin: const EdgeInsets.symmetric(horizontal: 20),
+              decoration: BoxDecoration(
+                color: AppColors.white05,
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Column(
+                children: [
+                  _buildSettingItem(
+                    context,
+                    icon: Icons.photo_outlined,
+                    title: '头像管理',
+                    onTap: () => _showAvatarManagement(context),
+                  ),
+                  _buildDivider(),
+                  _buildSettingItem(
+                    context,
+                    icon: Icons.wallpaper_outlined,
+                    title: '背景管理',
+                    onTap: () => _showBackgroundManagement(context),
+                  ),
+                ],
+              ),
             ),
-            child: Column(
-              children: [
-                _buildSettingItem(
-                  context,
-                  icon: Icons.photo_outlined,
-                  title: '头像管理',
-                  onTap: () => _showAvatarManagement(context),
-                ),
-                _buildDivider(),
-                _buildSettingItem(
-                  context,
-                  icon: Icons.wallpaper_outlined,
-                  title: '背景管理',
-                  onTap: () => _showBackgroundManagement(context),
-                ),
-              ],
-            ),
-          ),
 
-          const SizedBox(height: 30),
+            const SizedBox(height: 30),
 
-          // 账号与安全
-          _buildSectionTitle('账号与安全'),
-          Container(
-            margin: const EdgeInsets.symmetric(horizontal: 20),
-            decoration: BoxDecoration(
-              color: AppColors.white05,
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: Column(
-              children: [
-                _buildSettingItem(
-                  context,
-                  icon: Icons.phone_outlined,
-                  title: '手机号',
-                  trailing: Consumer<AuthProvider>(
-                    builder: (context, auth, child) => Text(
-                      auth.phone ?? '未绑定',
-                      style: const TextStyle(
-                        fontSize: 14,
-                        color: AppColors.textTertiary,
-                      ),
+            // 账号与安全
+            _buildSectionTitle('账号与安全'),
+            Container(
+              margin: const EdgeInsets.symmetric(horizontal: 20),
+              decoration: BoxDecoration(
+                color: AppColors.white05,
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Column(
+                children: [
+                  _buildSettingItem(
+                    context,
+                    icon: Icons.phone_outlined,
+                    title: '手机号',
+                    trailing: Consumer<AuthProvider>(
+                      builder: (context, auth, child) => Text(
+                        auth.phone ?? '未绑定',
+                        style: const TextStyle(
+                          fontSize: 14,
+                          color: AppColors.textTertiary,
+                        ),
                       ),
                     ),
-                  onTap: () => _showUpdatePhoneDialog(context),
-                ),
-                _buildDivider(),
-                _buildSettingItem(
-                  context,
-                  icon: Icons.lock_outlined,
-                  title: '修改密码',
-                  onTap: () => _showChangePasswordDialog(context),
-                ),
-              ],
-            ),
-          ),
-
-          const SizedBox(height: 30),
-
-          // 隐私设置
-          _buildSectionTitle('隐私设置'),
-          Container(
-            margin: const EdgeInsets.symmetric(horizontal: 20),
-            decoration: BoxDecoration(
-              color: AppColors.white05,
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: Column(
-              children: [
-                _buildSettingItem(
-                  context,
-                  icon: Icons.block_outlined,
-                  title: '黑名单',
-                  onTap: () => _showBlockedUsers(context),
-                ),
-                _buildDivider(),
-                _buildSettingItem(
-                  context,
-                  icon: Icons.visibility_off_outlined,
-                  title: '隐身模式',
-                  trailing: Switch(
-                    value: _isInvisibleMode,
-                    onChanged: _updateInvisibleMode,
-                    activeColor: AppColors.brandBlue,
+                    onTap: () => _showUpdatePhoneDialog(context),
                   ),
-                  onTap: null,
-                ),
-              ],
-            ),
-          ),
-
-          const SizedBox(height: 30),
-
-          // 通知设置
-          _buildSectionTitle('通知设置'),
-          Container(
-            margin: const EdgeInsets.symmetric(horizontal: 20),
-            decoration: BoxDecoration(
-              color: AppColors.white05,
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: Column(
-              children: [
-                _buildSettingItem(
-                  context,
-                  icon: Icons.notifications_outlined,
-                  title: '消息通知',
-                  trailing: Switch(
-                    value: _notificationEnabled,
-                    onChanged: _updateNotificationEnabled,
-                    activeColor: AppColors.brandBlue,
+                  _buildDivider(),
+                  _buildSettingItem(
+                    context,
+                    icon: Icons.lock_outlined,
+                    title: '修改密码',
+                    onTap: () => _showChangePasswordDialog(context),
                   ),
-                  onTap: null,
-                ),
-                _buildDivider(),
-                _buildSettingItem(
-                  context,
-                  icon: Icons.vibration_outlined,
-                  title: '震动',
-                  trailing: Switch(
-                    value: _vibrationEnabled,
-                    onChanged: _updateVibrationEnabled,
-                    activeColor: AppColors.brandBlue,
+                ],
+              ),
+            ),
+
+            const SizedBox(height: 30),
+
+            // 隐私设置
+            _buildSectionTitle('隐私设置'),
+            Container(
+              margin: const EdgeInsets.symmetric(horizontal: 20),
+              decoration: BoxDecoration(
+                color: AppColors.white05,
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Column(
+                children: [
+                  _buildSettingItem(
+                    context,
+                    icon: Icons.block_outlined,
+                    title: '黑名单',
+                    onTap: () => _showBlockedUsers(context),
                   ),
-                  onTap: null,
-                ),
-              ],
+                  _buildDivider(),
+                  _buildSettingItem(
+                    context,
+                    icon: Icons.visibility_off_outlined,
+                    title: '隐身模式',
+                    trailing: Switch(
+                      value: settingsProvider.invisibleMode,
+                      onChanged: _updateInvisibleMode,
+                      activeColor: AppColors.brandBlue,
+                    ),
+                    onTap: null,
+                  ),
+                ],
+              ),
             ),
-          ),
 
-          const SizedBox(height: 30),
+            const SizedBox(height: 30),
 
-          // 关于
-          _buildSectionTitle('关于'),
-          Container(
-            margin: const EdgeInsets.symmetric(horizontal: 20),
-            decoration: BoxDecoration(
-              color: AppColors.white05,
-              borderRadius: BorderRadius.circular(16),
+            // 通知设置
+            _buildSectionTitle('通知设置'),
+            Container(
+              margin: const EdgeInsets.symmetric(horizontal: 20),
+              decoration: BoxDecoration(
+                color: AppColors.white05,
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Column(
+                children: [
+                  _buildSettingItem(
+                    context,
+                    icon: Icons.notifications_outlined,
+                    title: '消息通知',
+                    trailing: Switch(
+                      value: settingsProvider.notificationEnabled,
+                      onChanged: _updateNotificationEnabled,
+                      activeColor: AppColors.brandBlue,
+                    ),
+                    onTap: null,
+                  ),
+                  _buildDivider(),
+                  _buildSettingItem(
+                    context,
+                    icon: Icons.vibration_outlined,
+                    title: '震动',
+                    trailing: Switch(
+                      value: settingsProvider.vibrationEnabled,
+                      onChanged: _updateVibrationEnabled,
+                      activeColor: AppColors.brandBlue,
+                    ),
+                    onTap: null,
+                  ),
+                ],
+              ),
             ),
-            child: Column(
-              children: [
-                _buildSettingItem(
-                  context,
-                  icon: Icons.info_outlined,
-                  title: '关于瞬',
-                  onTap: () => _showAboutDialog(context),
-                ),
-                _buildDivider(),
-                _buildSettingItem(
-                  context,
-                  icon: Icons.privacy_tip_outlined,
-                  title: '隐私政策',
-                  onTap: () => AppToast.show(context, '隐私政策'),
-                ),
-                _buildDivider(),
-                _buildSettingItem(
-                  context,
-                  icon: Icons.description_outlined,
-                  title: '用户协议',
-                  onTap: () => AppToast.show(context, '用户协议'),
-                ),
-              ],
+
+            const SizedBox(height: 30),
+
+            // 关于
+            _buildSectionTitle('关于'),
+            Container(
+              margin: const EdgeInsets.symmetric(horizontal: 20),
+              decoration: BoxDecoration(
+                color: AppColors.white05,
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Column(
+                children: [
+                  _buildSettingItem(
+                    context,
+                    icon: Icons.info_outlined,
+                    title: '关于瞬',
+                    onTap: () => _showAboutDialog(context),
+                  ),
+                  _buildDivider(),
+                  _buildSettingItem(
+                    context,
+                    icon: Icons.privacy_tip_outlined,
+                    title: '隐私政策',
+                    onTap: () => AppFeedback.showError(
+                      context,
+                      AppErrorCode.notSupported,
+                      detail: '隐私政策内容准备中，请稍后查看',
+                    ),
+                  ),
+                  _buildDivider(),
+                  _buildSettingItem(
+                    context,
+                    icon: Icons.description_outlined,
+                    title: '用户协议',
+                    onTap: () => AppFeedback.showError(
+                      context,
+                      AppErrorCode.notSupported,
+                      detail: '用户协议内容准备中，请稍后查看',
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ),
 
-          const SizedBox(height: 40),
+            const SizedBox(height: 40),
 
-          // 退出登录
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: OutlinedButton(
-              onPressed: () => _showLogoutDialog(context),
-              style: OutlinedButton.styleFrom(
-                padding: const EdgeInsets.symmetric(vertical: 16),
-                side: const BorderSide(color: AppColors.error, width: 1),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
+            // 退出登录
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: OutlinedButton(
+                onPressed: () => _showLogoutDialog(context),
+                style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  side: const BorderSide(color: AppColors.error, width: 1),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                child: const Text(
+                  '退出登录',
+                  style: TextStyle(
+                    color: AppColors.error,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w300,
+                    letterSpacing: 1,
+                  ),
                 ),
               ),
-              child: const Text(
-                '退出登录',
+            ),
+
+            const SizedBox(height: 20),
+
+            // 版本信息
+            Center(
+              child: Text(
+                'V1.0.3',
                 style: TextStyle(
-                  color: AppColors.error,
-                  fontSize: 15,
-                  fontWeight: FontWeight.w300,
-                  letterSpacing: 1,
+                  fontSize: 12,
+                  color: AppColors.textDisabled,
                 ),
               ),
             ),
-          ),
 
-          const SizedBox(height: 20),
-
-          // 版本信息
-          Center(
-            child: Text(
-              'V1.0.3',
-              style: TextStyle(
-                fontSize: 12,
-                color: AppColors.textDisabled,
-              ),
-            ),
-          ),
-
-          const SizedBox(height: 40),
-        ],
+            const SizedBox(height: 40),
+          ],
+        ),
       ),
     );
   }
@@ -311,7 +312,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   final imageFile =
                       await ImageUploadService.pickAvatar(context);
                   if (imageFile != null && context.mounted) {
-                    AppToast.show(context, '头像已更新');
+                    AppFeedback.showToast(
+                      context,
+                      AppToastCode.saved,
+                      subject: '头像',
+                    );
                   }
                 },
               ),
@@ -335,7 +340,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     if (confirm == true) {
                       await ImageUploadService.clearAvatar();
                       if (context.mounted) {
-                        AppToast.show(context, '头像已删除');
+                        AppFeedback.showToast(
+                          context,
+                          AppToastCode.deleted,
+                          subject: '头像',
+                        );
                       }
                     }
                   },
@@ -411,7 +420,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   final imageFile =
                       await ImageUploadService.pickBackground(context);
                   if (imageFile != null && context.mounted) {
-                    AppToast.show(context, '背景已更新');
+                    AppFeedback.showToast(
+                      context,
+                      AppToastCode.saved,
+                      subject: '背景',
+                    );
                   }
                 },
               ),
@@ -435,7 +448,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     if (confirm == true) {
                       await ImageUploadService.clearBackground();
                       if (context.mounted) {
-                        AppToast.show(context, '背景已删除');
+                        AppFeedback.showToast(
+                          context,
+                          AppToastCode.deleted,
+                          subject: '背景',
+                        );
                       }
                     }
                   },
@@ -518,87 +535,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
     required String title,
     required String content,
   }) {
-    return showDialog<bool>(
-      context: context,
-      builder: (context) => Dialog(
-        backgroundColor: AppColors.cardBg,
-        shape: RoundedRectangleBorder(
-          borderRadius: AppOverlay.dialogBorderRadius,
-        ),
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                title,
-                style: const TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w400,
-                  color: AppColors.textPrimary,
-                ),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 16),
-              Text(
-                content,
-                style: const TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w300,
-                  color: AppColors.textSecondary,
-                ),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 24),
-              Row(
-                children: [
-                  Expanded(
-                    child: TextButton(
-                      onPressed: () => Navigator.pop(context, false),
-                      style: TextButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        backgroundColor: AppColors.white05,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                      ),
-                      child: const Text(
-                        '取消',
-                        style: TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w300,
-                          color: AppColors.textSecondary,
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: TextButton(
-                      onPressed: () => Navigator.pop(context, true),
-                      style: TextButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        backgroundColor: AppColors.error.withValues(alpha: 0.2),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                      ),
-                      child: const Text(
-                        '确定',
-                        style: TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w300,
-                          color: AppColors.error,
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-      ),
+    return AppDialog.showConfirm(
+      context,
+      title: title,
+      content: content,
+      confirmText: '确定',
+      isDanger: true,
     );
   }
 
@@ -631,7 +573,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       onTap: onTap,
       borderRadius: BorderRadius.circular(16),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+        padding: UiTokens.cardPadding,
         child: Row(
           children: [
             Icon(icon, color: AppColors.textSecondary, size: 22),
@@ -788,10 +730,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       final userId = blockedIds[index];
                       final friend = friendProvider.getFriend(userId);
                       final thread = chatProvider.getThread(userId);
-                      final avatar =
-                          friend?.user.avatar ?? thread?.otherUser.avatar ?? '👤';
-                      final name =
-                          friend?.displayName ?? thread?.otherUser.nickname ?? userId;
+                      final avatar = friend?.user.avatar ??
+                          thread?.otherUser.avatar ??
+                          '👤';
+                      final name = friend?.displayName ??
+                          thread?.otherUser.nickname ??
+                          userId;
 
                       return ListTile(
                         contentPadding: const EdgeInsets.symmetric(
@@ -828,7 +772,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                 .read<ChatProvider>()
                                 .restoreConversationAfterUnblock(userId);
                             if (!context.mounted) return;
-                            AppToast.show(context, '已取消拉黑');
+                            AppFeedback.showToast(
+                              context,
+                              AppToastCode.disabled,
+                              subject: '拉黑',
+                            );
                           },
                           style: TextButton.styleFrom(
                             foregroundColor: AppColors.brandBlue,
@@ -848,12 +796,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<void> _updateInvisibleMode(bool enabled) async {
-    setState(() {
-      _isInvisibleMode = enabled;
-    });
-    await StorageService.saveInvisibleMode(enabled);
+    await context.read<SettingsProvider>().updateInvisibleMode(enabled);
     if (!mounted) return;
-    AppToast.show(context, enabled ? '已开启隐身模式' : '已关闭隐身模式');
+    AppFeedback.showToast(
+      context,
+      enabled ? AppToastCode.enabled : AppToastCode.disabled,
+      subject: '隐身模式',
+    );
   }
 
   Future<void> _updateNotificationEnabled(bool enabled) async {
@@ -864,26 +813,30 @@ class _SettingsScreenState extends State<SettingsScreen> {
       );
       finalValue = granted;
       if (!granted && mounted) {
-        AppToast.show(context, '未授予通知权限，保持关闭状态', isError: true);
+        AppFeedback.showError(context, AppErrorCode.permissionDenied);
       }
     }
 
     if (!mounted) return;
-    setState(() {
-      _notificationEnabled = finalValue;
-    });
-    await StorageService.saveNotificationEnabled(finalValue);
+    await context
+        .read<SettingsProvider>()
+        .updateNotificationEnabled(finalValue);
     if (!mounted) return;
-    AppToast.show(context, finalValue ? '已开启通知' : '已关闭通知');
+    AppFeedback.showToast(
+      context,
+      finalValue ? AppToastCode.enabled : AppToastCode.disabled,
+      subject: '通知',
+    );
   }
 
   Future<void> _updateVibrationEnabled(bool enabled) async {
-    setState(() {
-      _vibrationEnabled = enabled;
-    });
-    await StorageService.saveVibrationEnabled(enabled);
+    await context.read<SettingsProvider>().updateVibrationEnabled(enabled);
     if (!mounted) return;
-    AppToast.show(context, enabled ? '已开启震动' : '已关闭震动');
+    AppFeedback.showToast(
+      context,
+      enabled ? AppToastCode.enabled : AppToastCode.disabled,
+      subject: '震动',
+    );
   }
 
   Future<void> _showUpdatePhoneDialog(BuildContext context) async {
@@ -981,11 +934,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
       final phone = controller.text.trim();
       final valid = RegExp(r'^\d{11}$').hasMatch(phone);
       if (!valid) {
-        AppToast.show(context, '请输入11位手机号', isError: true);
+        AppFeedback.showError(
+          context,
+          AppErrorCode.invalidInput,
+          detail: '请输入11位手机号后重试',
+        );
       } else {
         await authProvider.updatePhone(phone);
         if (!context.mounted) return;
-        AppToast.show(context, '手机号已更新');
+        AppFeedback.showToast(context, AppToastCode.saved, subject: '手机号');
       }
     }
     controller.dispose();
@@ -1098,15 +1055,27 @@ class _SettingsScreenState extends State<SettingsScreen> {
       final currentPassword = StorageService.getLocalPassword();
 
       if (oldPassword != currentPassword) {
-        AppToast.show(context, '旧密码错误', isError: true);
+        AppFeedback.showError(
+          context,
+          AppErrorCode.invalidInput,
+          detail: '旧密码不正确，请重新输入',
+        );
       } else if (newPassword.length < 6) {
-        AppToast.show(context, '新密码至少6位', isError: true);
+        AppFeedback.showError(
+          context,
+          AppErrorCode.invalidInput,
+          detail: '新密码至少6位，请重新设置',
+        );
       } else if (newPassword != confirmPassword) {
-        AppToast.show(context, '两次输入的新密码不一致', isError: true);
+        AppFeedback.showError(
+          context,
+          AppErrorCode.invalidInput,
+          detail: '两次输入不一致，请重新确认',
+        );
       } else {
         await StorageService.saveLocalPassword(newPassword);
         if (!context.mounted) return;
-        AppToast.show(context, '密码修改成功');
+        AppFeedback.showToast(context, AppToastCode.saved, subject: '密码');
       }
     }
 
@@ -1116,87 +1085,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   void _showLogoutDialog(BuildContext context) async {
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (context) => Dialog(
-        backgroundColor: AppColors.cardBg,
-        shape: RoundedRectangleBorder(
-          borderRadius: AppOverlay.dialogBorderRadius,
-        ),
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text(
-                '退出登录',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w400,
-                  color: AppColors.textPrimary,
-                ),
-              ),
-              const SizedBox(height: 16),
-              const Text(
-                '确定要退出登录吗？',
-                style: TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w300,
-                  color: AppColors.textSecondary,
-                ),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 24),
-              Row(
-                children: [
-                  Expanded(
-                    child: TextButton(
-                      onPressed: () => Navigator.pop(context, false),
-                      style: TextButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        backgroundColor: AppColors.white05,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                      ),
-                      child: const Text(
-                        '取消',
-                        style: TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w300,
-                          color: AppColors.textSecondary,
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: TextButton(
-                      onPressed: () => Navigator.pop(context, true),
-                      style: TextButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        backgroundColor:
-                            AppColors.error.withValues(alpha: 0.15),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                      ),
-                      child: const Text(
-                        '退出',
-                        style: TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w300,
-                          color: AppColors.error,
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-      ),
+    final confirm = await AppDialog.showConfirm(
+      context,
+      title: '退出登录',
+      content: '确定要退出登录吗？',
+      confirmText: '退出',
+      isDanger: true,
     );
 
     if (confirm == true && context.mounted) {

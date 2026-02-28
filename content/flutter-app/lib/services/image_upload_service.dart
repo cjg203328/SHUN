@@ -4,8 +4,8 @@ import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../config/theme.dart';
+import '../core/feedback/app_feedback.dart';
 import '../utils/permission_manager.dart';
-import '../widgets/app_toast.dart';
 
 class ImageUploadService {
   static final ImagePicker _picker = ImagePicker();
@@ -144,7 +144,7 @@ class ImageUploadService {
 
     if (!hasPermission) {
       if (context.mounted) {
-        AppToast.show(context, '需要相应权限才能选择图片');
+        AppFeedback.showError(context, AppErrorCode.permissionDenied);
       }
       return null;
     }
@@ -170,7 +170,7 @@ class ImageUploadService {
     } catch (e) {
       print('选择头像失败: $e');
       if (context.mounted) {
-        AppToast.show(context, '选择图片失败，请重试');
+        AppFeedback.showError(context, AppErrorCode.unknown);
       }
       return null;
     }
@@ -199,7 +199,7 @@ class ImageUploadService {
 
     if (!hasPermission) {
       if (context.mounted) {
-        AppToast.show(context, '需要相应权限才能选择图片');
+        AppFeedback.showError(context, AppErrorCode.permissionDenied);
       }
       return null;
     }
@@ -226,7 +226,7 @@ class ImageUploadService {
     } catch (e) {
       print('选择背景失败: $e');
       if (context.mounted) {
-        AppToast.show(context, '选择图片失败，请重试');
+        AppFeedback.showError(context, AppErrorCode.unknown);
       }
       return null;
     }

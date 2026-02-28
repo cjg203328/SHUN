@@ -1,72 +1,42 @@
 import 'package:flutter/material.dart';
-import '../services/storage_service.dart';
+import '../services/auth_service.dart';
 import '../utils/permission_manager.dart';
 
 class AuthProvider extends ChangeNotifier {
+  final AuthService _authService;
   String? _phone;
   String? _token;
   bool _isLoggedIn = false;
   bool _isInitialized = false;
-  String _nickname = '神秘人';
-  String _avatar = '👤';
-  String _status = '想找人聊聊';
 
   bool get isLoggedIn => _isLoggedIn;
   bool get isInitialized => _isInitialized;
   String? get phone => _phone;
-  String get nickname => _nickname;
-  String get avatar => _avatar;
-  String get status => _status;
 
-  AuthProvider() {
+  AuthProvider({AuthService? authService})
+      : _authService = authService ?? AuthService() {
     _loadAuth();
   }
 
   Future<void> _loadAuth() async {
-    _phone = StorageService.getPhone();
-    _token = StorageService.getToken();
+    final state = _authService.loadAuthState();
+    _phone = state.phone;
+    _token = state.token;
     _isLoggedIn = _phone != null && _token != null;
-
-    // 加载用户资料
-    _nickname = StorageService.getNickname() ?? '神秘人';
-    _avatar = StorageService.getAvatar() ?? '👤';
-    _status = StorageService.getStatus() ?? '想找人聊聊';
     _isInitialized = true;
 
-    notifyListeners();
-  }
-
-  // 更新昵称
-  Future<void> updateNickname(String nickname) async {
-    _nickname = nickname;
-    await StorageService.saveNickname(nickname);
-    notifyListeners();
-  }
-
-  // 更新头像
-  Future<void> updateAvatar(String avatar) async {
-    _avatar = avatar;
-    await StorageService.saveAvatar(avatar);
-    notifyListeners();
-  }
-
-  // 更新状态
-  Future<void> updateStatus(String status) async {
-    _status = status;
-    await StorageService.saveStatus(status);
     notifyListeners();
   }
 
   // 更新手机号
   Future<void> updatePhone(String phone) async {
     _phone = phone;
-    await StorageService.savePhone(phone);
+    await _authService.updatePhone(phone);
     notifyListeners();
   }
 
   Future<bool> login(String phone, String code) async {
-    // Mock验证
-    if (code != '123456') {
+    if (!_authService.validateCode(code)) {
       return false;
     }
 
@@ -74,8 +44,7 @@ class AuthProvider extends ChangeNotifier {
     _token = 'mock_token_${DateTime.now().millisecondsSinceEpoch}';
     _isLoggedIn = true;
 
-    await StorageService.savePhone(phone);
-    await StorageService.saveToken(_token!);
+    await _authService.saveLogin(phone: phone, token: _token!);
 
     notifyListeners();
     return true;
@@ -86,7 +55,7 @@ class AuthProvider extends ChangeNotifier {
     _token = null;
     _isLoggedIn = false;
 
-    await StorageService.clearAuth();
+    await _authService.clearLoginState();
 
     // 清除位置权限缓存
     PermissionManager.clearSessionCache();
