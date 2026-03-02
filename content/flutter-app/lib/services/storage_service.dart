@@ -48,9 +48,18 @@ class StorageService {
     return _prefs.getString('token');
   }
 
+  static Future<void> saveUid(String uid) async {
+    await _prefs.setString('uid', uid);
+  }
+
+  static String? getUid() {
+    return _prefs.getString('uid');
+  }
+
   static Future<void> clearAuth() async {
     await _prefs.remove('phone');
     await _prefs.remove('token');
+    await _prefs.remove('uid');
   }
 
   // 聊天数据持久化

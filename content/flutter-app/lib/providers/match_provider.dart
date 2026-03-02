@@ -13,14 +13,62 @@ class MatchProvider extends ChangeNotifier {
   User? get matchedUser => _matchedUser;
 
   static const List<Map<String, String>> _mockProfiles = [
-    {'id': 'u_001', 'nickname': '阿澈', 'avatar': '😄', 'status': '想找人聊聊'},
-    {'id': 'u_002', 'nickname': '小野', 'avatar': '🙂', 'status': '今晚有点失眠'},
-    {'id': 'u_003', 'nickname': '晚风', 'avatar': '🫧', 'status': '随便聊聊'},
-    {'id': 'u_004', 'nickname': 'Mia', 'avatar': '🌙', 'status': '分享今天的小事'},
-    {'id': 'u_005', 'nickname': '阿宁', 'avatar': '✨', 'status': '想听听你的故事'},
-    {'id': 'u_006', 'nickname': 'Echo', 'avatar': '🎧', 'status': '深夜在线'},
-    {'id': 'u_007', 'nickname': '小北', 'avatar': '🧩', 'status': '想认识新朋友'},
-    {'id': 'u_008', 'nickname': 'Kiki', 'avatar': '🐱', 'status': '今天心情不错'},
+    {
+      'id': 'u_001',
+      'uid': 'SNF0A101',
+      'nickname': '阿澈',
+      'avatar': '😄',
+      'status': '想找人聊聊'
+    },
+    {
+      'id': 'u_002',
+      'uid': 'SNF0A102',
+      'nickname': '小野',
+      'avatar': '🙂',
+      'status': '今晚有点失眠'
+    },
+    {
+      'id': 'u_003',
+      'uid': 'SNF0A103',
+      'nickname': '晚风',
+      'avatar': '🫧',
+      'status': '随便聊聊'
+    },
+    {
+      'id': 'u_004',
+      'uid': 'SNF0A104',
+      'nickname': 'Mia',
+      'avatar': '🌙',
+      'status': '分享今天的小事'
+    },
+    {
+      'id': 'u_005',
+      'uid': 'SNF0A105',
+      'nickname': '阿宁',
+      'avatar': '✨',
+      'status': '想听听你的故事'
+    },
+    {
+      'id': 'u_006',
+      'uid': 'SNF0A106',
+      'nickname': 'Echo',
+      'avatar': '🎧',
+      'status': '深夜在线'
+    },
+    {
+      'id': 'u_007',
+      'uid': 'SNF0A107',
+      'nickname': '小北',
+      'avatar': '🧩',
+      'status': '想认识新朋友'
+    },
+    {
+      'id': 'u_008',
+      'uid': 'SNF0A108',
+      'nickname': 'Kiki',
+      'avatar': '🐱',
+      'status': '今天心情不错'
+    },
   ];
 
   MatchProvider({MatchService? matchService})
@@ -64,7 +112,7 @@ class MatchProvider extends ChangeNotifier {
     _isMatching = false;
 
     // 匹配成功，立即消耗次数
-    consumeMatch();
+    await _consumeMatch(notify: false);
     notifyListeners();
   }
 
@@ -76,11 +124,13 @@ class MatchProvider extends ChangeNotifier {
     }
   }
 
-  void consumeMatch() {
+  Future<void> _consumeMatch({bool notify = true}) async {
     if (_matchCount > 0) {
       _matchCount--;
-      _matchService.saveMatchCount(_matchCount);
-      notifyListeners();
+      await _matchService.saveMatchCount(_matchCount);
+      if (notify) {
+        notifyListeners();
+      }
     }
   }
 
@@ -107,6 +157,7 @@ class MatchProvider extends ChangeNotifier {
 
     return User(
       id: profile['id']!,
+      uid: profile['uid'],
       nickname: profile['nickname']!,
       avatar: profile['avatar'],
       // 离线用户不显示位置，显示"未知"

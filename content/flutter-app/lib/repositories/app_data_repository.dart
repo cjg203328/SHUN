@@ -3,10 +3,12 @@ import '../services/storage_service.dart';
 class AuthStateSnapshot {
   final String? phone;
   final String? token;
+  final String? uid;
 
   const AuthStateSnapshot({
     required this.phone,
     required this.token,
+    required this.uid,
   });
 }
 
@@ -92,19 +94,25 @@ class AppDataRepository {
     return AuthStateSnapshot(
       phone: StorageService.getPhone(),
       token: StorageService.getToken(),
+      uid: StorageService.getUid(),
     );
   }
 
   Future<void> saveAuthState({
     required String phone,
     required String token,
+    required String uid,
   }) async {
     await StorageService.savePhone(phone);
     await StorageService.saveToken(token);
+    await StorageService.saveUid(uid);
   }
 
-  Future<void> savePhone(String phone) async {
+  Future<void> savePhone(String phone, {String? uid}) async {
     await StorageService.savePhone(phone);
+    if (uid != null) {
+      await StorageService.saveUid(uid);
+    }
   }
 
   Future<void> clearAuthState() async {

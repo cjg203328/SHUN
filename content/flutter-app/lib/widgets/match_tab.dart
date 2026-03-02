@@ -8,6 +8,7 @@ import '../providers/match_provider.dart';
 import '../providers/chat_provider.dart';
 import '../providers/friend_provider.dart';
 import '../models/models.dart';
+import '../core/feedback/app_feedback.dart';
 import '../utils/permission_manager.dart';
 
 class MatchTab extends StatefulWidget {
@@ -26,6 +27,7 @@ class _MatchTabState extends State<MatchTab>
   String? _recentThreadId;
   String _recentNickname = '';
   bool _showGreetingBanner = false;
+  bool _isPreparingMatch = false;
 
   final List<String> _quickGreetings = ['嗨', '你好', '在吗', '聊聊', '失眠了', '晚安'];
 
@@ -62,6 +64,66 @@ class _MatchTabState extends State<MatchTab>
     });
   }
 
+  Future<void> _handleMatchButtonPressed(MatchProvider provider) async {
+    if (_isPreparingMatch) return;
+    if (provider.matchCount <= 0) return;
+
+    if (provider.isMatching) {
+      provider.cancelMatch();
+      return;
+    }
+
+    setState(() {
+      _isPreparingMatch = true;
+    });
+
+    try {
+      await PermissionManager.requestLocationPermission(context);
+      if (!mounted) return;
+
+      final blockedUserIds = context.read<FriendProvider>().blockedUserIds;
+      unawaited(provider.startMatch(excludedUserIds: blockedUserIds));
+
+      // 刷新按钮下方提示，避免反复弹窗覆盖主操作区
+      setState(() {});
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isPreparingMatch = false;
+        });
+      }
+    }
+  }
+
+  void _sendGreetingAndBackToMatch(MatchProvider provider, String greeting) {
+    final matchedUser = provider.matchedUser;
+    if (matchedUser == null) return;
+
+    // 先回到匹配页，保证用户可立即开始下一次匹配
+    provider.clearMatchedUser();
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+
+      final thread = ChatThread(
+        id: matchedUser.id,
+        otherUser: matchedUser,
+        createdAt: DateTime.now(),
+        expiresAt: DateTime.now().add(const Duration(hours: 24)),
+        intimacyPoints: 0,
+      );
+
+      final chatProvider = context.read<ChatProvider>();
+      chatProvider.addThread(thread);
+      final queued = chatProvider.sendMessage(thread.id, greeting);
+      if (queued) {
+        _showGreetingSentFeedback(thread);
+      } else {
+        AppFeedback.showError(context, AppErrorCode.sendFailed);
+      }
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -74,38 +136,45 @@ class _MatchTabState extends State<MatchTab>
             }
 
             // 未匹配时显示匹配界面
-            return Center(
-              child: Padding(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 20, vertical: 40),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: [
-                    // 顶部情感化文案 + 次数显示
-                    _buildHeader(matchProvider),
-
-                    const SizedBox(height: 60),
-
-                    // 光球
-                    _buildMatchOrb(matchProvider),
-
-                    const SizedBox(height: 34),
-
-                    AnimatedSwitcher(
-                      duration: const Duration(milliseconds: 260),
-                      child: _showGreetingBanner
-                          ? _buildGreetingFeedback()
-                          : const SizedBox(height: 0),
+            return LayoutBuilder(
+              builder: (context, constraints) {
+                return SingleChildScrollView(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 20, vertical: 40),
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(
+                      minHeight: constraints.maxHeight - 80,
                     ),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        // 顶部情感化文案 + 次数显示
+                        _buildHeader(matchProvider),
 
-                    SizedBox(height: _showGreetingBanner ? 18 : 0),
+                        const SizedBox(height: 60),
 
-                    // 按钮
-                    _buildMatchButton(matchProvider),
-                  ],
-                ),
-              ),
+                        // 光球
+                        _buildMatchOrb(matchProvider),
+
+                        const SizedBox(height: 34),
+
+                        AnimatedSwitcher(
+                          duration: const Duration(milliseconds: 260),
+                          child: _showGreetingBanner
+                              ? _buildGreetingFeedback()
+                              : const SizedBox(height: 0),
+                        ),
+
+                        SizedBox(height: _showGreetingBanner ? 18 : 0),
+
+                        // 按钮
+                        _buildMatchButton(matchProvider),
+                      ],
+                    ),
+                  ),
+                );
+              },
             );
           },
         ),
@@ -152,8 +221,7 @@ class _MatchTabState extends State<MatchTab>
           padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 20),
           child: Row(
             mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.baseline,
-            textBaseline: TextBaseline.alphabetic,
+            crossAxisAlignment: CrossAxisAlignment.end,
             children: [
               Text(
                 '${provider.matchCount}',
@@ -375,6 +443,16 @@ class _MatchTabState extends State<MatchTab>
                     fontSize: 18,
                     fontWeight: FontWeight.w300,
                     color: AppColors.textPrimary,
+                  ),
+                ),
+
+                const SizedBox(height: 6),
+                Text(
+                  'UID：${user.uid}',
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w300,
+                    color: AppColors.textTertiary,
                   ),
                 ),
 
@@ -740,7 +818,9 @@ class _MatchTabState extends State<MatchTab>
 
   Widget _buildMatchButton(MatchProvider provider) {
     String buttonText;
-    if (provider.isMatching) {
+    if (_isPreparingMatch) {
+      buttonText = '准备中...';
+    } else if (provider.isMatching) {
       buttonText = '取消';
     } else if (provider.matchCount <= 0) {
       buttonText = '今日已用完';
@@ -758,28 +838,16 @@ class _MatchTabState extends State<MatchTab>
           child: ElevatedButton(
             onPressed: provider.matchCount <= 0
                 ? null
-                : () async {
-                    if (provider.isMatching) {
-                      provider.cancelMatch();
-                    } else {
-                      await PermissionManager.requestLocationPermission(
-                          context);
-                      if (!mounted) return;
-
-                      // 刷新按钮下方提示，避免反复弹出底部浮层覆盖交互按钮
-                      setState(() {});
-                       final blockedUserIds =
-                           context.read<FriendProvider>().blockedUserIds;
-                       provider.startMatch(excludedUserIds: blockedUserIds);
-                     }
-                   },
+                : () => _handleMatchButtonPressed(provider),
             style: ElevatedButton.styleFrom(
               padding: const EdgeInsets.symmetric(vertical: 16),
-              backgroundColor: provider.isMatching
-                  ? AppColors.white12
-                  : provider.matchCount > 0
-                      ? AppColors.textPrimary
-                      : AppColors.white05,
+              backgroundColor: _isPreparingMatch
+                  ? AppColors.white08
+                  : provider.isMatching
+                      ? AppColors.white12
+                      : provider.matchCount > 0
+                          ? AppColors.textPrimary
+                          : AppColors.white05,
               foregroundColor: provider.isMatching
                   ? AppColors.textPrimary
                   : AppColors.pureBlack,
@@ -893,25 +961,7 @@ class _MatchTabState extends State<MatchTab>
         Expanded(
           flex: 2,
           child: ElevatedButton(
-            onPressed: () {
-              // 发送招呼，不再消耗次数（已在匹配成功时消耗）
-              final thread = ChatThread(
-                id: provider.matchedUser!.id,
-                otherUser: provider.matchedUser!,
-                createdAt: DateTime.now(),
-                expiresAt: DateTime.now().add(const Duration(hours: 24)),
-                intimacyPoints: 0, // 初始亲密度为0
-              );
-
-              context.read<ChatProvider>().addThread(thread);
-              context.read<ChatProvider>().sendMessage(thread.id, greeting);
-
-              // 清除匹配卡片，留在匹配页，不跳转
-              provider.clearMatchedUser();
-
-              // 柔和提示，不遮挡底部主要操作
-              _showGreetingSentFeedback(thread);
-            },
+            onPressed: () => _sendGreetingAndBackToMatch(provider, greeting),
             style: ElevatedButton.styleFrom(
               padding: const EdgeInsets.symmetric(vertical: 14),
               shape: RoundedRectangleBorder(

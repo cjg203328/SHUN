@@ -7,6 +7,7 @@ import '../core/feedback/app_feedback.dart';
 import '../core/ui/ui_tokens.dart';
 import '../providers/profile_provider.dart';
 import '../services/image_upload_service.dart';
+import 'app_toast.dart';
 
 class ProfileTab extends StatefulWidget {
   const ProfileTab({super.key});
@@ -47,22 +48,28 @@ class _ProfileTabState extends State<ProfileTab> {
 
   @override
   Widget build(BuildContext context) {
+    final mediaQuery = MediaQuery.of(context);
+    final screenSize = mediaQuery.size;
+    final compactNav = screenSize.height < 760 || screenSize.width < 390;
+    final bottomNavOverlayInset =
+        mediaQuery.padding.bottom + (compactNav ? 94 : 104);
+
     return Scaffold(
       backgroundColor: AppColors.pureBlack,
       body: Consumer<ProfileProvider>(
         builder: (context, profileProvider, child) {
-          final screenHeight = MediaQuery.of(context).size.height;
+          final screenHeight = mediaQuery.size.height;
           final hasBackground = _backgroundPath != null;
           final isPortraitFullscreen =
               hasBackground && profileProvider.portraitFullscreenBackground;
           final isTransparentBackground =
               isPortraitFullscreen && profileProvider.transparentHomepage;
           final normalHeight = (screenHeight * 0.52).clamp(320.0, 520.0);
-          final fullHeight = screenHeight - MediaQuery.of(context).padding.top;
+          final fullHeight = screenHeight - mediaQuery.padding.top;
           final backgroundHeight =
               isPortraitFullscreen ? fullHeight : normalHeight;
           final profileTopOffset = isPortraitFullscreen
-              ? backgroundHeight * 0.62
+              ? backgroundHeight * 0.5
               : backgroundHeight - 62;
           final signatureText = profileProvider.signature.trim().isEmpty
               ? '这个人很神秘，什么都没留下'
@@ -97,12 +104,12 @@ class _ProfileTabState extends State<ProfileTab> {
                             end: Alignment.bottomCenter,
                             colors: [
                               Colors.black.withValues(
-                                alpha: isTransparentBackground ? 0.06 : 0.1,
+                                alpha: isTransparentBackground ? 0.03 : 0.08,
                               ),
                               Colors.black.withValues(
                                 alpha: isTransparentBackground
-                                    ? 0.24
-                                    : (isPortraitFullscreen ? 0.4 : 0.5),
+                                    ? 0.16
+                                    : (isPortraitFullscreen ? 0.3 : 0.4),
                               ),
                             ],
                           ),
@@ -130,22 +137,25 @@ class _ProfileTabState extends State<ProfileTab> {
                                   ],
                                 ),
                               )
-                            : Container(
-                                alignment: Alignment.topRight,
-                                padding: const EdgeInsets.all(12),
-                                child: Container(
-                                  padding: const EdgeInsets.all(6),
-                                  decoration: BoxDecoration(
-                                    color: Colors.black.withValues(alpha: 0.5),
-                                    shape: BoxShape.circle,
-                                  ),
-                                  child: const Icon(
-                                    Icons.edit,
-                                    size: 16,
-                                    color: Colors.white,
-                                  ),
-                                ),
-                              ),
+                            : (!isPortraitFullscreen
+                                ? Container(
+                                    alignment: Alignment.topRight,
+                                    padding: const EdgeInsets.all(12),
+                                    child: Container(
+                                      padding: const EdgeInsets.all(6),
+                                      decoration: BoxDecoration(
+                                        color:
+                                            Colors.black.withValues(alpha: 0.5),
+                                        shape: BoxShape.circle,
+                                      ),
+                                      child: const Icon(
+                                        Icons.edit,
+                                        size: 16,
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                                  )
+                                : const SizedBox.shrink()),
                       ),
                     ),
 
@@ -167,9 +177,17 @@ class _ProfileTabState extends State<ProfileTab> {
                                     shape: BoxShape.circle,
                                     color: AppColors.white08,
                                     border: Border.all(
-                                      color: AppColors.pureBlack,
-                                      width: 4,
+                                      color: AppColors.white20,
+                                      width: 1.2,
                                     ),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: Colors.black
+                                            .withValues(alpha: 0.16),
+                                        blurRadius: 12,
+                                        offset: const Offset(0, 4),
+                                      ),
+                                    ],
                                   ),
                                   child: ClipOval(
                                     child: _avatarPath != null
@@ -202,11 +220,12 @@ class _ProfileTabState extends State<ProfileTab> {
                                   child: Container(
                                     padding: const EdgeInsets.all(8),
                                     decoration: BoxDecoration(
-                                      color: AppColors.white12,
+                                      color:
+                                          Colors.white.withValues(alpha: 0.26),
                                       shape: BoxShape.circle,
                                       border: Border.all(
-                                        color: AppColors.pureBlack,
-                                        width: 2,
+                                        color: AppColors.white20,
+                                        width: 1,
                                       ),
                                     ),
                                     child: const Icon(
@@ -302,13 +321,13 @@ class _ProfileTabState extends State<ProfileTab> {
                               ),
                               decoration: BoxDecoration(
                                 color: isTransparentBackground
-                                    ? Colors.black.withValues(alpha: 0.28)
+                                    ? Colors.white.withValues(alpha: 0.14)
                                     : AppColors.white05,
                                 borderRadius: BorderRadius.circular(20),
                                 border: Border.all(
                                   color: isTransparentBackground
-                                      ? AppColors.white08
-                                      : Colors.transparent,
+                                      ? AppColors.white15
+                                      : AppColors.white08,
                                 ),
                               ),
                               child: Row(
@@ -341,66 +360,209 @@ class _ProfileTabState extends State<ProfileTab> {
                         ],
                       ),
                     ),
+                    if (isPortraitFullscreen)
+                      Positioned(
+                        top: mediaQuery.padding.top + 10,
+                        right: 14,
+                        child: Column(
+                          children: [
+                            _buildCompactActionButton(
+                              icon: Icons.layers_outlined,
+                              onTap: () => _showBackgroundModeSheet(
+                                context,
+                                hasBackground: hasBackground,
+                              ),
+                            ),
+                            const SizedBox(height: 10),
+                            _buildCompactActionButton(
+                              icon: Icons.settings_outlined,
+                              onTap: () => context
+                                  .push('/settings')
+                                  .then((_) => _loadImages()),
+                            ),
+                          ],
+                        ),
+                      ),
                   ],
                 ),
               ),
 
               // 功能列表
-              SliverToBoxAdapter(
-                child: Container(
-                  margin: const EdgeInsets.symmetric(horizontal: 20),
-                  decoration: BoxDecoration(
-                    color: isTransparentBackground
-                        ? Colors.black.withValues(alpha: 0.24)
-                        : AppColors.white05,
-                    borderRadius: BorderRadius.circular(UiTokens.radiusMd),
-                    border: Border.all(
+              if (!isPortraitFullscreen)
+                SliverToBoxAdapter(
+                  child: Container(
+                    margin: const EdgeInsets.symmetric(horizontal: 20),
+                    decoration: BoxDecoration(
                       color: isTransparentBackground
-                          ? AppColors.white08
-                          : Colors.transparent,
+                          ? Colors.white.withValues(alpha: 0.1)
+                          : AppColors.white05,
+                      borderRadius: BorderRadius.circular(UiTokens.radiusMd),
+                      border: Border.all(
+                        color: isTransparentBackground
+                            ? AppColors.white15
+                            : AppColors.white08,
+                      ),
+                    ),
+                    child: Column(
+                      children: [
+                        _buildMenuItem(
+                          context,
+                          icon: Icons.layers_outlined,
+                          title: '背景显示模式',
+                          onTap: () => _showBackgroundModeSheet(
+                            context,
+                            hasBackground: hasBackground,
+                          ),
+                        ),
+                        _buildMenuItem(
+                          context,
+                          icon: Icons.settings_outlined,
+                          title: '设置',
+                          onTap: () => context
+                              .push('/settings')
+                              .then((_) => _loadImages()),
+                        ),
+                      ],
                     ),
                   ),
-                  child: Column(
-                    children: [
-                      _buildMenuSwitchItem(
-                        icon: Icons.stay_current_portrait_outlined,
-                        title: '竖屏全屏背景',
-                        subtitle: hasBackground ? '按竖屏全屏展示背景图' : '先设置背景图后开启',
-                        value: isPortraitFullscreen,
-                        enabled: hasBackground,
-                        onChanged: hasBackground
-                            ? _setPortraitFullscreenBackground
-                            : null,
-                      ),
-                      _buildMenuSwitchItem(
-                        icon: Icons.layers_outlined,
-                        title: '竖屏透明背景',
-                        subtitle: isPortraitFullscreen
-                            ? '降低遮罩，突出竖屏全屏背景'
-                            : '开启竖屏全屏背景后可设置',
-                        value: isTransparentBackground,
-                        enabled: isPortraitFullscreen,
-                        onChanged: isPortraitFullscreen
-                            ? _setTransparentHomepage
-                            : null,
-                      ),
-                      _buildMenuItem(
-                        context,
-                        icon: Icons.settings_outlined,
-                        title: '设置',
-                        onTap: () => context
-                            .push('/settings')
-                            .then((_) => _loadImages()),
-                      ),
-                    ],
-                  ),
+                ),
+
+              SliverToBoxAdapter(
+                child: SizedBox(
+                  height: isPortraitFullscreen ? 18 : bottomNavOverlayInset,
                 ),
               ),
-
-              const SliverToBoxAdapter(child: SizedBox(height: 40)),
             ],
           );
         },
+      ),
+    );
+  }
+
+  Widget _buildCompactActionButton({
+    required IconData icon,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 34,
+        height: 34,
+        decoration: BoxDecoration(
+          color: Colors.black.withValues(alpha: 0.22),
+          borderRadius: BorderRadius.circular(17),
+          border: Border.all(color: AppColors.white12),
+        ),
+        child: Icon(
+          icon,
+          size: 18,
+          color: AppColors.textSecondary,
+        ),
+      ),
+    );
+  }
+
+  void _showBackgroundModeSheet(
+    BuildContext context, {
+    required bool hasBackground,
+  }) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      sheetAnimationStyle: AppDialog.sheetAnimationStyle,
+      builder: (context) => Consumer<ProfileProvider>(
+        builder: (context, profileProvider, child) {
+          final isPortraitFullscreen =
+              hasBackground && profileProvider.portraitFullscreenBackground;
+          final isTransparentBackground =
+              isPortraitFullscreen && profileProvider.transparentHomepage;
+          return AppDialog.buildSheetSurface(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 18),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _buildModeSwitchRow(
+                  icon: Icons.stay_current_portrait_outlined,
+                  title: '竖屏全屏背景',
+                  subtitle: hasBackground ? '按竖屏全屏展示背景图' : '先设置背景图后开启',
+                  value: isPortraitFullscreen,
+                  enabled: hasBackground,
+                  onChanged: _setPortraitFullscreenBackground,
+                ),
+                const SizedBox(height: 8),
+                _buildModeSwitchRow(
+                  icon: Icons.layers_outlined,
+                  title: '竖屏透明背景',
+                  subtitle:
+                      isPortraitFullscreen ? '降低遮罩，突出竖屏全屏背景' : '开启竖屏全屏背景后可设置',
+                  value: isTransparentBackground,
+                  enabled: isPortraitFullscreen,
+                  onChanged: _setTransparentHomepage,
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildModeSwitchRow({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required bool value,
+    required bool enabled,
+    required ValueChanged<bool> onChanged,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+      child: Row(
+        children: [
+          Icon(
+            icon,
+            size: 18,
+            color: enabled ? AppColors.textSecondary : AppColors.textDisabled,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: enabled
+                        ? AppColors.textPrimary
+                        : AppColors.textDisabled,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  subtitle,
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: enabled
+                        ? AppColors.textTertiary
+                        : AppColors.textDisabled.withValues(alpha: 0.8),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Transform.scale(
+            scale: 0.82,
+            child: Switch(
+              value: value,
+              onChanged: enabled ? onChanged : null,
+              activeColor: AppColors.textPrimary,
+              activeTrackColor: AppColors.white20,
+              inactiveThumbColor: AppColors.textSecondary,
+              inactiveTrackColor: AppColors.white08,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -484,67 +646,6 @@ class _ProfileTabState extends State<ProfileTab> {
             ),
           ],
         ),
-      ),
-    );
-  }
-
-  Widget _buildMenuSwitchItem({
-    required IconData icon,
-    required String title,
-    required String subtitle,
-    required bool value,
-    required ValueChanged<bool>? onChanged,
-    bool enabled = true,
-  }) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-      child: Row(
-        children: [
-          Icon(
-            icon,
-            color: enabled
-                ? AppColors.textSecondary
-                : AppColors.textSecondary.withValues(alpha: 0.45),
-            size: 22,
-          ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w300,
-                    color: enabled
-                        ? AppColors.textPrimary
-                        : AppColors.textDisabled.withValues(alpha: 0.8),
-                    letterSpacing: 0.5,
-                  ),
-                ),
-                const SizedBox(height: 3),
-                Text(
-                  subtitle,
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: enabled
-                        ? AppColors.textTertiary
-                        : AppColors.textDisabled.withValues(alpha: 0.8),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Switch(
-            value: value,
-            onChanged: enabled ? onChanged : null,
-            activeColor: AppColors.textPrimary,
-            activeTrackColor: AppColors.white20,
-            inactiveThumbColor: AppColors.textSecondary,
-            inactiveTrackColor: AppColors.white08,
-          ),
-        ],
       ),
     );
   }

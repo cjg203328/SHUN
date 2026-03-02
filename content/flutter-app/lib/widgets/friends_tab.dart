@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
 import '../config/theme.dart';
 import '../core/feedback/app_feedback.dart';
+import '../providers/auth_provider.dart';
 import '../providers/friend_provider.dart';
 import '../providers/chat_provider.dart';
 import '../models/models.dart';
@@ -27,6 +29,12 @@ class FriendsTab extends StatelessWidget {
         ),
         centerTitle: true,
         actions: [
+          IconButton(
+            icon: const Icon(Icons.search_outlined),
+            onPressed: () {
+              _showUidSearchSheet(context);
+            },
+          ),
           // 好友请求入口
           Consumer<FriendProvider>(
             builder: (context, friendProvider, child) {
@@ -98,6 +106,11 @@ class FriendsTab extends StatelessWidget {
                     '持续互动并达到阶段二后可互关',
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
+                  const SizedBox(height: 8),
+                  Text(
+                    '也可以通过UID主动搜索交友',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
                 ],
               ),
             );
@@ -137,6 +150,238 @@ class FriendsTab extends StatelessWidget {
         },
       ),
     );
+  }
+
+  void _showUidSearchSheet(BuildContext context) {
+    final authUid = context.read<AuthProvider>().uid;
+    final uidController = TextEditingController();
+    User? resultUser;
+    String? feedback;
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      sheetAnimationStyle: AppDialog.sheetAnimationStyle,
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (sheetContext, setSheetState) => Padding(
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.of(sheetContext).viewInsets.bottom,
+          ),
+          child: Container(
+            decoration: AppDialog.sheetDecoration(),
+            padding: const EdgeInsets.fromLTRB(20, 18, 20, 20),
+            child: SafeArea(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'UID找好友',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w400,
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          authUid == null ? '你的UID生成中' : '我的UID：$authUid',
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: AppColors.textTertiary,
+                          ),
+                        ),
+                      ),
+                      TextButton(
+                        onPressed: authUid == null
+                            ? null
+                            : () async {
+                                await Clipboard.setData(
+                                  ClipboardData(text: authUid),
+                                );
+                                if (!sheetContext.mounted) return;
+                                AppFeedback.showToast(
+                                  sheetContext,
+                                  AppToastCode.copied,
+                                );
+                              },
+                        child: const Text('复制'),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: uidController,
+                          textCapitalization: TextCapitalization.characters,
+                          maxLength: 16,
+                          decoration: const InputDecoration(
+                            hintText: '请输入对方UID',
+                            counterText: '',
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      TextButton(
+                        onPressed: () {
+                          final query = uidController.text.trim();
+                          if (query.isEmpty) {
+                            setSheetState(() {
+                              feedback = '请输入UID后搜索';
+                              resultUser = null;
+                            });
+                            return;
+                          }
+                          final found =
+                              context.read<FriendProvider>().searchUserByUid(
+                                    query,
+                                    excludeUid: authUid,
+                                  );
+                          setSheetState(() {
+                            resultUser = found;
+                            feedback = found == null ? '未找到该UID，请检查后重试' : null;
+                          });
+                        },
+                        style: TextButton.styleFrom(
+                          backgroundColor: AppColors.white12,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 12,
+                          ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                        ),
+                        child: const Text(
+                          '搜索',
+                          style: TextStyle(color: AppColors.textPrimary),
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (feedback != null) ...[
+                    const SizedBox(height: 8),
+                    Text(
+                      feedback!,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: AppColors.textTertiary,
+                      ),
+                    ),
+                  ],
+                  if (resultUser != null) ...[
+                    const SizedBox(height: 14),
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: AppColors.white05,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: AppColors.white08),
+                      ),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 42,
+                            height: 42,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: AppColors.white08,
+                            ),
+                            child: Center(
+                              child: Text(
+                                resultUser!.avatar ?? '👤',
+                                style: const TextStyle(fontSize: 20),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  resultUser!.nickname,
+                                  style: const TextStyle(
+                                    fontSize: 15,
+                                    color: AppColors.textPrimary,
+                                    fontWeight: FontWeight.w300,
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  'UID：${resultUser!.uid}',
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    color: AppColors.textTertiary,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          TextButton(
+                            onPressed: () {
+                              final friendProvider =
+                                  context.read<FriendProvider>();
+                              final friend = friendProvider.addFriendDirect(
+                                resultUser!,
+                              );
+                              if (friend == null) {
+                                AppFeedback.showError(
+                                  sheetContext,
+                                  AppErrorCode.blocked,
+                                );
+                                return;
+                              }
+                              final thread = ChatThread(
+                                id: friend.id,
+                                otherUser: friend.user,
+                                createdAt: DateTime.now(),
+                                expiresAt: DateTime.now()
+                                    .add(const Duration(days: 365)),
+                                intimacyPoints: 250,
+                                isFriend: true,
+                              );
+                              context.read<ChatProvider>().addThread(thread);
+                              AppFeedback.showToast(
+                                sheetContext,
+                                AppToastCode.enabled,
+                                subject: '好友',
+                              );
+                              Navigator.pop(sheetContext);
+                            },
+                            style: TextButton.styleFrom(
+                              backgroundColor:
+                                  AppColors.brandBlue.withValues(alpha: 0.2),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 14,
+                                vertical: 8,
+                              ),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                            ),
+                            child: const Text(
+                              '加好友',
+                              style: TextStyle(color: AppColors.brandBlue),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    ).whenComplete(uidController.dispose);
   }
 
   void _showFriendRequests(BuildContext context) {
@@ -398,6 +643,14 @@ class FriendsTab extends StatelessWidget {
                 ),
               ),
             ],
+            const SizedBox(height: 4),
+            Text(
+              'UID：${friend.user.uid}',
+              style: const TextStyle(
+                fontSize: 12,
+                color: AppColors.textTertiary,
+              ),
+            ),
             const SizedBox(height: 18),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -668,6 +921,15 @@ class _FriendItem extends StatelessWidget {
                       ),
                     ),
                   ],
+                  const SizedBox(height: 4),
+                  Text(
+                    'UID：${friend.user.uid}',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w300,
+                      color: AppColors.textTertiary,
+                    ),
+                  ),
                 ],
               ),
             ),

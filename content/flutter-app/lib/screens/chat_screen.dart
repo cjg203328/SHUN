@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -573,16 +574,23 @@ class _ChatScreenState extends State<ChatScreen> {
                                         final content =
                                             _inputController.text.trim();
                                         if (content.isNotEmpty) {
-                                          context
+                                          final queued = context
                                               .read<ChatProvider>()
                                               .sendMessage(
                                                 widget.threadId,
                                                 content,
                                               );
-                                          _inputController.clear();
-                                          setState(() {
-                                            _hasText = false;
-                                          });
+                                          if (queued) {
+                                            _inputController.clear();
+                                            setState(() {
+                                              _hasText = false;
+                                            });
+                                          } else {
+                                            AppFeedback.showError(
+                                              context,
+                                              AppErrorCode.sendFailed,
+                                            );
+                                          }
                                         }
                                       },
                               ),
@@ -712,7 +720,7 @@ class _ChatScreenState extends State<ChatScreen> {
     final quality = await ImageHelper.showQualitySelector(context, imageFile);
     if (!mounted || quality == null) return;
 
-    await context.read<ChatProvider>().sendImageMessage(
+    final queued = await context.read<ChatProvider>().sendImageMessage(
           widget.threadId,
           imageFile,
           quality,
@@ -720,6 +728,10 @@ class _ChatScreenState extends State<ChatScreen> {
         );
 
     if (!mounted) return;
+    if (!queued) {
+      AppFeedback.showError(context, AppErrorCode.sendFailed);
+      return;
+    }
     AppFeedback.showToast(
       context,
       AppToastCode.sent,
@@ -1198,6 +1210,16 @@ class _ChatScreenState extends State<ChatScreen> {
                           color: AppColors.textSecondary,
                         ),
                       ),
+                      const SizedBox(height: 6),
+                      Text(
+                        'UID：${user.uid}',
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w300,
+                          color: AppColors.textTertiary,
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -1619,7 +1641,7 @@ class _VoiceCallSheetState extends State<_VoiceCallSheet> {
   }
 }
 
-class _MessageBubble extends StatelessWidget {
+class _MessageBubble extends StatefulWidget {
   final Message message;
   final String threadId;
 
@@ -1629,11 +1651,32 @@ class _MessageBubble extends StatelessWidget {
   });
 
   @override
+  State<_MessageBubble> createState() => _MessageBubbleState();
+}
+
+class _MessageBubbleState extends State<_MessageBubble> {
+  OverlayEntry? _burnOverlayEntry;
+  bool _burnPreviewActive = false;
+  bool _consumingBurn = false;
+
+  Message get message => widget.message;
+
+  @override
+  void dispose() {
+    _burnOverlayEntry?.remove();
+    _burnOverlayEntry = null;
+    _burnPreviewActive = false;
+    ScreenshotGuard.setSecure(false);
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final canRecall = message.isMe &&
         message.status == MessageStatus.sent &&
         DateTime.now().difference(message.timestamp).inMinutes < 2;
     final isImage = message.type == MessageType.image;
+    final isBurnImage = isImage && message.isBurnAfterReading;
 
     return Align(
       alignment: message.isMe ? Alignment.centerRight : Alignment.centerLeft,
@@ -1646,10 +1689,9 @@ class _MessageBubble extends StatelessWidget {
           if (message.isMe && message.status == MessageStatus.failed) ...[
             GestureDetector(
               onTap: () {
-                // 点击重新发送
                 context
                     .read<ChatProvider>()
-                    .resendMessage(threadId, message.id);
+                    .resendMessage(widget.threadId, message.id);
               },
               child: Container(
                 margin: const EdgeInsets.only(right: 8, bottom: 12),
@@ -1664,9 +1706,30 @@ class _MessageBubble extends StatelessWidget {
 
           GestureDetector(
             onTap: isImage && message.status != MessageStatus.sending
-                ? () => _handleImageTap(context)
+                ? () {
+                    if (isBurnImage) {
+                      AppToast.show(
+                        context,
+                        message.isRead ? '闪图已销毁' : '长按查看闪图（最多5秒）',
+                      );
+                      return;
+                    }
+                    _handleImageTap(context);
+                  }
                 : null,
-            onLongPress: message.status == MessageStatus.sending
+            onLongPressStart:
+                isBurnImage && message.status != MessageStatus.sending
+                    ? (_) => _handleBurnLongPressStart(context)
+                    : null,
+            onLongPressEnd:
+                isBurnImage && message.status != MessageStatus.sending
+                    ? (_) => _consumeBurnImage(context)
+                    : null,
+            onLongPressCancel:
+                isBurnImage && message.status != MessageStatus.sending
+                    ? () => _consumeBurnImage(context)
+                    : null,
+            onLongPress: isBurnImage || message.status == MessageStatus.sending
                 ? null
                 : () async {
                     final action = await AppDialog.showMessageActions(
@@ -1686,7 +1749,8 @@ class _MessageBubble extends StatelessWidget {
                         return;
                       }
                       await Clipboard.setData(
-                          ClipboardData(text: message.content));
+                        ClipboardData(text: message.content),
+                      );
                       if (!context.mounted) return;
                       AppFeedback.showToast(context, AppToastCode.copied);
                     } else if (action == 'recall') {
@@ -1702,7 +1766,7 @@ class _MessageBubble extends StatelessWidget {
                       if (confirm == true) {
                         context
                             .read<ChatProvider>()
-                            .recallMessage(threadId, message.id);
+                            .recallMessage(widget.threadId, message.id);
                         AppFeedback.showToast(
                           context,
                           AppToastCode.deleted,
@@ -1763,7 +1827,9 @@ class _MessageBubble extends StatelessWidget {
                             : AppColors.textPrimary,
                       ),
                     ),
-                  if (message.isMe && message.status == MessageStatus.sent) ...[
+                  if (message.isMe &&
+                      message.status == MessageStatus.sent &&
+                      !message.isBurnAfterReading) ...[
                     SizedBox(height: isImage ? 8 : 6),
                     Text(
                       message.isRead ? '对方已读' : '对方未读',
@@ -1798,18 +1864,7 @@ class _MessageBubble extends StatelessWidget {
     );
   }
 
-  bool get _isIncomingBurnUnread =>
-      !message.isMe && message.isBurnAfterReading && !message.isRead;
-
-  bool get _isIncomingBurnRead =>
-      !message.isMe && message.isBurnAfterReading && message.isRead;
-
   Future<void> _handleImageTap(BuildContext context) async {
-    if (_isIncomingBurnRead) {
-      AppFeedback.showToast(context, AppToastCode.deleted, subject: '闪图');
-      return;
-    }
-
     final imagePath = message.imagePath;
     if (imagePath == null || imagePath.isEmpty) {
       AppFeedback.showError(
@@ -1820,43 +1875,100 @@ class _MessageBubble extends StatelessWidget {
       return;
     }
 
-    final enableSecure = message.isBurnAfterReading;
-    if (enableSecure) {
-      await ScreenshotGuard.setSecure(true);
-    }
-    if (!context.mounted) return;
-
-    try {
-      await Navigator.of(context).push(
-        PageRouteBuilder<void>(
-          opaque: false,
-          barrierColor: Colors.black,
-          pageBuilder: (_, __, ___) => _ImagePreviewScreen(
-            imagePath: imagePath,
-            isBurnAfterReading: message.isBurnAfterReading,
-          ),
-          transitionsBuilder: (_, animation, __, child) => FadeTransition(
-            opacity: animation,
-            child: child,
-          ),
+    await Navigator.of(context).push(
+      PageRouteBuilder<void>(
+        opaque: false,
+        barrierColor: Colors.black,
+        pageBuilder: (_, __, ___) => _ImagePreviewScreen(
+          imagePath: imagePath,
+          isBurnAfterReading: false,
         ),
+        transitionsBuilder: (_, animation, __, child) => FadeTransition(
+          opacity: animation,
+          child: child,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _handleBurnLongPressStart(BuildContext context) async {
+    if (message.isRead) {
+      AppToast.show(context, '闪图已销毁');
+      return;
+    }
+    final imagePath = message.imagePath;
+    if (imagePath == null || imagePath.isEmpty) {
+      AppFeedback.showError(
+        context,
+        AppErrorCode.invalidInput,
+        detail: '图片不可用，请重新发送',
       );
+      return;
+    }
+    await _showBurnPreviewOverlay(context, imagePath);
+  }
+
+  Future<void> _showBurnPreviewOverlay(
+    BuildContext context,
+    String imagePath,
+  ) async {
+    if (_burnPreviewActive || _burnOverlayEntry != null) return;
+    final overlay = Overlay.of(context, rootOverlay: true);
+
+    _burnPreviewActive = true;
+    await ScreenshotGuard.setSecure(true);
+    if (!mounted) {
+      _burnPreviewActive = false;
+      await ScreenshotGuard.setSecure(false);
+      return;
+    }
+    if (!_burnPreviewActive) {
+      await ScreenshotGuard.setSecure(false);
+      return;
+    }
+
+    final entry = OverlayEntry(
+      builder: (_) => _BurnHoldPreviewOverlay(
+        imagePath: imagePath,
+        onTimeout: () => _consumeBurnImage(context),
+      ),
+    );
+    _burnOverlayEntry = entry;
+    overlay.insert(entry);
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _consumeBurnImage(BuildContext context) async {
+    if (!_burnPreviewActive || _consumingBurn) return;
+    _consumingBurn = true;
+    final shouldMarkRead = !message.isRead;
+    final chatProvider = context.read<ChatProvider>();
+    try {
+      await _hideBurnPreviewOverlay();
+      if (shouldMarkRead && mounted) {
+        chatProvider.markImageAsRead(widget.threadId, message.id);
+      }
     } finally {
-      if (enableSecure) {
-        await ScreenshotGuard.setSecure(false);
-      }
-      if (context.mounted && _isIncomingBurnUnread) {
-        context.read<ChatProvider>().markImageAsRead(threadId, message.id);
-      }
+      _consumingBurn = false;
     }
   }
 
-  Widget _buildImageContent(BuildContext context) {
-    if (_isIncomingBurnUnread) {
-      return _buildBurnLockedPlaceholder();
+  Future<void> _hideBurnPreviewOverlay() async {
+    final entry = _burnOverlayEntry;
+    _burnOverlayEntry = null;
+    _burnPreviewActive = false;
+    if (entry != null) {
+      entry.remove();
+      if (mounted) setState(() {});
     }
-    if (_isIncomingBurnRead) {
-      return _buildBurnDestroyedPlaceholder();
+    await ScreenshotGuard.setSecure(false);
+  }
+
+  Widget _buildImageContent(BuildContext context) {
+    if (message.isBurnAfterReading) {
+      return message.isRead
+          ? _buildBurnDestroyedPlaceholder()
+          : _buildBurnLockedPlaceholder();
     }
 
     final imagePath = message.imagePath;
@@ -1945,66 +2057,77 @@ class _MessageBubble extends StatelessWidget {
   }
 
   Widget _buildBurnLockedPlaceholder() {
+    return _buildBurnMosaicPlaceholder(isDestroyed: false);
+  }
+
+  Widget _buildBurnDestroyedPlaceholder() {
+    return _buildBurnMosaicPlaceholder(isDestroyed: true);
+  }
+
+  Widget _buildBurnMosaicPlaceholder({required bool isDestroyed}) {
+    final borderColor = isDestroyed
+        ? AppColors.white12
+        : AppColors.warning.withValues(alpha: 0.45);
+    final tintColor = isDestroyed
+        ? AppColors.white12
+        : AppColors.warning.withValues(alpha: 0.2);
+
     return Container(
       width: 172,
       height: 198,
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [
-            AppColors.warning.withValues(alpha: 0.14),
-            AppColors.warning.withValues(alpha: 0.06),
-          ],
-        ),
         borderRadius: BorderRadius.circular(UiTokens.radiusSm),
-        border: Border.all(color: AppColors.warning.withValues(alpha: 0.4)),
+        border: Border.all(color: borderColor),
       ),
-      child: const Column(
-        mainAxisAlignment: MainAxisAlignment.center,
+      child: Stack(
         children: [
-          Icon(
-            Icons.local_fire_department,
-            size: 30,
-            color: AppColors.warning,
-          ),
-          SizedBox(height: 10),
-          Text(
-            '点击查看闪图（5秒）',
-            style: TextStyle(
-              fontSize: 13,
-              color: AppColors.textPrimary,
-              fontWeight: FontWeight.w300,
+          Positioned.fill(
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(UiTokens.radiusSm),
+              child: CustomPaint(
+                painter: _MosaicPainter(tintColor: tintColor),
+              ),
             ),
           ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildBurnDestroyedPlaceholder() {
-    return Container(
-      width: 172,
-      height: 88,
-      decoration: BoxDecoration(
-        color: AppColors.white05,
-        borderRadius: BorderRadius.circular(UiTokens.radiusSm),
-        border: Border.all(color: AppColors.white12),
-      ),
-      child: const Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(
-            Icons.hide_image_outlined,
-            size: 16,
-            color: AppColors.textTertiary,
+          Positioned.fill(
+            child: Container(
+              decoration: BoxDecoration(
+                color: Colors.black.withValues(alpha: isDestroyed ? 0.3 : 0.22),
+                borderRadius: BorderRadius.circular(UiTokens.radiusSm),
+              ),
+            ),
           ),
-          SizedBox(width: 6),
-          Text(
-            '闪图已销毁',
-            style: TextStyle(
-              fontSize: 12,
-              color: AppColors.textTertiary,
+          Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  isDestroyed
+                      ? Icons.hide_image_outlined
+                      : Icons.local_fire_department,
+                  size: 28,
+                  color: isDestroyed
+                      ? AppColors.textTertiary
+                      : AppColors.warning.withValues(alpha: 0.95),
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  isDestroyed ? '闪图已销毁' : '长按查看闪图（最多5秒）',
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: AppColors.textPrimary,
+                    fontWeight: FontWeight.w300,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  isDestroyed ? '已无法再次查看' : '松开即销毁',
+                  style: const TextStyle(
+                    fontSize: 11,
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+              ],
             ),
           ),
         ],
@@ -2034,6 +2157,155 @@ class _MessageBubble extends StatelessWidget {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _MosaicPainter extends CustomPainter {
+  final Color tintColor;
+
+  const _MosaicPainter({required this.tintColor});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    const blockSize = 14.0;
+    final columns = (size.width / blockSize).ceil();
+    final rows = (size.height / blockSize).ceil();
+    final paint = Paint()..style = PaintingStyle.fill;
+
+    for (var row = 0; row < rows; row++) {
+      for (var column = 0; column < columns; column++) {
+        final seed = (row * 31 + column * 17) % 5;
+        final alpha = 0.12 + (seed * 0.06);
+        paint.color = tintColor.withValues(alpha: alpha);
+        canvas.drawRect(
+          Rect.fromLTWH(
+            column * blockSize,
+            row * blockSize,
+            blockSize,
+            blockSize,
+          ),
+          paint,
+        );
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _MosaicPainter oldDelegate) {
+    return oldDelegate.tintColor != tintColor;
+  }
+}
+
+class _BurnHoldPreviewOverlay extends StatefulWidget {
+  final String imagePath;
+  final VoidCallback onTimeout;
+
+  const _BurnHoldPreviewOverlay({
+    required this.imagePath,
+    required this.onTimeout,
+  });
+
+  @override
+  State<_BurnHoldPreviewOverlay> createState() =>
+      _BurnHoldPreviewOverlayState();
+}
+
+class _BurnHoldPreviewOverlayState extends State<_BurnHoldPreviewOverlay> {
+  static const int _burnSeconds = 5;
+  int _secondsLeft = _burnSeconds;
+  Timer? _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      if (_secondsLeft <= 1) {
+        timer.cancel();
+        widget.onTimeout();
+        return;
+      }
+      setState(() {
+        _secondsLeft -= 1;
+      });
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isNetwork = widget.imagePath.startsWith('http');
+
+    return Material(
+      color: Colors.black.withValues(alpha: 0.94),
+      child: Stack(
+        children: [
+          Center(
+            child: InteractiveViewer(
+              minScale: 0.8,
+              maxScale: 4.0,
+              child: isNetwork
+                  ? Image.network(
+                      widget.imagePath,
+                      fit: BoxFit.contain,
+                      errorBuilder: (_, __, ___) => const Text(
+                        '图片不可用',
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: AppColors.textTertiary,
+                        ),
+                      ),
+                    )
+                  : Image.file(
+                      File(widget.imagePath),
+                      fit: BoxFit.contain,
+                      errorBuilder: (_, __, ___) => const Text(
+                        '图片不可用',
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: AppColors.textTertiary,
+                        ),
+                      ),
+                    ),
+            ),
+          ),
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 28,
+            child: Center(
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.44),
+                  borderRadius: BorderRadius.circular(UiTokens.radiusSm),
+                  border: Border.all(
+                    color: AppColors.warning.withValues(alpha: 0.35),
+                  ),
+                ),
+                child: Text(
+                  '长按查看中 · $_secondsLeft 秒后销毁',
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: AppColors.textPrimary,
+                    fontWeight: FontWeight.w300,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

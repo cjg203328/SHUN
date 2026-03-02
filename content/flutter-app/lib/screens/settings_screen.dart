@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
 import '../config/theme.dart';
@@ -99,6 +100,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       ),
                     ),
                     onTap: () => _showUpdatePhoneDialog(context),
+                  ),
+                  _buildDivider(),
+                  _buildSettingItem(
+                    context,
+                    icon: Icons.badge_outlined,
+                    title: '账号UID',
+                    trailing: Consumer<AuthProvider>(
+                      builder: (context, auth, child) => Text(
+                        auth.uid ?? '生成中',
+                        style: const TextStyle(
+                          fontSize: 14,
+                          color: AppColors.textTertiary,
+                        ),
+                      ),
+                    ),
+                    onTap: () => _copyUid(context),
                   ),
                   _buildDivider(),
                   _buildSettingItem(
@@ -837,6 +854,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
       enabled ? AppToastCode.enabled : AppToastCode.disabled,
       subject: '震动',
     );
+  }
+
+  Future<void> _copyUid(BuildContext context) async {
+    final uid = context.read<AuthProvider>().uid;
+    if (uid == null || uid.isEmpty) {
+      AppFeedback.showError(
+        context,
+        AppErrorCode.invalidInput,
+        detail: 'UID生成中，请稍后再试',
+      );
+      return;
+    }
+    await Clipboard.setData(ClipboardData(text: uid));
+    if (!context.mounted) return;
+    AppFeedback.showToast(context, AppToastCode.copied);
   }
 
   Future<void> _showUpdatePhoneDialog(BuildContext context) async {

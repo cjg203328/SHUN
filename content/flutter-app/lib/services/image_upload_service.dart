@@ -168,7 +168,7 @@ class ImageUploadService {
 
       return savedFile;
     } catch (e) {
-      print('选择头像失败: $e');
+      debugPrint('选择头像失败: $e');
       if (context.mounted) {
         AppFeedback.showError(context, AppErrorCode.unknown);
       }
@@ -224,7 +224,7 @@ class ImageUploadService {
 
       return savedFile;
     } catch (e) {
-      print('选择背景失败: $e');
+      debugPrint('选择背景失败: $e');
       if (context.mounted) {
         AppFeedback.showError(context, AppErrorCode.unknown);
       }
@@ -249,7 +249,7 @@ class ImageUploadService {
         try {
           await File(oldPath).delete();
         } catch (e) {
-          print('删除旧头像失败: $e');
+          debugPrint('删除旧头像失败: $e');
         }
       }
     } else if (type == 'background') {
@@ -258,7 +258,7 @@ class ImageUploadService {
         try {
           await File(oldPath).delete();
         } catch (e) {
-          print('删除旧背景失败: $e');
+          debugPrint('删除旧背景失败: $e');
         }
       }
     }
@@ -297,7 +297,7 @@ class ImageUploadService {
       try {
         await File(path).delete();
       } catch (e) {
-        print('删除头像失败: $e');
+        debugPrint('删除头像失败: $e');
       }
     }
 
@@ -312,7 +312,7 @@ class ImageUploadService {
       try {
         await File(path).delete();
       } catch (e) {
-        print('删除背景失败: $e');
+        debugPrint('删除背景失败: $e');
       }
     }
 

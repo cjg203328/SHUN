@@ -99,7 +99,7 @@ class ImageHelper {
       }
       return null;
     } catch (e) {
-      print('选择图片失败: $e');
+      debugPrint('选择图片失败: $e');
       return null;
     }
   }
@@ -118,7 +118,7 @@ class ImageHelper {
       }
       return null;
     } catch (e) {
-      print('拍照失败: $e');
+      debugPrint('拍照失败: $e');
       return null;
     }
   }
@@ -178,7 +178,7 @@ class ImageHelper {
 
       return compressedFile;
     } catch (e) {
-      print('压缩图片失败: $e');
+      debugPrint('压缩图片失败: $e');
       return imageFile;
     }
   }

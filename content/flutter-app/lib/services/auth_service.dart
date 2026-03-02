@@ -17,12 +17,13 @@ class AuthService {
   Future<void> saveLogin({
     required String phone,
     required String token,
+    required String uid,
   }) async {
-    await _repository.saveAuthState(phone: phone, token: token);
+    await _repository.saveAuthState(phone: phone, token: token, uid: uid);
   }
 
-  Future<void> updatePhone(String phone) async {
-    await _repository.savePhone(phone);
+  Future<void> updatePhone(String phone, {String? uid}) async {
+    await _repository.savePhone(phone, uid: uid);
   }
 
   Future<void> clearLoginState() async {

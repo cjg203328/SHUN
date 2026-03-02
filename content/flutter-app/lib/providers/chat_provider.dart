@@ -47,6 +47,16 @@ class ChatProvider extends ChangeNotifier {
         (entry.value.isFriend || !entry.value.isExpired)));
   }
 
+  List<ChatThread> get sortedThreads {
+    final items = threads.values.toList();
+    items.sort((a, b) {
+      final compare = _lastActivityAt(b).compareTo(_lastActivityAt(a));
+      if (compare != 0) return compare;
+      return b.createdAt.compareTo(a.createdAt);
+    });
+    return items;
+  }
+
   List<Message> getMessages(String threadId) {
     return _messages[threadId] ?? [];
   }
@@ -197,20 +207,23 @@ class ChatProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  void sendMessage(String threadId, String content) {
+  bool sendMessage(String threadId, String content) {
+    final normalized = content.trim();
+    if (normalized.isEmpty) return false;
+
     final thread = _threads[threadId];
-    if (thread == null) return;
+    if (thread == null) return false;
 
     // 检查是否可以发送消息（取关限制）
     if (!_chatService.canSendText(thread)) {
       // 不能发送，需要对方确认
-      return;
+      return false;
     }
 
     final messageId = const Uuid().v4();
     final message = Message(
       id: messageId,
-      content: content,
+      content: normalized,
       isMe: true,
       timestamp: DateTime.now(),
       status: MessageStatus.sending,
@@ -228,7 +241,8 @@ class ChatProvider extends ChangeNotifier {
     notifyListeners();
 
     // 模拟发送（检测网络状态）
-    _simulateSend(threadId, messageId, content);
+    _simulateSend(threadId, messageId, normalized);
+    return true;
   }
 
   Future<void> _simulateSend(
@@ -408,14 +422,16 @@ class ChatProvider extends ChangeNotifier {
   /// - 好友：直接恢复可见性并保留原会话
   /// - 陌生人：恢复可见并重置为新的24小时有效期
   void restoreConversationAfterUnblock(String userId) {
-    final thread = _threads[userId];
+    final threadId = _resolveThreadIdByUserId(userId);
+    if (threadId == null) return;
+    final thread = _threads[threadId];
     if (thread == null) return;
 
-    _deletedThreads[userId] = false;
+    _deletedThreads[threadId] = false;
 
     if (!thread.isFriend) {
       final now = DateTime.now();
-      _threads[userId] = ChatThread(
+      _threads[threadId] = ChatThread(
         id: thread.id,
         otherUser: thread.otherUser,
         unreadCount: thread.unreadCount,
@@ -476,18 +492,18 @@ class ChatProvider extends ChangeNotifier {
   }
 
   /// 发送图片消息
-  Future<void> sendImageMessage(
+  Future<bool> sendImageMessage(
     String threadId,
     File imageFile,
     ImageQuality quality,
     bool isBurnAfterReading,
   ) async {
     final thread = _threads[threadId];
-    if (thread == null) return;
+    if (thread == null) return false;
 
     // 检查是否可以发送消息（取关限制）
     if (!_chatService.canSendImage(thread)) {
-      return;
+      return false;
     }
 
     try {
@@ -520,8 +536,10 @@ class ChatProvider extends ChangeNotifier {
 
       // 模拟发送
       _simulateSendImage(threadId, messageId);
+      return true;
     } catch (e) {
-      print('发送图片失败: $e');
+      debugPrint('发送图片失败: $e');
+      return false;
     }
   }
 
@@ -569,5 +587,23 @@ class ChatProvider extends ChangeNotifier {
       messages.removeWhere((msg) => msg.id == messageId);
       notifyListeners();
     }
+  }
+
+  DateTime _lastActivityAt(ChatThread thread) {
+    final messages = _messages[thread.id];
+    if (messages != null && messages.isNotEmpty) {
+      return messages.last.timestamp;
+    }
+    return thread.createdAt;
+  }
+
+  String? _resolveThreadIdByUserId(String userId) {
+    if (_threads.containsKey(userId)) return userId;
+    for (final entry in _threads.entries) {
+      if (entry.value.otherUser.id == userId) {
+        return entry.key;
+      }
+    }
+    return null;
   }
 }

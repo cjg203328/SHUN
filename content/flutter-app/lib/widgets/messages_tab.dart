@@ -53,7 +53,7 @@ class _MessagesTabState extends State<MessagesTab> {
       ),
       body: Consumer<ChatProvider>(
         builder: (context, chatProvider, child) {
-          final threads = chatProvider.threads.values.toList();
+          final threads = chatProvider.sortedThreads;
 
           if (threads.isEmpty) {
             return Center(
@@ -363,7 +363,8 @@ class _ThreadItem extends StatelessWidget {
                       ),
                       if (lastMessage != null &&
                           lastMessage!.isMe &&
-                          lastMessage!.status == MessageStatus.sent) ...[
+                          lastMessage!.status == MessageStatus.sent &&
+                          !lastMessage!.isBurnAfterReading) ...[
                         const SizedBox(width: 8),
                         Text(
                           lastMessage!.isRead ? '对方已读' : '对方未读',
@@ -372,7 +373,8 @@ class _ThreadItem extends StatelessWidget {
                             fontWeight: FontWeight.w300,
                             color: lastMessage!.isRead
                                 ? AppColors.textTertiary.withValues(alpha: 0.7)
-                                : AppColors.textSecondary.withValues(alpha: 0.85),
+                                : AppColors.textSecondary
+                                    .withValues(alpha: 0.85),
                           ),
                         ),
                       ],

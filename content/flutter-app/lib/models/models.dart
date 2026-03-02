@@ -1,5 +1,6 @@
 class User {
   final String id;
+  final String uid;
   final String nickname;
   final String? avatar;
   final String distance;
@@ -10,6 +11,7 @@ class User {
 
   User({
     required this.id,
+    String? uid,
     required this.nickname,
     this.avatar,
     required this.distance,
@@ -17,10 +19,11 @@ class User {
     this.isOnline = false,
     this.hasLocationPermission = false,
     this.lastOnlineTime,
-  });
+  }) : uid = uid ?? id;
 
   // 复制用户并修改某些字段
   User copyWith({
+    String? uid,
     bool? isOnline,
     bool? hasLocationPermission,
     DateTime? lastOnlineTime,
@@ -28,6 +31,7 @@ class User {
   }) {
     return User(
       id: id,
+      uid: uid ?? this.uid,
       nickname: nickname,
       avatar: avatar,
       distance: distance ?? this.distance,
@@ -42,6 +46,7 @@ class User {
   factory User.fromJson(Map<String, dynamic> json) {
     return User(
       id: json['id'],
+      uid: json['uid'],
       nickname: json['nickname'],
       avatar: json['avatar'],
       distance: json['distance'],
@@ -57,6 +62,7 @@ class User {
   Map<String, dynamic> toJson() {
     return {
       'id': id,
+      'uid': uid,
       'nickname': nickname,
       'avatar': avatar,
       'distance': distance,
