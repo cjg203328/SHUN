@@ -33,3 +33,6 @@ flutter-app/android/local.properties
 *.backup
 coverage/
 
+flutter-app/coverage/
+*.apk
+*.aab
