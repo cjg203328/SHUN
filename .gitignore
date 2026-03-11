@@ -1,0 +1,35 @@
+# OS / IDE
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Build outputs
+apk-output/
+flutter-app/build/
+flutter-app/.dart_tool/
+flutter-app/.flutter-plugins
+flutter-app/.flutter-plugins-dependencies
+flutter-app/.packages
+flutter-app/android/.gradle/
+flutter-app/android/app/debug/
+flutter-app/android/app/profile/
+flutter-app/android/app/release/
+backend/server/node_modules/
+backend/server/dist/
+
+# Secrets
+flutter-app/android/key.properties
+*.jks
+*.keystore
+*.p12
+*.env
+
+# Optional local storage
+backend/server/storage/
+.vite/
+*.log
+flutter-app/android/local.properties
+*.backup
+coverage/
+

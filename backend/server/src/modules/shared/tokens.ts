@@ -1,0 +1,3 @@
+export const USER_SETTINGS_STORE = Symbol('USER_SETTINGS_STORE');
+export const AUTH_RUNTIME_STORE = Symbol('AUTH_RUNTIME_STORE');
+export const RUNTIME_STATE_STORE = Symbol('RUNTIME_STATE_STORE');

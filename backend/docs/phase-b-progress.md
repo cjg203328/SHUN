@@ -1,0 +1,66 @@
+# Phase B Progress
+
+## Done
+- Backend service scaffold with clear layered architecture.
+- Storage abstraction and adapters:
+  - User/Settings store: memory + PostgreSQL adapter
+  - Auth runtime store: memory + Redis adapter
+- API engineering baseline:
+  - request logging interceptor with request id
+  - unified app setup helper for bootstrap/test
+  - Swagger OpenAPI docs at `/api/docs` (non-test env)
+- Deployment baseline:
+  - DB migration runner (`npm run db:migrate`)
+  - staging/production env templates
+  - nginx reverse proxy example + deploy checklist
+- Auth module endpoints:
+  - `POST /api/v1/auth/otp/send`
+  - `POST /api/v1/auth/otp/verify`
+  - `POST /api/v1/auth/refresh`
+  - `POST /api/v1/auth/logout`
+- Users module endpoints:
+  - `GET /api/v1/users/me`
+  - `PATCH /api/v1/users/me`
+  - `POST /api/v1/users/me/avatar/upload-token`
+  - `POST /api/v1/users/me/background/upload-token`
+- Settings module endpoints:
+  - `GET /api/v1/settings/me`
+  - `PATCH /api/v1/settings/me`
+- Friends module endpoints:
+  - `GET /api/v1/users/search`
+  - `GET /api/v1/users/blocked`
+  - `GET /api/v1/friends`
+  - `GET /api/v1/friends/requests/pending`
+  - `POST /api/v1/friends/requests`
+  - `POST /api/v1/friends/requests/{requestId}/accept`
+  - `POST /api/v1/friends/requests/{requestId}/reject`
+  - `POST /api/v1/friends/{userId}/block`
+  - `DELETE /api/v1/friends/{userId}/block`
+- Match module endpoints:
+  - `GET /api/v1/match/quota`
+  - `POST /api/v1/match/start`
+  - `POST /api/v1/match/cancel`
+- Chat module endpoints:
+  - `GET /api/v1/threads`
+  - `POST /api/v1/threads/direct`
+  - `GET /api/v1/threads/{threadId}/messages`
+  - `POST /api/v1/threads/{threadId}/messages/text`
+  - `POST /api/v1/threads/{threadId}/messages/image`
+  - `POST /api/v1/threads/{threadId}/read`
+  - `DELETE /api/v1/threads/{threadId}`
+  - `POST /api/v1/messages/{messageId}/recall`
+- WebSocket gateway:
+  - Namespace: `/ws`
+  - Events: `thread.join`, `msg.send.text`, `msg.send.image`, `msg.read`, `typing`
+  - Push: `msg.ack`, `msg.new`, `msg.read_by_peer`, `thread.updated`
+- Build validation:
+  - `npm install` completed
+  - `npm run build` passed on 2026-03-05
+- Integration validation:
+  - `npm run test:integration` added
+  - auth/users/settings/friends/match/chat e2e tests added
+  - websocket chat gateway e2e test added
+
+## Pending (next execution)
+- Add migration runner version table and rollback scripts.
+- Replace in-memory chat/friends state with persistent repository.
