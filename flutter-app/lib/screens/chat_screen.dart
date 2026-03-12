@@ -32,6 +32,8 @@ class _ChatScreenState extends State<ChatScreen> {
   final TextEditingController _inputController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   ChatProvider? _chatProvider;
+  bool _chatProviderListenerAttached = false;
+  Timer? _intimacyHideTimer;
   int _lastIntimacyPoints = 0;
   int _lastMessageCount = 0;
   int _intimacyAnimationToken = 0;
@@ -39,6 +41,8 @@ class _ChatScreenState extends State<ChatScreen> {
   int _intimacyChange = 0;
   bool _hasText = false; // 添加状态追踪
   bool _isBurnAfterReadEnabled = false;
+  bool _scrollToBottomQueued = false;
+  bool _canonicalRouteSyncQueued = false;
 
   @override
   void initState() {
@@ -55,49 +59,123 @@ class _ChatScreenState extends State<ChatScreen> {
     });
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _chatProvider = context.read<ChatProvider>();
-      _chatProvider?.addListener(_handleChatProviderChanged);
-      _chatProvider?.setActiveThread(widget.threadId);
-
-      // 进入会话即视为已查看，未读立即清零
-      final thread = _chatProvider?.getThread(widget.threadId);
-      if (thread != null) {
-        _lastIntimacyPoints = thread.intimacyPoints;
-        _lastMessageCount =
-            _chatProvider?.getMessages(widget.threadId).length ?? 0;
-        _chatProvider?.markAsRead(widget.threadId);
-      }
+      if (!mounted) return;
+      _bindChatProvider();
+      _activateCurrentThread();
     });
   }
 
   @override
+  void didUpdateWidget(covariant ChatScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.threadId == widget.threadId) {
+      return;
+    }
+    _chatProvider?.clearActiveThread(oldWidget.threadId);
+    _resetComposerStateForThreadChange();
+    _activateCurrentThread();
+  }
+
+  @override
   void dispose() {
-    _chatProvider?.removeListener(_handleChatProviderChanged);
+    _intimacyHideTimer?.cancel();
+    if (_chatProviderListenerAttached) {
+      _chatProvider?.removeListener(_handleChatProviderChanged);
+      _chatProviderListenerAttached = false;
+    }
     _chatProvider?.clearActiveThread(widget.threadId);
     _inputController.dispose();
     _scrollController.dispose();
     super.dispose();
   }
 
-  void _scrollToBottom() {
-    if (_scrollController.hasClients) {
-      _scrollController.animateTo(
-        _scrollController.position.maxScrollExtent,
-        duration: const Duration(milliseconds: 300),
-        curve: Curves.easeOut,
-      );
+  void _bindChatProvider() {
+    _chatProvider ??= context.read<ChatProvider>();
+    if (_chatProviderListenerAttached) {
+      return;
     }
+    _chatProvider?.addListener(_handleChatProviderChanged);
+    _chatProviderListenerAttached = true;
+  }
+
+  void _activateCurrentThread() {
+    _chatProvider?.setActiveThread(widget.threadId);
+    final thread = _chatProvider?.getThread(widget.threadId);
+    _lastIntimacyPoints = thread?.intimacyPoints ?? 0;
+    _lastMessageCount = _chatProvider?.getMessages(widget.threadId).length ?? 0;
+    _scheduleCanonicalRouteSync();
+  }
+
+  void _resetComposerStateForThreadChange() {
+    _intimacyHideTimer?.cancel();
+    _intimacyAnimationToken += 1;
+    _showIntimacyChange = false;
+    _intimacyChange = 0;
+    _isBurnAfterReadEnabled = false;
+    _hasText = false;
+    _scrollToBottomQueued = false;
+    if (_inputController.text.isNotEmpty) {
+      _inputController.value = const TextEditingValue();
+    }
+  }
+
+  void _scrollToBottom() {
+    if (!mounted || !_scrollController.hasClients) return;
+    _scrollController.animateTo(
+      _scrollController.position.maxScrollExtent,
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeOut,
+    );
+  }
+
+  void _scheduleScrollToBottom() {
+    if (_scrollToBottomQueued) {
+      return;
+    }
+    _scrollToBottomQueued = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _scrollToBottomQueued = false;
+      _scrollToBottom();
+    });
+  }
+
+  void _scheduleCanonicalRouteSync() {
+    final canonicalThreadId = _chatProvider?.canonicalThreadId(widget.threadId);
+    if (!mounted ||
+        canonicalThreadId == null ||
+        canonicalThreadId == widget.threadId ||
+        _canonicalRouteSyncQueued) {
+      return;
+    }
+    _canonicalRouteSyncQueued = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _canonicalRouteSyncQueued = false;
+      if (!mounted) return;
+      final latestCanonicalThreadId =
+          _chatProvider?.canonicalThreadId(widget.threadId);
+      if (latestCanonicalThreadId == null ||
+          latestCanonicalThreadId == widget.threadId) {
+        return;
+      }
+      final router = GoRouter.maybeOf(context);
+      if (router == null) {
+        return;
+      }
+      router.replace('/chat/$latestCanonicalThreadId');
+    });
   }
 
   void _handleChatProviderChanged() {
     if (!mounted) return;
 
     final thread = _chatProvider?.getThread(widget.threadId);
+    _scheduleCanonicalRouteSync();
     if (thread != null && thread.intimacyPoints != _lastIntimacyPoints) {
       final change = thread.intimacyPoints - _lastIntimacyPoints;
       _lastIntimacyPoints = thread.intimacyPoints;
 
       if (change > 0) {
+        _intimacyHideTimer?.cancel();
         _intimacyAnimationToken += 1;
         final token = _intimacyAnimationToken;
         setState(() {
@@ -105,7 +183,7 @@ class _ChatScreenState extends State<ChatScreen> {
           _showIntimacyChange = true;
         });
 
-        Future.delayed(const Duration(seconds: 2), () {
+        _intimacyHideTimer = Timer(const Duration(seconds: 2), () {
           if (!mounted || token != _intimacyAnimationToken) return;
           setState(() {
             _showIntimacyChange = false;
@@ -122,12 +200,200 @@ class _ChatScreenState extends State<ChatScreen> {
       if ((thread?.unreadCount ?? 0) > 0) {
         _chatProvider?.markAsRead(widget.threadId);
       }
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) {
-          _scrollToBottom();
-        }
-      });
+      _scheduleScrollToBottom();
     }
+  }
+
+  void _sendCurrentMessage(bool canSend) {
+    if (!canSend) return;
+
+    final content = _inputController.text.trim();
+    if (content.isEmpty) return;
+
+    final queued = context.read<ChatProvider>().sendMessage(
+          widget.threadId,
+          content,
+        );
+
+    if (queued) {
+      _inputController.clear();
+      setState(() {
+        _hasText = false;
+      });
+      _scheduleScrollToBottom();
+      return;
+    }
+
+    AppFeedback.showError(
+      context,
+      AppErrorCode.sendFailed,
+      detail: '消息没有发出去，你可以稍后重试。',
+    );
+  }
+
+  Widget _buildEmptyConversationState(ChatThread? thread) {
+    final title = thread == null ? '会话暂不可用' : '现在发第一句，会更容易聊起来';
+    final subtitle = thread == null
+        ? '请返回消息列表后重新进入这个会话。'
+        : thread.otherUser.isOnline
+            ? '对方此刻在线，适合先发一句轻松自然的问候。'
+            : '对方暂时不在线，留一句舒服的话，回来时会先看到。';
+    final suggestions = thread == null
+        ? const <String>['返回上一页', '重新进入会话']
+        : thread.otherUser.isOnline
+            ? const <String>['嗨，刚好看到你', '你现在在忙什么', '想和你聊两句']
+            : const <String>['先给你留个言', '等你看到时回我就好', '想认识一下你'];
+
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 28),
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 24),
+          decoration: BoxDecoration(
+            color: AppColors.cardBg,
+            borderRadius: BorderRadius.circular(UiTokens.radiusLg),
+            border: Border.all(color: AppColors.white08),
+            boxShadow: UiTokens.softShadow,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 58,
+                height: 58,
+                decoration: BoxDecoration(
+                  color: AppColors.white08,
+                  borderRadius: BorderRadius.circular(18),
+                ),
+                child: Icon(
+                  thread?.otherUser.isOnline == true
+                      ? Icons.waving_hand_rounded
+                      : Icons.mark_chat_unread_outlined,
+                  color: AppColors.textPrimary,
+                  size: 28,
+                ),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                title,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontSize: 17,
+                  fontWeight: FontWeight.w400,
+                  color: AppColors.textPrimary,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                subtitle,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w300,
+                  color: AppColors.textTertiary.withValues(alpha: 0.9),
+                  height: 1.5,
+                ),
+              ),
+              const SizedBox(height: 16),
+              Wrap(
+                alignment: WrapAlignment.center,
+                spacing: 8,
+                runSpacing: 8,
+                children: suggestions.map((item) {
+                  final canApplySuggestion = thread != null;
+
+                  return GestureDetector(
+                    onTap: !canApplySuggestion
+                        ? null
+                        : () {
+                            _inputController.text = item;
+                            _inputController.selection =
+                                TextSelection.fromPosition(
+                              TextPosition(offset: item.length),
+                            );
+                            setState(() {
+                              _hasText = true;
+                            });
+                          },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
+                      ),
+                      decoration: BoxDecoration(
+                        color: canApplySuggestion
+                            ? AppColors.white08
+                            : AppColors.white05,
+                        borderRadius: BorderRadius.circular(999),
+                        border: Border.all(color: AppColors.white08),
+                      ),
+                      child: Text(
+                        item,
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w300,
+                          color: canApplySuggestion
+                              ? AppColors.textPrimary
+                              : AppColors.textSecondary,
+                        ),
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildComposerStatus({
+    required ChatThread? thread,
+    required bool canSend,
+    required bool canSendImage,
+  }) {
+    String text;
+    IconData icon;
+    Color accent;
+
+    if (!canSend) {
+      text = '当前无法继续发送消息，等待对方确认后再继续。';
+      icon = Icons.lock_outline;
+      accent = AppColors.error;
+    } else if (!canSendImage) {
+      text = thread == null
+          ? '当前会话还没准备好。'
+          : FeaturePolicy.profileUnlockHint(thread, '图片消息');
+      icon = Icons.image_not_supported_outlined;
+      accent = AppColors.textTertiary;
+    } else {
+      text = _hasText ? '准备好了就发送，简短自然一点更容易收到回复。' : '支持文字与图片消息，先发一句简单的开场白吧。';
+      icon = Icons.tips_and_updates_outlined;
+      accent = AppColors.textTertiary;
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Row(
+        children: [
+          Icon(icon, size: 14, color: accent.withValues(alpha: 0.9)),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              text,
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w300,
+                color: accent.withValues(alpha: 0.92),
+                height: 1.4,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -432,34 +698,11 @@ class _ChatScreenState extends State<ChatScreen> {
               children: [
                 Consumer<ChatProvider>(
                   builder: (context, chatProvider, child) {
+                    final thread = chatProvider.getThread(widget.threadId);
                     final messages = chatProvider.getMessages(widget.threadId);
 
                     if (messages.isEmpty) {
-                      return Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Text(
-                              '👋',
-                              style: TextStyle(
-                                fontSize: 48,
-                                color: AppColors.textTertiary
-                                    .withValues(alpha: 0.5),
-                              ),
-                            ),
-                            const SizedBox(height: 16),
-                            Text(
-                              '开始聊天吧',
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .bodyMedium
-                                  ?.copyWith(
-                                    color: AppColors.textTertiary,
-                                  ),
-                            ),
-                          ],
-                        ),
-                      );
+                      return _buildEmptyConversationState(thread);
                     }
 
                     return ListView.builder(
@@ -538,9 +781,12 @@ class _ChatScreenState extends State<ChatScreen> {
                                 controller: _inputController,
                                 maxLength: 300,
                                 maxLines: null,
+                                textInputAction: TextInputAction.send,
                                 enabled: canSend,
+                                onSubmitted: (_) =>
+                                    _sendCurrentMessage(canSend),
                                 decoration: InputDecoration(
-                                  hintText: canSend ? '说点什么...' : '无法发送消息',
+                                  hintText: canSend ? '输入你想说的话...' : '当前无法发送消息',
                                   counterText: '',
                                   contentPadding: const EdgeInsets.symmetric(
                                     horizontal: 18,
@@ -570,32 +816,15 @@ class _ChatScreenState extends State<ChatScreen> {
                                 ),
                                 onPressed: !_hasText || !canSend
                                     ? null
-                                    : () {
-                                        final content =
-                                            _inputController.text.trim();
-                                        if (content.isNotEmpty) {
-                                          final queued = context
-                                              .read<ChatProvider>()
-                                              .sendMessage(
-                                                widget.threadId,
-                                                content,
-                                              );
-                                          if (queued) {
-                                            _inputController.clear();
-                                            setState(() {
-                                              _hasText = false;
-                                            });
-                                          } else {
-                                            AppFeedback.showError(
-                                              context,
-                                              AppErrorCode.sendFailed,
-                                            );
-                                          }
-                                        }
-                                      },
+                                    : () => _sendCurrentMessage(canSend),
                               ),
                             ),
                           ],
+                        ),
+                        _buildComposerStatus(
+                          thread: thread,
+                          canSend: canSend,
+                          canSendImage: canSendImage,
                         ),
                         AnimatedSwitcher(
                           duration: UiTokens.motionNormal,
@@ -678,7 +907,12 @@ class _ChatScreenState extends State<ChatScreen> {
 
   Future<void> _pickAndSendImage(bool canSend) async {
     if (!canSend) return;
-    final thread = context.read<ChatProvider>().getThread(widget.threadId);
+    final startedThreadId = widget.threadId;
+    final burnAfterReadEnabled = _isBurnAfterReadEnabled;
+    final thread = _resolveImageThreadForSend(
+      startedThreadId,
+      showFeedback: true,
+    );
     if (thread == null) return;
     if (!FeaturePolicy.canSendImage(thread)) {
       AppFeedback.showError(
@@ -690,59 +924,112 @@ class _ChatScreenState extends State<ChatScreen> {
     }
 
     final source = await ImageHelper.showImageSourceSelector(context);
-    if (!mounted || source == null) return;
+    if (!mounted || widget.threadId != startedThreadId || source == null) return;
 
     bool hasPermission = false;
     if (source == ImageSource.camera) {
-      if (!mounted) return;
+      if (!mounted || widget.threadId != startedThreadId) return;
       hasPermission = await PermissionManager.requestCameraPermission(
         context,
         purpose: '拍摄照片发送聊天图片',
       );
     } else {
-      if (!mounted) return;
+      if (!mounted || widget.threadId != startedThreadId) return;
       hasPermission = await PermissionManager.requestPhotosPermission(
         context,
         purpose: '从相册选择图片发送聊天消息',
       );
     }
-    if (!mounted) return;
+    if (!mounted || widget.threadId != startedThreadId) return;
     if (!hasPermission) {
       AppFeedback.showError(context, AppErrorCode.permissionDenied);
+      return;
+    }
+    if (_resolveImageThreadForSend(startedThreadId, showFeedback: true) ==
+        null) {
       return;
     }
 
     final imageFile = source == ImageSource.camera
         ? await ImageHelper.pickImageFromCamera()
         : await ImageHelper.pickImageFromGallery();
-    if (!mounted || imageFile == null) return;
+    if (!mounted || widget.threadId != startedThreadId || imageFile == null) {
+      return;
+    }
+    if (_resolveImageThreadForSend(startedThreadId, showFeedback: true) ==
+        null) {
+      return;
+    }
 
     final quality = await ImageHelper.showQualitySelector(context, imageFile);
-    if (!mounted || quality == null) return;
+    if (!mounted || widget.threadId != startedThreadId || quality == null) {
+      return;
+    }
+    if (_resolveImageThreadForSend(startedThreadId, showFeedback: true) ==
+        null) {
+      return;
+    }
 
     final queued = await context.read<ChatProvider>().sendImageMessage(
-          widget.threadId,
+          startedThreadId,
           imageFile,
           quality,
-          _isBurnAfterReadEnabled,
+          burnAfterReadEnabled,
         );
 
-    if (!mounted) return;
+    if (!mounted || widget.threadId != startedThreadId) return;
     if (!queued) {
-      AppFeedback.showError(context, AppErrorCode.sendFailed);
+      if (_resolveImageThreadForSend(startedThreadId, showFeedback: true) !=
+          null) {
+        AppFeedback.showError(context, AppErrorCode.sendFailed);
+      }
       return;
     }
     AppFeedback.showToast(
       context,
       AppToastCode.sent,
-      subject: _isBurnAfterReadEnabled ? '闪图（对方可看5秒）' : '图片',
+      subject: burnAfterReadEnabled ? '闪图（对方可看5秒）' : '图片',
     );
 
-    if (_isBurnAfterReadEnabled) {
+    if (burnAfterReadEnabled) {
       setState(() {
         _isBurnAfterReadEnabled = false;
       });
     }
+  }
+
+  ChatThread? _resolveImageThreadForSend(
+    String threadId, {
+    required bool showFeedback,
+  }) {
+    final chatProvider = context.read<ChatProvider>();
+    final visibleThread = chatProvider.threads[threadId];
+    if (visibleThread == null) {
+      if (showFeedback) {
+        final rawThread = chatProvider.getThread(threadId);
+        final detail =
+            rawThread != null && !rawThread.isFriend && rawThread.isExpired
+                ? '当前会话已过期，请返回消息列表重新进入'
+                : '当前会话不可用，请返回消息列表重新进入';
+        AppFeedback.showError(
+          context,
+          AppErrorCode.invalidInput,
+          detail: detail,
+        );
+      }
+      return null;
+    }
+    if (!FeaturePolicy.canSendImage(visibleThread)) {
+      if (showFeedback) {
+        AppFeedback.showError(
+          context,
+          AppErrorCode.unlockRequired,
+          detail: FeaturePolicy.profileUnlockHint(visibleThread, '鍥剧墖娑堟伅'),
+        );
+      }
+      return null;
+    }
+    return visibleThread;
   }
 
   Widget _buildImageAction({
@@ -1105,6 +1392,8 @@ class _ChatScreenState extends State<ChatScreen> {
 
     if (confirm == true && context.mounted) {
       await context.read<FriendProvider>().blockUser(thread.otherUser.id);
+      if (!context.mounted) return;
+      context.read<ChatProvider>().handleUserBlocked(thread.otherUser.id);
       if (!context.mounted) return;
       AppFeedback.showToast(
         context,
@@ -1677,9 +1966,9 @@ class _MessageBubbleState extends State<_MessageBubble> {
 
   @override
   Widget build(BuildContext context) {
-    final canRecall = message.isMe &&
-        message.status == MessageStatus.sent &&
-        DateTime.now().difference(message.timestamp).inMinutes < 2;
+    final canRecall = context
+        .read<ChatProvider>()
+        .canRecallMessage(widget.threadId, message.id);
     final isImage = message.type == MessageType.image;
     final isBurnImage = isImage && message.isBurnAfterReading;
 
@@ -1693,17 +1982,62 @@ class _MessageBubbleState extends State<_MessageBubble> {
           // 发送失败的感叹号（仅自己的消息）
           if (message.isMe && message.status == MessageStatus.failed) ...[
             GestureDetector(
-              onTap: () {
-                context
-                    .read<ChatProvider>()
-                    .resendMessage(widget.threadId, message.id);
+              onTap: () async {
+                if (isImage) {
+                  final imageResent = await context
+                      .read<ChatProvider>()
+                      .resendImageMessage(widget.threadId, message.id);
+                  if (!context.mounted) return;
+                  if (imageResent) {
+                    return;
+                  }
+                  AppFeedback.showError(
+                    context,
+                    AppErrorCode.invalidInput,
+                    detail: '图片发送失败，原图失效后请重新选择图片再发送。',
+                  );
+                } else {
+                  final resent = context
+                      .read<ChatProvider>()
+                      .resendMessage(widget.threadId, message.id);
+                  if (resent) {
+                    return;
+                  }
+                  AppFeedback.showError(
+                    context,
+                    AppErrorCode.sendFailed,
+                    detail: '消息暂时无法重试，请稍后再发一条。',
+                  );
+                }
               },
               child: Container(
-                margin: const EdgeInsets.only(right: 8, bottom: 12),
-                child: Icon(
-                  Icons.error_outline,
-                  size: 20,
-                  color: AppColors.error,
+                margin: const EdgeInsets.only(right: 8, bottom: 10),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
+                decoration: BoxDecoration(
+                  color: AppColors.error.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                    color: AppColors.error.withValues(alpha: 0.22),
+                  ),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(
+                      Icons.refresh,
+                      size: 14,
+                      color: AppColors.error,
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      '重试',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w400,
+                        color: AppColors.error.withValues(alpha: 0.92),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
@@ -1769,14 +2103,23 @@ class _MessageBubbleState extends State<_MessageBubble> {
 
                       if (!context.mounted) return;
                       if (confirm == true) {
-                        context
+                        final recalled = context
                             .read<ChatProvider>()
                             .recallMessage(widget.threadId, message.id);
-                        AppFeedback.showToast(
-                          context,
-                          AppToastCode.deleted,
-                          subject: '消息',
-                        );
+                        if (!context.mounted) return;
+                        if (recalled) {
+                          AppFeedback.showToast(
+                            context,
+                            AppToastCode.deleted,
+                            subject: '消息',
+                          );
+                        } else {
+                          AppFeedback.showError(
+                            context,
+                            AppErrorCode.notSupported,
+                            detail: '消息只能在发送后2分钟内撤回',
+                          );
+                        }
                       }
                     }
                   },
@@ -1793,8 +2136,8 @@ class _MessageBubbleState extends State<_MessageBubble> {
                 color: message.isMe
                     ? (message.status == MessageStatus.failed
                         ? AppColors.error.withValues(alpha: 0.2)
-                        : const Color(0xAA4A4A4A))
-                    : const Color(0xCC262626),
+                        : AppColors.white20)
+                    : AppColors.white12,
                 borderRadius: BorderRadius.only(
                   topLeft: const Radius.circular(UiTokens.radiusMd),
                   topRight: const Radius.circular(UiTokens.radiusMd),
@@ -1808,7 +2151,7 @@ class _MessageBubbleState extends State<_MessageBubble> {
                 border: Border.all(color: AppColors.white08),
                 boxShadow: const [
                   BoxShadow(
-                    color: Color(0x33000000),
+                    color: AppColors.pureBlack,
                     blurRadius: 8,
                     offset: Offset(0, 2),
                   ),
@@ -1833,6 +2176,17 @@ class _MessageBubbleState extends State<_MessageBubble> {
                       ),
                     ),
                   if (message.isMe &&
+                      message.status == MessageStatus.failed) ...[
+                    SizedBox(height: isImage ? 8 : 6),
+                    Text(
+                      isImage ? '图片发送失败，点左侧重试；原图失效后需重新选择' : '发送失败，点左侧重试',
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w300,
+                        color: AppColors.error.withValues(alpha: 0.88),
+                      ),
+                    ),
+                  ] else if (message.isMe &&
                       message.status == MessageStatus.sent &&
                       !message.isBurnAfterReading) ...[
                     SizedBox(height: isImage ? 8 : 6),
@@ -1883,7 +2237,7 @@ class _MessageBubbleState extends State<_MessageBubble> {
     await Navigator.of(context).push(
       PageRouteBuilder<void>(
         opaque: false,
-        barrierColor: Colors.black,
+        barrierColor: AppColors.pureBlack,
         pageBuilder: (_, __, ___) => _ImagePreviewScreen(
           imagePath: imagePath,
           isBurnAfterReading: false,
@@ -2002,7 +2356,7 @@ class _MessageBubbleState extends State<_MessageBubble> {
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
-                  color: Colors.black.withValues(alpha: 0.35),
+                  color: AppColors.pureBlack.withValues(alpha: 0.35),
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: const Row(
@@ -2097,7 +2451,8 @@ class _MessageBubbleState extends State<_MessageBubble> {
           Positioned.fill(
             child: Container(
               decoration: BoxDecoration(
-                color: Colors.black.withValues(alpha: isDestroyed ? 0.3 : 0.22),
+                color: AppColors.pureBlack
+                    .withValues(alpha: isDestroyed ? 0.3 : 0.22),
                 borderRadius: BorderRadius.circular(UiTokens.radiusSm),
               ),
             ),
@@ -2252,7 +2607,7 @@ class _BurnHoldPreviewOverlayState extends State<_BurnHoldPreviewOverlay> {
     final isNetwork = widget.imagePath.startsWith('http');
 
     return Material(
-      color: Colors.black.withValues(alpha: 0.94),
+      color: AppColors.pureBlack.withValues(alpha: 0.94),
       child: Stack(
         children: [
           Center(
@@ -2293,7 +2648,7 @@ class _BurnHoldPreviewOverlayState extends State<_BurnHoldPreviewOverlay> {
                 padding:
                     const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
                 decoration: BoxDecoration(
-                  color: Colors.black.withValues(alpha: 0.44),
+                  color: AppColors.pureBlack.withValues(alpha: 0.44),
                   borderRadius: BorderRadius.circular(UiTokens.radiusSm),
                   border: Border.all(
                     color: AppColors.warning.withValues(alpha: 0.35),
@@ -2363,7 +2718,7 @@ class _ImagePreviewScreenState extends State<_ImagePreviewScreen> {
     final isNetwork = widget.imagePath.startsWith('http');
 
     return Scaffold(
-      backgroundColor: Colors.black.withValues(alpha: 0.94),
+      backgroundColor: AppColors.pureBlack.withValues(alpha: 0.94),
       body: SafeArea(
         child: Stack(
           children: [
@@ -2419,7 +2774,7 @@ class _ImagePreviewScreenState extends State<_ImagePreviewScreen> {
                       vertical: 5,
                     ),
                     decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.42),
+                      color: AppColors.pureBlack.withValues(alpha: 0.42),
                       borderRadius: BorderRadius.circular(UiTokens.radiusSm),
                       border: Border.all(
                         color: AppColors.warning.withValues(alpha: 0.3),

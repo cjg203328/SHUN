@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 
 import '../config/theme.dart';
 import '../models/app_notification.dart';
+import '../providers/chat_provider.dart';
 import '../providers/notification_center_provider.dart';
 
 class NotificationCenterScreen extends StatelessWidget {
@@ -153,7 +154,14 @@ class NotificationCenterScreen extends StatelessWidget {
 
   void _handleTap(BuildContext context, AppNotification item) {
     if (item.threadId != null) {
-      context.push('/chat/${item.threadId}');
+      final chatProvider = context.read<ChatProvider>();
+      final canonicalThreadId = chatProvider.routeThreadId(
+        threadId: item.threadId,
+        userId: item.userId,
+      );
+      if (canonicalThreadId != null) {
+        context.push('/chat/$canonicalThreadId');
+      }
       return;
     }
 

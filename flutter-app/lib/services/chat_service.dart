@@ -3,6 +3,14 @@ import '../config/app_env.dart';
 import 'api_client.dart';
 import 'storage_service.dart';
 
+class ChatThreadHydrationSnapshot {
+  const ChatThreadHydrationSnapshot({
+    required this.threads,
+  });
+
+  final List<ChatThread> threads;
+}
+
 class ChatService {
   ChatService({ApiClient? apiClient}) : _apiClient = apiClient ?? ApiClient.instance;
 
@@ -40,6 +48,21 @@ class ChatService {
           .toList(growable: false);
     } catch (_) {
       return const [];
+    }
+  }
+
+  Future<ChatThreadHydrationSnapshot?> loadThreadHydrationSnapshot() async {
+    if (!hasSession) return null;
+    try {
+      final data = await _apiClient.get<List<dynamic>>('/threads');
+      return ChatThreadHydrationSnapshot(
+        threads: data
+            .whereType<Map<String, dynamic>>()
+            .map(_mapThread)
+            .toList(growable: false),
+      );
+    } catch (_) {
+      return null;
     }
   }
 

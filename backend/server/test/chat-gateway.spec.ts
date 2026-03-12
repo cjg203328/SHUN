@@ -16,6 +16,13 @@ describe('Chat Gateway (integration)', () => {
   let socketA: Socket | null = null;
   let socketB: Socket | null = null;
 
+  const disconnectSockets = () => {
+    socketA?.disconnect();
+    socketB?.disconnect();
+    socketA = null;
+    socketB = null;
+  };
+
   const login = async (phone: string, deviceId: string): Promise<LoginResult> => {
     const sendOtpRes = await request(app.getHttpServer())
       .post('/api/v1/auth/otp/send')
@@ -97,9 +104,12 @@ describe('Chat Gateway (integration)', () => {
     baseUrl = `http://127.0.0.1:${port}`;
   });
 
+  afterEach(() => {
+    disconnectSockets();
+  });
+
   afterAll(async () => {
-    socketA?.disconnect();
-    socketB?.disconnect();
+    disconnectSockets();
     await app.close();
   });
 
@@ -169,5 +179,154 @@ describe('Chat Gateway (integration)', () => {
     const readByPeer = await readByPeerPromise;
     expect(readByPeer.byUserId).toBe(userB.user.userId);
     expect(readByPeer.threadId).toBe(threadId);
+  });
+
+  it('should forward lastReadMessageId in msg.read and keep later messages unread', async () => {
+    const userA = await login('13800138102', 'device-ws-c');
+    const userB = await login('13800138103', 'device-ws-d');
+
+    const createThreadRes = await request(app.getHttpServer())
+      .post('/api/v1/threads/direct')
+      .set('Authorization', `Bearer ${userA.accessToken}`)
+      .send({ targetUserId: userB.user.userId })
+      .expect(201);
+    const threadId = createThreadRes.body.data.threadId as string;
+
+    socketA = await connectSocket(userA.accessToken);
+    socketB = await connectSocket(userB.accessToken);
+
+    await emitWithAck(socketA, 'thread.join', { threadId });
+    await emitWithAck(socketB, 'thread.join', { threadId });
+
+    const sendTextAndCaptureAck = async (content: string) => {
+      const ackPromise = new Promise<{ message: { messageId: string } }>((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error('msg.ack timeout')), 5000);
+        socketA?.once('msg.ack', (payload) => {
+          clearTimeout(timer);
+          resolve(payload as { message: { messageId: string } });
+        });
+      });
+
+      await emitWithAck(socketA!, 'msg.send.text', { threadId, content });
+      return ackPromise;
+    };
+
+    const firstAck = await sendTextAndCaptureAck('first-ws-read');
+    const secondAck = await sendTextAndCaptureAck('second-ws-read');
+    await sendTextAndCaptureAck('third-ws-read');
+
+    const readByPeerPromise = new Promise<{
+      byUserId: string;
+      threadId: string;
+      lastReadMessageId?: string;
+    }>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('msg.read_by_peer timeout')), 5000);
+      socketA?.once('msg.read_by_peer', (payload) => {
+        clearTimeout(timer);
+        resolve(
+          payload as {
+            byUserId: string;
+            threadId: string;
+            lastReadMessageId?: string;
+          },
+        );
+      });
+    });
+
+    await emitWithAck(socketB, 'msg.read', {
+      threadId,
+      lastReadMessageId: secondAck.message.messageId,
+    });
+
+    const readByPeer = await readByPeerPromise;
+    expect(readByPeer.byUserId).toBe(userB.user.userId);
+    expect(readByPeer.threadId).toBe(threadId);
+    expect(readByPeer.lastReadMessageId).toBe(secondAck.message.messageId);
+
+    const threadListB = await request(app.getHttpServer())
+      .get('/api/v1/threads')
+      .set('Authorization', `Bearer ${userB.accessToken}`)
+      .expect(200);
+    const threadB = threadListB.body.data.find(
+      (item: { threadId: string }) => item.threadId === threadId,
+    );
+    expect(threadB.unreadCount).toBe(1);
+
+    const messagesForA = await request(app.getHttpServer())
+      .get(`/api/v1/threads/${threadId}/messages`)
+      .set('Authorization', `Bearer ${userA.accessToken}`)
+      .expect(200);
+    const first = messagesForA.body.data.find(
+      (item: { messageId: string }) => item.messageId === firstAck.message.messageId,
+    );
+    const second = messagesForA.body.data.find(
+      (item: { messageId: string }) => item.messageId === secondAck.message.messageId,
+    );
+    const third = messagesForA.body.data.find(
+      (item: { content: string }) => item.content === 'third-ws-read',
+    );
+    expect(first.isRead).toBe(true);
+    expect(second.isRead).toBe(true);
+    expect(third.isRead).toBe(false);
+  });
+
+  it('should return ack error immediately for invalid websocket text payload', async () => {
+    const userA = await login('13800138104', 'device-ws-e');
+    const userB = await login('13800138105', 'device-ws-f');
+
+    const createThreadRes = await request(app.getHttpServer())
+      .post('/api/v1/threads/direct')
+      .set('Authorization', `Bearer ${userA.accessToken}`)
+      .send({ targetUserId: userB.user.userId })
+      .expect(201);
+    const threadId = createThreadRes.body.data.threadId as string;
+
+    socketA = await connectSocket(userA.accessToken);
+    await emitWithAck(socketA, 'thread.join', { threadId });
+
+    const response = await emitWithAck<{
+      ok: false;
+      error: { code: string; message: string; status: number };
+    }>(socketA, 'msg.send.text', {
+      threadId,
+      content: '   ',
+      clientMsgId: 'ws-invalid-text',
+    });
+
+    expect(response.ok).toBe(false);
+    expect(response.error.code).toBe('INVALID_INPUT');
+    expect(response.error.status).toBe(400);
+    expect(socketA.connected).toBe(true);
+  });
+
+  it('should return ack error immediately for invalid websocket image burn payload', async () => {
+    const userA = await login('13800138106', 'device-ws-g');
+    const userB = await login('13800138107', 'device-ws-h');
+
+    const createThreadRes = await request(app.getHttpServer())
+      .post('/api/v1/threads/direct')
+      .set('Authorization', `Bearer ${userA.accessToken}`)
+      .send({ targetUserId: userB.user.userId })
+      .expect(201);
+    const threadId = createThreadRes.body.data.threadId as string;
+
+    socketA = await connectSocket(userA.accessToken);
+    await emitWithAck(socketA, 'thread.join', { threadId });
+
+    const response = await emitWithAck<{
+      ok: false;
+      error: { code: string; message: string; status: number };
+    }>(socketA, 'msg.send.image', {
+      threadId,
+      imageKey: 'chat/ws-invalid/image.jpg',
+      burnAfterReading: false,
+      burnSeconds: 5,
+      clientMsgId: 'ws-invalid-image',
+    });
+
+    expect(response.ok).toBe(false);
+    expect(response.error.code).toBe('INVALID_INPUT');
+    expect(response.error.status).toBe(400);
+    expect(socketA.connected).toBe(true);
   });
 });

@@ -22,7 +22,6 @@ class LoginScreen extends StatefulWidget {
 class _LoginScreenState extends State<LoginScreen> {
   final _phoneController = TextEditingController();
   final _codeController = TextEditingController();
-  bool _codeSent = false;
   int _countdown = 0;
   bool _sendingCode = false;
   bool _loggingIn = false;
@@ -67,7 +66,6 @@ class _LoginScreenState extends State<LoginScreen> {
     }
 
     setState(() {
-      _codeSent = true;
       _countdown = 60;
     });
 
@@ -87,11 +85,17 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _login() async {
+    final authProvider = context.read<AuthProvider>();
+    final profileProvider = context.read<ProfileProvider>();
+    final settingsProvider = context.read<SettingsProvider>();
+    final friendProvider = context.read<FriendProvider>();
+    final matchProvider = context.read<MatchProvider>();
+    final chatProvider = context.read<ChatProvider>();
+
     setState(() {
       _loggingIn = true;
     });
 
-    final authProvider = context.read<AuthProvider>();
     final success = await authProvider.login(
       _phoneController.text,
       _codeController.text,
@@ -105,11 +109,11 @@ class _LoginScreenState extends State<LoginScreen> {
 
     if (success) {
       try {
-        await context.read<ProfileProvider>().refreshFromRemote();
-        await context.read<SettingsProvider>().refreshFromRemote();
-        await context.read<FriendProvider>().refreshFromRemote();
-        await context.read<MatchProvider>().refreshFromRemote();
-        await context.read<ChatProvider>().refreshFromRemote();
+        await profileProvider.refreshFromRemote();
+        await settingsProvider.refreshFromRemote();
+        await friendProvider.refreshFromRemote();
+        await matchProvider.refreshFromRemote();
+        await chatProvider.refreshFromRemote();
       } catch (_) {}
 
       if (!mounted) return;
@@ -279,8 +283,9 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                         const SizedBox(width: 12),
                         ElevatedButton(
-                          onPressed:
-                              (_countdown > 0 || _sendingCode) ? null : _sendCode,
+                          onPressed: (_countdown > 0 || _sendingCode)
+                              ? null
+                              : _sendCode,
                           style: ElevatedButton.styleFrom(
                             padding: const EdgeInsets.symmetric(
                                 horizontal: 24, vertical: 14),

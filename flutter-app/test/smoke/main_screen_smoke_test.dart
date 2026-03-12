@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:sunliao/providers/auth_provider.dart';
 import 'package:sunliao/providers/chat_provider.dart';
 import 'package:sunliao/providers/friend_provider.dart';
 import 'package:sunliao/providers/match_provider.dart';
+import 'package:sunliao/providers/notification_center_provider.dart';
 import 'package:sunliao/providers/profile_provider.dart';
 import 'package:sunliao/providers/settings_provider.dart';
 import 'package:sunliao/screens/main_screen.dart';
@@ -17,17 +19,34 @@ void main() {
   });
 
   Widget buildApp() {
+    final router = GoRouter(
+      initialLocation: '/main',
+      routes: [
+        GoRoute(
+          path: '/main',
+          builder: (context, state) {
+            final index =
+                int.tryParse(state.uri.queryParameters['tab'] ?? '0') ?? 0;
+            return MainScreen(initialIndex: index);
+          },
+        ),
+      ],
+    );
+
     return MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => AuthProvider()),
+        ChangeNotifierProvider<NotificationCenterProvider>.value(
+          value: NotificationCenterProvider.instance,
+        ),
         ChangeNotifierProvider(create: (_) => MatchProvider()),
         ChangeNotifierProvider(create: (_) => ChatProvider()),
         ChangeNotifierProvider(create: (_) => FriendProvider()),
         ChangeNotifierProvider(create: (_) => ProfileProvider()),
         ChangeNotifierProvider(create: (_) => SettingsProvider()),
       ],
-      child: const MaterialApp(
-        home: MainScreen(),
+      child: MaterialApp.router(
+        routerConfig: router,
       ),
     );
   }

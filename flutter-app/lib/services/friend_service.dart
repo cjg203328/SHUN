@@ -2,6 +2,18 @@ import '../models/models.dart';
 import 'api_client.dart';
 import 'storage_service.dart';
 
+class FriendHydrationSnapshot {
+  const FriendHydrationSnapshot({
+    required this.friends,
+    required this.requests,
+    required this.blockedUsers,
+  });
+
+  final List<Friend> friends;
+  final List<FriendRequest> requests;
+  final List<User> blockedUsers;
+}
+
 class FriendService {
   FriendService({ApiClient? apiClient}) : _apiClient = apiClient ?? ApiClient.instance;
 
@@ -71,6 +83,32 @@ class FriendService {
           .toList(growable: false);
     } catch (_) {
       return const [];
+    }
+  }
+
+  Future<FriendHydrationSnapshot?> loadHydrationSnapshot() async {
+    if (!hasSession) return null;
+
+    try {
+      final friendsData = await _apiClient.get<List<dynamic>>('/friends');
+      final requestsData = await _apiClient.get<List<dynamic>>('/friends/requests/pending');
+      final blockedUsersData = await _apiClient.get<List<dynamic>>('/users/blocked');
+      return FriendHydrationSnapshot(
+        friends: friendsData
+            .whereType<Map<String, dynamic>>()
+            .map(_mapFriend)
+            .toList(growable: false),
+        requests: requestsData
+            .whereType<Map<String, dynamic>>()
+            .map(_mapFriendRequest)
+            .toList(growable: false),
+        blockedUsers: blockedUsersData
+            .whereType<Map<String, dynamic>>()
+            .map(_mapUser)
+            .toList(growable: false),
+      );
+    } catch (_) {
+      return null;
     }
   }
 

@@ -1,7 +1,7 @@
 @echo off
 setlocal EnableExtensions EnableDelayedExpansion
 
-set "VERSION=1.0.3"
+set "VERSION=1.0.4"
 set "BUILD_TARGET=%~1"
 if "%BUILD_TARGET%"=="" set "BUILD_TARGET=apk"
 set "SCRIPT_DIR=%~dp0"

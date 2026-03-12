@@ -11,6 +11,7 @@ import {
 import { Server, Socket } from 'socket.io';
 import { AuthService } from '../../auth/application/auth.service';
 import { TokenUser } from '../../auth/domain/token-user';
+import { BusinessError, ErrorCode } from '../../../common/errors/error-codes';
 import { ChatService } from '../application/chat.service';
 
 type JoinThreadPayload = {
@@ -39,6 +40,15 @@ type ReadPayload = {
 type TypingPayload = {
   threadId: string;
   isTyping: boolean;
+};
+
+type AckErrorResponse = {
+  ok: false;
+  error: {
+    code: string;
+    message: string;
+    status: number;
+  };
 };
 
 @WebSocketGateway({
@@ -99,99 +109,115 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   async onThreadJoin(
     @ConnectedSocket() client: Socket,
     @MessageBody() payload: JoinThreadPayload,
-  ): Promise<{ joined: true; threadId: string }> {
-    const actor = this.requireSocketUser(client);
-    this.chatService.getThreadPeerUserId(actor.userId, payload.threadId);
-    await client.join(this.threadRoom(payload.threadId));
-    return { joined: true, threadId: payload.threadId };
+  ): Promise<{ joined: true; threadId: string } | AckErrorResponse> {
+    try {
+      const actor = this.requireSocketUser(client);
+      this.chatService.getThreadPeerUserId(actor.userId, payload.threadId);
+      await client.join(this.threadRoom(payload.threadId));
+      return { joined: true, threadId: payload.threadId };
+    } catch (error) {
+      return this.toAckError(error);
+    }
   }
 
   @SubscribeMessage('msg.send.text')
   async onSendText(
     @ConnectedSocket() client: Socket,
     @MessageBody() payload: SendTextPayload,
-  ): Promise<{ ok: true; messageId: string }> {
-    const actor = this.requireSocketUser(client);
-    const ownView = await this.chatService.sendTextMessageByActor(
-      { userId: actor.userId },
-      payload.threadId,
-      payload.content,
-      payload.clientMsgId,
-    );
-    const peerUserId = this.chatService.getThreadPeerUserId(actor.userId, payload.threadId);
-    const peerView = await this.chatService.getMessageViewForUser(
-      peerUserId,
-      ownView.messageId,
-    );
+  ): Promise<{ ok: true; messageId: string } | AckErrorResponse> {
+    try {
+      const actor = this.requireSocketUser(client);
+      const ownView = await this.chatService.sendTextMessageByActor(
+        { userId: actor.userId },
+        payload.threadId,
+        payload.content,
+        payload.clientMsgId,
+      );
+      const peerUserId = this.chatService.getThreadPeerUserId(actor.userId, payload.threadId);
+      const peerView = await this.chatService.getMessageViewForUser(
+        peerUserId,
+        ownView.messageId,
+      );
 
-    this.emitToUser(actor.userId, 'msg.ack', {
-      threadId: payload.threadId,
-      message: ownView,
-      clientMsgId: payload.clientMsgId,
-    });
-    this.emitToUser(peerUserId, 'msg.new', {
-      threadId: payload.threadId,
-      message: peerView,
-    });
+      this.emitToUser(actor.userId, 'msg.ack', {
+        threadId: payload.threadId,
+        message: ownView,
+        clientMsgId: payload.clientMsgId,
+      });
+      this.emitToUser(peerUserId, 'msg.new', {
+        threadId: payload.threadId,
+        message: peerView,
+      });
 
-    await this.emitThreadUpdated(payload.threadId, actor.userId, peerUserId);
-    return { ok: true, messageId: ownView.messageId };
+      await this.emitThreadUpdated(payload.threadId, actor.userId, peerUserId);
+      return { ok: true, messageId: ownView.messageId };
+    } catch (error) {
+      return this.toAckError(error);
+    }
   }
 
   @SubscribeMessage('msg.send.image')
   async onSendImage(
     @ConnectedSocket() client: Socket,
     @MessageBody() payload: SendImagePayload,
-  ): Promise<{ ok: true; messageId: string }> {
-    const actor = this.requireSocketUser(client);
-    const ownView = await this.chatService.sendImageMessageByActor(
-      { userId: actor.userId },
-      payload.threadId,
-      payload.imageKey,
-      payload.burnAfterReading ?? false,
-      payload.burnSeconds,
-      payload.clientMsgId,
-    );
-    const peerUserId = this.chatService.getThreadPeerUserId(actor.userId, payload.threadId);
-    const peerView = await this.chatService.getMessageViewForUser(
-      peerUserId,
-      ownView.messageId,
-    );
+  ): Promise<{ ok: true; messageId: string } | AckErrorResponse> {
+    try {
+      const actor = this.requireSocketUser(client);
+      const ownView = await this.chatService.sendImageMessageByActor(
+        { userId: actor.userId },
+        payload.threadId,
+        payload.imageKey,
+        payload.burnAfterReading ?? false,
+        payload.burnSeconds,
+        payload.clientMsgId,
+      );
+      const peerUserId = this.chatService.getThreadPeerUserId(actor.userId, payload.threadId);
+      const peerView = await this.chatService.getMessageViewForUser(
+        peerUserId,
+        ownView.messageId,
+      );
 
-    this.emitToUser(actor.userId, 'msg.ack', {
-      threadId: payload.threadId,
-      message: ownView,
-      clientMsgId: payload.clientMsgId,
-    });
-    this.emitToUser(peerUserId, 'msg.new', {
-      threadId: payload.threadId,
-      message: peerView,
-    });
+      this.emitToUser(actor.userId, 'msg.ack', {
+        threadId: payload.threadId,
+        message: ownView,
+        clientMsgId: payload.clientMsgId,
+      });
+      this.emitToUser(peerUserId, 'msg.new', {
+        threadId: payload.threadId,
+        message: peerView,
+      });
 
-    await this.emitThreadUpdated(payload.threadId, actor.userId, peerUserId);
-    return { ok: true, messageId: ownView.messageId };
+      await this.emitThreadUpdated(payload.threadId, actor.userId, peerUserId);
+      return { ok: true, messageId: ownView.messageId };
+    } catch (error) {
+      return this.toAckError(error);
+    }
   }
 
   @SubscribeMessage('msg.read')
   async onRead(
     @ConnectedSocket() client: Socket,
     @MessageBody() payload: ReadPayload,
-  ): Promise<{ ok: true; threadId: string }> {
-    const actor = this.requireSocketUser(client);
-    await this.chatService.markThreadReadByActor(
-      { userId: actor.userId },
-      payload.threadId,
-      payload.lastReadMessageId,
-    );
-    const peerUserId = this.chatService.getThreadPeerUserId(actor.userId, payload.threadId);
+  ): Promise<{ ok: true; threadId: string } | AckErrorResponse> {
+    try {
+      const actor = this.requireSocketUser(client);
+      await this.chatService.markThreadReadByActor(
+        { userId: actor.userId },
+        payload.threadId,
+        payload.lastReadMessageId,
+      );
+      const peerUserId = this.chatService.getThreadPeerUserId(actor.userId, payload.threadId);
 
-    this.emitToUser(peerUserId, 'msg.read_by_peer', {
-      threadId: payload.threadId,
-      byUserId: actor.userId,
-      lastReadMessageId: payload.lastReadMessageId,
-    });
-    await this.emitThreadUpdated(payload.threadId, actor.userId, peerUserId);
-    return { ok: true, threadId: payload.threadId };
+      this.emitToUser(peerUserId, 'msg.read_by_peer', {
+        threadId: payload.threadId,
+        byUserId: actor.userId,
+        lastReadMessageId: payload.lastReadMessageId,
+      });
+      await this.emitThreadUpdated(payload.threadId, actor.userId, peerUserId);
+      return { ok: true, threadId: payload.threadId };
+    } catch (error) {
+      return this.toAckError(error);
+    }
   }
 
   @SubscribeMessage('typing')
@@ -220,6 +246,28 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       return authorization.substring('Bearer '.length).trim();
     }
     return '';
+  }
+
+  private toAckError(error: unknown): AckErrorResponse {
+    if (error instanceof BusinessError) {
+      return {
+        ok: false,
+        error: {
+          code: error.code,
+          message: error.message,
+          status: error.status,
+        },
+      };
+    }
+
+    return {
+      ok: false,
+      error: {
+        code: ErrorCode.InternalError,
+        message: 'Internal server error',
+        status: 500,
+      },
+    };
   }
 
   private requireSocketUser(client: Socket): TokenUser {
@@ -259,4 +307,3 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     return `thread:${threadId}`;
   }
 }
-

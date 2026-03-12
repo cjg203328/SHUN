@@ -1,4 +1,4 @@
-// ignore_for_file: deprecated_member_use
+﻿// ignore_for_file: deprecated_member_use
 
 import 'dart:ui';
 
@@ -20,7 +20,7 @@ class _AdaptiveColor extends Color {
     required this.night,
   }) : super(0x00000000);
 
-  Color get _active => AppThemeConfig.isDayTheme ? day : night;
+  Color get _active => night;
 
   @override
   int get value => _active.value;
@@ -74,7 +74,6 @@ class _AdaptiveColor extends Color {
 }
 
 class AppColors {
-  // 基础色
   static const pureBlack = _AdaptiveColor(
     day: Color(0xFFEEF2F7),
     night: Color(0xFF000000),
@@ -88,7 +87,6 @@ class AppColors {
     night: Color(0xFF0A0A0A),
   );
 
-  // 文字色
   static const textPrimary = _AdaptiveColor(
     day: Color(0xFF101828),
     night: Color(0xFFFFFFFF),
@@ -106,7 +104,6 @@ class AppColors {
     night: Color(0x33FFFFFF),
   );
 
-  // 品牌色
   static const brandBlue = _AdaptiveColor(
     day: Color(0xFF2D6FD4),
     night: Color(0xFF4A90E2),
@@ -116,7 +113,6 @@ class AppColors {
     night: Color(0xFF2E5C8A),
   );
 
-  // 功能色
   static const success = _AdaptiveColor(
     day: Color(0xFF278F44),
     night: Color(0xFF52C41A),
@@ -130,7 +126,6 @@ class AppColors {
     night: Color(0xFFFF4D4F),
   );
 
-  // 半透明层
   static const white05 = _AdaptiveColor(
     day: Color(0x140F172A),
     night: Color(0x0DFFFFFF),
@@ -158,34 +153,18 @@ class AppOverlay {
       BorderRadius.vertical(top: Radius.circular(24));
   static final BorderRadius dialogBorderRadius = BorderRadius.circular(22);
 
-  static List<BoxShadow> get softShadow {
-    if (AppThemeConfig.isDayTheme) {
-      return const [
+  static List<BoxShadow> get softShadow => const [
         BoxShadow(
-          color: Color(0x1A0F172A),
-          blurRadius: 20,
-          offset: Offset(0, -4),
+          color: Color(0x66000000),
+          blurRadius: 28,
+          offset: Offset(0, -6),
         ),
         BoxShadow(
-          color: Color(0x120F172A),
-          blurRadius: 8,
-          offset: Offset(0, -1),
+          color: Color(0x33000000),
+          blurRadius: 10,
+          offset: Offset(0, -2),
         ),
       ];
-    }
-    return const [
-      BoxShadow(
-        color: Color(0x66000000),
-        blurRadius: 28,
-        offset: Offset(0, -6),
-      ),
-      BoxShadow(
-        color: Color(0x33000000),
-        blurRadius: 10,
-        offset: Offset(0, -2),
-      ),
-    ];
-  }
 
   static final AnimationStyle sheetAnimationStyle = AnimationStyle(
     duration: Duration(milliseconds: 280),
@@ -195,50 +174,37 @@ class AppOverlay {
 
 class AppTheme {
   static ThemeData themeData({required bool isDay}) {
-    AppThemeConfig.setDayTheme(isDay);
-    final colorScheme = isDay
-        ? ColorScheme(
-            brightness: Brightness.light,
-            primary: AppColors.brandBlue,
-            onPrimary: AppColors.cardBg,
-            secondary: AppColors.deepSeaBlue,
-            onSecondary: AppColors.cardBg,
-            error: AppColors.error,
-            onError: AppColors.cardBg,
-            surface: AppColors.cardBg,
-            onSurface: AppColors.textPrimary,
-          )
-        : ColorScheme(
-            brightness: Brightness.dark,
-            primary: AppColors.brandBlue,
-            onPrimary: AppColors.pureBlack,
-            secondary: AppColors.deepSeaBlue,
-            onSecondary: AppColors.textPrimary,
-            error: AppColors.error,
-            onError: AppColors.pureBlack,
-            surface: AppColors.cardBg,
-            onSurface: AppColors.textPrimary,
-          );
+    AppThemeConfig.setDayTheme(false);
+    const colorScheme = ColorScheme(
+      brightness: Brightness.dark,
+      primary: AppColors.brandBlue,
+      onPrimary: AppColors.pureBlack,
+      secondary: AppColors.deepSeaBlue,
+      onSecondary: AppColors.textPrimary,
+      error: AppColors.error,
+      onError: AppColors.pureBlack,
+      surface: AppColors.cardBg,
+      onSurface: AppColors.textPrimary,
+    );
 
     return ThemeData(
       colorScheme: colorScheme,
-      brightness: colorScheme.brightness,
+      brightness: Brightness.dark,
       scaffoldBackgroundColor: AppColors.pureBlack,
       primaryColor: AppColors.brandBlue,
       fontFamily: 'PingFang',
-      appBarTheme: AppBarTheme(
+      appBarTheme: const AppBarTheme(
         backgroundColor: Colors.transparent,
         foregroundColor: AppColors.textPrimary,
         elevation: 0,
         centerTitle: true,
-        titleTextStyle: const TextStyle(
+        titleTextStyle: TextStyle(
           fontSize: 18,
           fontWeight: FontWeight.w400,
           color: AppColors.textPrimary,
           letterSpacing: 0.6,
         ),
-        systemOverlayStyle:
-            isDay ? SystemUiOverlayStyle.dark : SystemUiOverlayStyle.light,
+        systemOverlayStyle: SystemUiOverlayStyle.light,
       ),
       dialogTheme: DialogThemeData(
         backgroundColor: AppColors.cardBg,
@@ -305,7 +271,7 @@ class AppTheme {
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
           backgroundColor: AppColors.textPrimary,
-          foregroundColor: isDay ? AppColors.cardBg : AppColors.pureBlack,
+          foregroundColor: AppColors.pureBlack,
           elevation: 0,
           padding: const EdgeInsets.symmetric(horizontal: 64, vertical: 18),
           shape: RoundedRectangleBorder(
@@ -346,5 +312,5 @@ class AppTheme {
 
   static ThemeData get darkTheme => themeData(isDay: false);
 
-  static ThemeData get dayTheme => themeData(isDay: true);
+  static ThemeData get dayTheme => darkTheme;
 }

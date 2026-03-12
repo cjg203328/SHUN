@@ -127,7 +127,7 @@ class MatchProvider extends ChangeNotifier {
       return;
     }
 
-    if (!AppEnv.allowLocalDemoFallbacks) {
+    if (!AppEnv.allowMockMatchPool) {
       _isMatching = false;
       _matchedUser = null;
       notifyListeners();

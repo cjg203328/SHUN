@@ -32,18 +32,25 @@ class AppNotification {
 
   AppNotification copyWith({
     bool? isRead,
+    String? title,
+    String? body,
+    DateTime? createdAt,
+    String? threadId,
+    String? requestId,
+    String? userId,
+    String? sourceKey,
   }) {
     return AppNotification(
       id: id,
       type: type,
-      title: title,
-      body: body,
-      createdAt: createdAt,
+      title: title ?? this.title,
+      body: body ?? this.body,
+      createdAt: createdAt ?? this.createdAt,
       isRead: isRead ?? this.isRead,
-      threadId: threadId,
-      requestId: requestId,
-      userId: userId,
-      sourceKey: sourceKey,
+      threadId: threadId ?? this.threadId,
+      requestId: requestId ?? this.requestId,
+      userId: userId ?? this.userId,
+      sourceKey: sourceKey ?? this.sourceKey,
     );
   }
 

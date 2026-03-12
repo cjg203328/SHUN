@@ -52,6 +52,139 @@ class NotificationCenterProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> markThreadNotificationsRead(String threadId) async {
+    var changed = false;
+    for (var i = 0; i < _items.length; i++) {
+      final item = _items[i];
+      if (item.isRead ||
+          item.type != AppNotificationType.message ||
+          item.threadId != threadId) {
+        continue;
+      }
+      _items[i] = item.copyWith(isRead: true);
+      changed = true;
+    }
+    if (!changed) return;
+    await _persist();
+    notifyListeners();
+  }
+
+  Future<void> markThreadNotificationsReadByMessageIds(
+    String threadId,
+    Set<String> messageIds,
+  ) async {
+    if (messageIds.isEmpty) return;
+
+    var changed = false;
+    for (var i = 0; i < _items.length; i++) {
+      final item = _items[i];
+      if (item.isRead ||
+          item.type != AppNotificationType.message ||
+          item.threadId != threadId ||
+          item.sourceKey == null) {
+        continue;
+      }
+      final sourceKey = item.sourceKey!;
+      if (!messageIds.any(
+          (messageId) => sourceKey == 'chat-message:$threadId:$messageId')) {
+        continue;
+      }
+      _items[i] = item.copyWith(isRead: true);
+      changed = true;
+    }
+    if (!changed) return;
+    await _persist();
+    notifyListeners();
+  }
+
+  Future<void> removeThreadNotifications(String threadId) async {
+    final originalLength = _items.length;
+    _items.removeWhere(
+      (item) =>
+          item.type == AppNotificationType.message && item.threadId == threadId,
+    );
+    if (_items.length == originalLength) return;
+    await _persist();
+    notifyListeners();
+  }
+
+  Future<void> removeFriendRequestNotification(String requestId) async {
+    final originalLength = _items.length;
+    _items.removeWhere(
+      (item) =>
+          item.type == AppNotificationType.friendRequest &&
+          item.requestId == requestId,
+    );
+    if (_items.length == originalLength) return;
+    await _persist();
+    notifyListeners();
+  }
+
+  Future<void> removeUserNotifications(
+    String userId, {
+    Set<AppNotificationType>? types,
+  }) async {
+    final originalLength = _items.length;
+    _items.removeWhere(
+      (item) =>
+          item.userId == userId && (types == null || types.contains(item.type)),
+    );
+    if (_items.length == originalLength) return;
+    await _persist();
+    notifyListeners();
+  }
+
+  Future<void> remapThreadNotifications({
+    required String fromThreadId,
+    required ChatThread toThread,
+  }) async {
+    var changed = false;
+    final remappedItems = <AppNotification>[];
+
+    for (final item in _items) {
+      if (item.type != AppNotificationType.message ||
+          item.threadId != fromThreadId) {
+        remappedItems.add(item);
+        continue;
+      }
+
+      changed = true;
+      final nextSourceKey = _remapMessageSourceKey(
+        item.sourceKey,
+        fromThreadId: fromThreadId,
+        toThreadId: toThread.id,
+      );
+      final updatedItem = item.copyWith(
+        title: toThread.otherUser.nickname,
+        threadId: toThread.id,
+        userId: toThread.otherUser.id,
+        sourceKey: nextSourceKey,
+      );
+
+      final existingIndex = nextSourceKey == null
+          ? -1
+          : remappedItems.indexWhere(
+              (existing) => existing.sourceKey == nextSourceKey,
+            );
+      if (existingIndex == -1) {
+        remappedItems.add(updatedItem);
+      } else {
+        remappedItems[existingIndex] = _mergeMessageNotifications(
+          remappedItems[existingIndex],
+          updatedItem,
+        );
+      }
+    }
+
+    if (!changed) return;
+    _items
+      ..clear()
+      ..addAll(remappedItems);
+    _sort();
+    await _persist();
+    notifyListeners();
+  }
+
   Future<void> remove(String id) async {
     _items.removeWhere((item) => item.id == id);
     await _persist();
@@ -68,17 +201,31 @@ class NotificationCenterProvider extends ChangeNotifier {
     required ChatThread thread,
     required Message message,
   }) async {
-    await _prepend(
-      AppNotification(
-        id: const Uuid().v4(),
-        type: AppNotificationType.message,
-        title: thread.otherUser.nickname,
-        body: message.type == MessageType.image ? '[图片消息]' : message.content,
-        createdAt: message.timestamp,
-        threadId: thread.id,
-        userId: thread.otherUser.id,
-      ),
+    final sourceKey = 'chat-message:${thread.id}:${message.id}';
+    final index = _items.indexWhere((item) => item.sourceKey == sourceKey);
+    final notification = AppNotification(
+      id: index == -1 ? const Uuid().v4() : _items[index].id,
+      type: AppNotificationType.message,
+      title: thread.otherUser.nickname,
+      body: message.type == MessageType.image ? '[图片消息]' : message.content,
+      createdAt: message.timestamp,
+      threadId: thread.id,
+      userId: thread.otherUser.id,
+      sourceKey: sourceKey,
+      isRead: index == -1 ? false : _items[index].isRead,
     );
+
+    if (index == -1) {
+      _items.insert(0, notification);
+      if (_items.length > 100) {
+        _items.removeRange(100, _items.length);
+      }
+    } else {
+      _items[index] = notification;
+      _sort();
+    }
+    await _persist();
+    notifyListeners();
   }
 
   Future<void> upsertFriendRequestNotification(FriendRequest request) async {
@@ -172,6 +319,38 @@ class NotificationCenterProvider extends ChangeNotifier {
   Future<void> _persist() async {
     await StorageService.saveNotificationCenterState(
       jsonEncode(_items.map((item) => item.toJson()).toList(growable: false)),
+    );
+  }
+
+  String? _remapMessageSourceKey(
+    String? sourceKey, {
+    required String fromThreadId,
+    required String toThreadId,
+  }) {
+    final prefix = 'chat-message:$fromThreadId:';
+    if (sourceKey == null || !sourceKey.startsWith(prefix)) {
+      return sourceKey;
+    }
+    return sourceKey.replaceFirst(prefix, 'chat-message:$toThreadId:');
+  }
+
+  AppNotification _mergeMessageNotifications(
+    AppNotification existing,
+    AppNotification incoming,
+  ) {
+    return AppNotification(
+      id: existing.id,
+      type: existing.type,
+      title: incoming.title,
+      body: incoming.body,
+      createdAt: existing.createdAt.isAfter(incoming.createdAt)
+          ? existing.createdAt
+          : incoming.createdAt,
+      isRead: existing.isRead && incoming.isRead,
+      threadId: incoming.threadId,
+      requestId: incoming.requestId ?? existing.requestId,
+      userId: incoming.userId ?? existing.userId,
+      sourceKey: incoming.sourceKey ?? existing.sourceKey,
     );
   }
 

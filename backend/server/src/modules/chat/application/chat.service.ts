@@ -1,6 +1,6 @@
 import { Inject, Injectable, OnModuleInit } from '@nestjs/common';
 import { randomUUID } from 'crypto';
-import { mkdir, writeFile } from 'fs/promises';
+import { access, mkdir, writeFile } from 'fs/promises';
 import { dirname, resolve } from 'path';
 import { BusinessError, ErrorCode } from '../../../common/errors/error-codes';
 import { TokenUser } from '../../auth/domain/token-user';
@@ -66,6 +66,14 @@ interface UploadedImageFile {
   mimetype?: string;
 }
 
+interface PendingUploadToken {
+  uploadToken: string;
+  threadId: string;
+  userId: string;
+  objectKey: string;
+  expiresAt: number;
+}
+
 export interface ThreadSummary {
   threadId: string;
   user: {
@@ -116,10 +124,12 @@ interface ActorContext {
 @Injectable()
 export class ChatService implements OnModuleInit {
   private readonly stateKey = 'chat:state:v1';
+  private readonly uploadTokenExpireSeconds = 300;
   private readonly threads = new Map<string, ThreadRuntime>();
   private readonly messagesByThread = new Map<string, MessageRuntime[]>();
   private readonly unreadCountByThreadUser = new Map<string, number>();
   private readonly messageIndex = new Map<string, MessageRuntime>();
+  private readonly pendingUploadTokens = new Map<string, PendingUploadToken>();
   private isStateLoaded = false;
 
   constructor(
@@ -169,9 +179,12 @@ export class ChatService implements OnModuleInit {
       this.threads.set(key, thread);
       this.messagesByThread.set(thread.threadId, []);
     } else {
+      const now = new Date();
       thread.deletedBy.delete(actor.userId);
-      thread.updatedAt = new Date().toISOString();
       thread.isFriend = this.friendsService.isFriendBetween(actor.userId, targetUserId);
+      if (!thread.isFriend && this.isThreadExpired(thread)) {
+        thread.expiresAt = new Date(now.getTime() + 24 * 60 * 60 * 1000).toISOString();
+      }
       this.threads.set(key, thread);
     }
 
@@ -207,7 +220,7 @@ export class ChatService implements OnModuleInit {
   ): Promise<MessageView[]> {
     await this.ensureLoaded();
     const thread = this.getThreadById(threadId);
-    this.assertThreadAccessible(actorUserId, thread);
+    this.assertThreadVisibleToUser(actorUserId, thread);
     const peerUserId = this.peerUserId(actorUserId, thread);
     const items = this.messagesByThread.get(thread.threadId) ?? [];
     return items.map((message) => this.toMessageView(actorUserId, peerUserId, message));
@@ -219,13 +232,13 @@ export class ChatService implements OnModuleInit {
   ): Promise<ThreadSummary> {
     await this.ensureLoaded();
     const thread = this.getThreadById(threadId);
-    this.assertThreadAccessible(actorUserId, thread);
+    this.assertThreadVisibleToUser(actorUserId, thread);
     return this.toThreadSummary(actorUserId, thread);
   }
 
   getThreadPeerUserId(actorUserId: string, threadId: string): string {
     const thread = this.getThreadById(threadId);
-    this.assertThreadAccessible(actorUserId, thread);
+    this.assertThreadVisibleToUser(actorUserId, thread);
     return this.peerUserId(actorUserId, thread);
   }
 
@@ -239,7 +252,7 @@ export class ChatService implements OnModuleInit {
       throw new BusinessError(ErrorCode.MessageNotFound, 404, 'Message not found');
     }
     const thread = this.getThreadById(message.threadId);
-    this.assertThreadAccessible(actorUserId, thread);
+    this.assertThreadMember(actorUserId, thread);
     const peerUserId = this.peerUserId(actorUserId, thread);
     return this.toMessageView(actorUserId, peerUserId, message);
   }
@@ -305,7 +318,11 @@ export class ChatService implements OnModuleInit {
     if (!normalizedKey) {
       throw new BusinessError(ErrorCode.InvalidInput, 400, 'Image key is empty');
     }
-    const normalizedBurnSeconds = burnAfterReading ? burnSeconds ?? 5 : undefined;
+    await this.assertSendableImageKey(actor.userId, threadId, normalizedKey);
+    const normalizedBurnSeconds = this.normalizeBurnSeconds(
+      burnAfterReading,
+      burnSeconds,
+    );
     return this.sendMessage(actor, threadId, {
       type: 'image',
       content: '[image]',
@@ -322,12 +339,23 @@ export class ChatService implements OnModuleInit {
   ): Promise<ImageUploadTokenView> {
     await this.ensureLoaded();
     const thread = this.getThreadById(threadId);
-    this.assertThreadAccessible(actor.userId, thread);
+    this.assertThreadInteractive(actor.userId, thread);
+    this.purgeExpiredUploadTokens();
+
+    const uploadToken = `upl_chat_${randomUUID()}`;
+    const objectKey = `chat/${threadId}/${actor.userId}/${Date.now()}.jpg`;
+    this.pendingUploadTokens.set(uploadToken, {
+      uploadToken,
+      threadId,
+      userId: actor.userId,
+      objectKey,
+      expiresAt: Date.now() + this.uploadTokenExpireSeconds * 1000,
+    });
 
     return {
-      uploadToken: `upl_chat_${randomUUID()}`,
-      objectKey: `chat/${threadId}/${actor.userId}/${Date.now()}.jpg`,
-      expireSeconds: 300,
+      uploadToken,
+      objectKey,
+      expireSeconds: this.uploadTokenExpireSeconds,
     };
   }
 
@@ -339,7 +367,7 @@ export class ChatService implements OnModuleInit {
   ): Promise<UploadedChatImageView> {
     await this.ensureLoaded();
     const thread = this.getThreadById(threadId);
-    this.assertThreadAccessible(actor.userId, thread);
+    this.assertThreadInteractive(actor.userId, thread);
 
     if (!file) {
       throw new BusinessError(ErrorCode.InvalidInput, 400, 'Image file is required');
@@ -349,15 +377,8 @@ export class ChatService implements OnModuleInit {
       throw new BusinessError(ErrorCode.InvalidInput, 400, 'Only image upload is allowed');
     }
 
-    if (!payload.uploadToken.startsWith('upl_chat_')) {
-      throw new BusinessError(ErrorCode.InvalidInput, 400, 'Invalid upload token');
-    }
-
     const objectKey = payload.objectKey.trim();
-    const expectedPrefix = `chat/${threadId}/${actor.userId}/`;
-    if (!objectKey.startsWith(expectedPrefix)) {
-      throw new BusinessError(ErrorCode.InvalidInput, 400, 'Invalid object key');
-    }
+    this.consumeUploadToken(actor.userId, threadId, payload.uploadToken, objectKey);
 
     const mediaRoot = resolve(process.cwd(), 'storage', 'media');
     const destination = resolve(mediaRoot, objectKey);
@@ -377,30 +398,31 @@ export class ChatService implements OnModuleInit {
   async markThreadRead(
     actor: TokenUser,
     threadId: string,
-    _lastReadMessageId?: string,
+    lastReadMessageId?: string,
   ): Promise<void> {
     await this.ensureLoaded();
-    await this.markThreadReadByActor({ userId: actor.userId }, threadId);
+    await this.markThreadReadByActor({ userId: actor.userId }, threadId, lastReadMessageId);
   }
 
   async markThreadReadByActor(
     actor: ActorContext,
     threadId: string,
-    _lastReadMessageId?: string,
+    lastReadMessageId?: string,
   ): Promise<void> {
     await this.ensureLoaded();
     const thread = this.getThreadById(threadId);
-    this.assertThreadAccessible(actor.userId, thread);
+    this.assertThreadVisibleToUser(actor.userId, thread);
     const messages = this.messagesByThread.get(thread.threadId) ?? [];
+    const readUpperBound = this.resolveReadUpperBound(messages, lastReadMessageId);
 
-    for (const message of messages) {
+    for (let index = 0; index <= readUpperBound; index += 1) {
+      const message = messages[index];
       if (message.senderId !== actor.userId) {
         message.readBy.add(actor.userId);
       }
     }
 
-    this.unreadCountByThreadUser.set(this.unreadKey(thread.threadId, actor.userId), 0);
-    thread.updatedAt = new Date().toISOString();
+    this.syncUnreadCounter(thread.threadId, actor.userId);
     thread.deletedBy.delete(actor.userId);
     await this.persistState();
   }
@@ -413,8 +435,15 @@ export class ChatService implements OnModuleInit {
   async deleteThreadByActor(actor: ActorContext, threadId: string): Promise<void> {
     await this.ensureLoaded();
     const thread = this.getThreadById(threadId);
-    this.assertThreadAccessible(actor.userId, thread);
+    this.assertThreadVisibleToUser(actor.userId, thread);
+    const messages = this.messagesByThread.get(thread.threadId) ?? [];
+    for (const message of messages) {
+      if (message.senderId !== actor.userId) {
+        message.readBy.add(actor.userId);
+      }
+    }
     thread.deletedBy.add(actor.userId);
+    this.syncUnreadCounter(thread.threadId, actor.userId);
     await this.persistState();
   }
 
@@ -429,6 +458,8 @@ export class ChatService implements OnModuleInit {
     if (!message) {
       throw new BusinessError(ErrorCode.MessageNotFound, 404, 'Message not found');
     }
+    const thread = this.getThreadById(message.threadId);
+    this.assertThreadVisibleToUser(actor.userId, thread);
     if (message.senderId !== actor.userId) {
       throw new BusinessError(ErrorCode.InvalidInput, 403, 'Only sender can recall');
     }
@@ -447,6 +478,9 @@ export class ChatService implements OnModuleInit {
     message.imageKey = undefined;
     message.isBurnAfterReading = false;
     message.burnSeconds = undefined;
+    thread.updatedAt = new Date().toISOString();
+    this.syncUnreadCounter(thread.threadId, thread.userA);
+    this.syncUnreadCounter(thread.threadId, thread.userB);
     await this.persistState();
   }
 
@@ -464,7 +498,7 @@ export class ChatService implements OnModuleInit {
   ): Promise<MessageView> {
     await this.ensureLoaded();
     const thread = this.getThreadById(threadId);
-    this.assertThreadAccessible(actor.userId, thread);
+    this.assertThreadInteractive(actor.userId, thread);
     const peerUserId = this.peerUserId(actor.userId, thread);
     if (this.friendsService.isBlockedBetween(actor.userId, peerUserId)) {
       throw new BusinessError(
@@ -499,9 +533,7 @@ export class ChatService implements OnModuleInit {
     thread.updatedAt = new Date().toISOString();
     this.threads.set(this.threadKey(thread.userA, thread.userB), thread);
 
-    const unreadKey = this.unreadKey(thread.threadId, peerUserId);
-    const currentUnread = this.unreadCountByThreadUser.get(unreadKey) ?? 0;
-    this.unreadCountByThreadUser.set(unreadKey, currentUnread + 1);
+    this.syncUnreadCounter(thread.threadId, peerUserId);
     await this.persistState();
     return this.toMessageView(actor.userId, peerUserId, message);
   }
@@ -514,10 +546,34 @@ export class ChatService implements OnModuleInit {
     return thread;
   }
 
-  private assertThreadAccessible(userId: string, thread: ThreadRuntime): void {
+  private assertThreadMember(userId: string, thread: ThreadRuntime): void {
     if (!this.isThreadMember(userId, thread)) {
       throw new BusinessError(ErrorCode.ThreadNotFound, 404, 'Thread not found');
     }
+  }
+
+  private assertThreadVisibleToUser(userId: string, thread: ThreadRuntime): void {
+    this.assertThreadMember(userId, thread);
+    if (thread.deletedBy.has(userId)) {
+      throw new BusinessError(ErrorCode.ThreadNotFound, 404, 'Thread not found');
+    }
+  }
+
+  private assertThreadInteractive(userId: string, thread: ThreadRuntime): void {
+    this.assertThreadVisibleToUser(userId, thread);
+    if (!this.syncThreadRelationshipState(thread) && this.isThreadExpired(thread)) {
+      throw new BusinessError(ErrorCode.ThreadExpired, 409, 'Thread expired');
+    }
+  }
+
+  private syncThreadRelationshipState(thread: ThreadRuntime): boolean {
+    const isFriend = this.friendsService.isFriendBetween(thread.userA, thread.userB);
+    thread.isFriend = isFriend;
+    return isFriend;
+  }
+
+  private isThreadExpired(thread: ThreadRuntime): boolean {
+    return Date.parse(thread.expiresAt) <= Date.now();
   }
 
   private isThreadMember(userId: string, thread: ThreadRuntime): boolean {
@@ -543,7 +599,117 @@ export class ChatService implements OnModuleInit {
     }
   }
 
+  private normalizeBurnSeconds(
+    burnAfterReading: boolean,
+    burnSeconds: number | undefined,
+  ): number | undefined {
+    if (!burnAfterReading) {
+      if (burnSeconds !== undefined) {
+        throw new BusinessError(
+          ErrorCode.InvalidInput,
+          400,
+          'burnSeconds requires burnAfterReading=true',
+        );
+      }
+      return undefined;
+    }
+
+    const normalizedBurnSeconds = burnSeconds ?? 5;
+    if (
+      !Number.isInteger(normalizedBurnSeconds) ||
+      normalizedBurnSeconds < 1 ||
+      normalizedBurnSeconds > 10
+    ) {
+      throw new BusinessError(
+        ErrorCode.InvalidInput,
+        400,
+        'burnSeconds must be an integer between 1 and 10',
+      );
+    }
+    return normalizedBurnSeconds;
+  }
+
+  private consumeUploadToken(
+    userId: string,
+    threadId: string,
+    uploadToken: string,
+    objectKey: string,
+  ): void {
+    this.purgeExpiredUploadTokens();
+    const pendingToken = this.pendingUploadTokens.get(uploadToken);
+    if (!pendingToken) {
+      throw new BusinessError(ErrorCode.InvalidInput, 400, 'Invalid upload token');
+    }
+    if (
+      pendingToken.userId !== userId ||
+      pendingToken.threadId !== threadId ||
+      pendingToken.objectKey !== objectKey
+    ) {
+      throw new BusinessError(ErrorCode.InvalidInput, 400, 'Invalid upload token');
+    }
+    this.pendingUploadTokens.delete(uploadToken);
+  }
+
+  private purgeExpiredUploadTokens(): void {
+    const now = Date.now();
+    for (const [uploadToken, pendingToken] of this.pendingUploadTokens.entries()) {
+      if (pendingToken.expiresAt <= now) {
+        this.pendingUploadTokens.delete(uploadToken);
+      }
+    }
+  }
+
+  private async assertSendableImageKey(
+    userId: string,
+    threadId: string,
+    imageKey: string,
+  ): Promise<void> {
+    const expectedPrefix = `chat/${threadId}/${userId}/`;
+    if (!imageKey.startsWith(expectedPrefix)) {
+      throw new BusinessError(ErrorCode.InvalidInput, 400, 'Invalid image key');
+    }
+
+    const mediaRoot = resolve(process.cwd(), 'storage', 'media');
+    const destination = resolve(mediaRoot, imageKey);
+    if (!destination.startsWith(mediaRoot)) {
+      throw new BusinessError(ErrorCode.InvalidInput, 400, 'Unsafe image key');
+    }
+
+    try {
+      await access(destination);
+    } catch {
+      throw new BusinessError(ErrorCode.InvalidInput, 400, 'Image key not uploaded');
+    }
+  }
+
+  private syncUnreadCounter(threadId: string, userId: string): number {
+    const count = this.countUnreadMessages(threadId, userId);
+    this.unreadCountByThreadUser.set(this.unreadKey(threadId, userId), count);
+    return count;
+  }
+
+  private countUnreadMessages(threadId: string, userId: string): number {
+    const messages = this.messagesByThread.get(threadId) ?? [];
+    return messages.filter(
+      (message) =>
+        message.senderId !== userId &&
+        message.status !== 'recalled' &&
+        !message.readBy.has(userId),
+    ).length;
+  }
+
+  private resolveReadUpperBound(
+    messages: MessageRuntime[],
+    lastReadMessageId?: string,
+  ): number {
+    if (!lastReadMessageId) {
+      return messages.length - 1;
+    }
+    return messages.findIndex((message) => message.messageId === lastReadMessageId);
+  }
+
   private async toThreadSummary(userId: string, thread: ThreadRuntime): Promise<ThreadSummary> {
+    const isFriend = this.syncThreadRelationshipState(thread);
     const peerUserId = this.peerUserId(userId, thread);
     const peer = await this.userStore.getUserById(peerUserId);
     if (!peer) {
@@ -559,9 +725,8 @@ export class ChatService implements OnModuleInit {
         avatarUrl: peer.avatarUrl,
         status: peer.status,
       },
-      unreadCount:
-        this.unreadCountByThreadUser.get(this.unreadKey(thread.threadId, userId)) ?? 0,
-      isFriend: thread.isFriend,
+      unreadCount: this.syncUnreadCounter(thread.threadId, userId),
+      isFriend,
       createdAt: thread.createdAt,
       updatedAt: thread.updatedAt,
       expiresAt: thread.expiresAt,

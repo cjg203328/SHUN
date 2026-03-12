@@ -255,6 +255,8 @@ export class FriendsService implements OnModuleInit {
     const blockedSet = this.blockedByUser.get(actor.userId) ?? new Set<string>();
     blockedSet.add(target.userId);
     this.blockedByUser.set(actor.userId, blockedSet);
+    this.friendships.delete(this.friendshipKey(actor.userId, target.userId));
+    this.resolveRequestsBetweenUsers(actor.userId, target.userId, 'rejected');
     await this.persistState();
   }
 
@@ -299,6 +301,25 @@ export class FriendsService implements OnModuleInit {
 
   private friendshipKey(userA: string, userB: string): string {
     return [userA, userB].sort().join(':');
+  }
+
+  private resolveRequestsBetweenUsers(
+    userA: string,
+    userB: string,
+    status: Extract<FriendRequestStatus, 'accepted' | 'rejected'>,
+  ): void {
+    const now = new Date().toISOString();
+    for (const request of this.requests.values()) {
+      const matchesUsers =
+        (request.fromUserId === userA && request.toUserId === userB) ||
+        (request.fromUserId === userB && request.toUserId === userA);
+      if (!matchesUsers || request.status !== 'pending') {
+        continue;
+      }
+      request.status = status;
+      request.updatedAt = now;
+      this.requests.set(request.requestId, request);
+    }
   }
 
   private async ensureLoaded(): Promise<void> {

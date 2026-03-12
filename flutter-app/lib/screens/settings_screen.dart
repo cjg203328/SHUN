@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
@@ -44,202 +44,169 @@ class _SettingsScreenState extends State<SettingsScreen> {
       ),
       body: Consumer<SettingsProvider>(
         builder: (context, settingsProvider, child) => ListView(
+          padding: const EdgeInsets.only(top: 20, bottom: 40),
           children: [
-            const SizedBox(height: 20),
-
-            // 个人资料
-            _buildSectionTitle('个人资料'),
-            Container(
-              margin: const EdgeInsets.symmetric(horizontal: 20),
-              decoration: BoxDecoration(
-                color: AppColors.white05,
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: Column(
-                children: [
-                  _buildSettingItem(
-                    context,
-                    icon: Icons.photo_outlined,
-                    title: '头像管理',
-                    onTap: () => _showAvatarManagement(context),
-                  ),
-                  _buildDivider(),
-                  _buildSettingItem(
-                    context,
-                    icon: Icons.wallpaper_outlined,
-                    title: '背景管理',
-                    onTap: () => _showBackgroundManagement(context),
-                  ),
-                ],
-              ),
-            ),
-
-            const SizedBox(height: 30),
-
-            // 账号与安全
-            _buildSectionTitle('账号与安全'),
-            Container(
-              margin: const EdgeInsets.symmetric(horizontal: 20),
-              decoration: BoxDecoration(
-                color: AppColors.white05,
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: Column(
-                children: [
-                  _buildSettingItem(
-                    context,
-                    icon: Icons.phone_outlined,
-                    title: '手机号',
-                    trailing: Consumer<AuthProvider>(
-                      builder: (context, auth, child) => Text(
-                        auth.phone ?? '未绑定',
-                        style: const TextStyle(
-                          fontSize: 14,
-                          color: AppColors.textTertiary,
-                        ),
+            _buildSettingsOverviewCard(context, settingsProvider),
+            const SizedBox(height: 28),
+            _buildSectionTitle('账号与安全', subtitle: '登录、身份标识与账号找回'),
+            _buildSectionCard(
+              children: [
+                _buildSettingItem(
+                  context,
+                  icon: Icons.phone_outlined,
+                  title: '手机号',
+                  subtitle: '用于登录、接收验证码和找回账号',
+                  trailing: Consumer<AuthProvider>(
+                    builder: (context, auth, child) => Text(
+                      auth.phone ?? '未绑定',
+                      style: const TextStyle(
+                        fontSize: 13,
+                        color: AppColors.textTertiary,
                       ),
                     ),
-                    onTap: () => _showUpdatePhoneDialog(context),
                   ),
-                  _buildDivider(),
-                  _buildSettingItem(
-                    context,
-                    icon: Icons.badge_outlined,
-                    title: '账号UID',
-                    trailing: Consumer<AuthProvider>(
-                      builder: (context, auth, child) => Text(
-                        auth.uid ?? '生成中',
-                        style: const TextStyle(
-                          fontSize: 14,
-                          color: AppColors.textTertiary,
-                        ),
+                  onTap: () => _showUpdatePhoneDialog(context),
+                ),
+                _buildDivider(),
+                _buildSettingItem(
+                  context,
+                  icon: Icons.badge_outlined,
+                  title: '账号 UID',
+                  subtitle: '点击即可复制，便于测试、加好友或排查问题',
+                  trailing: Consumer<AuthProvider>(
+                    builder: (context, auth, child) => Text(
+                      auth.uid ?? '生成中',
+                      style: const TextStyle(
+                        fontSize: 13,
+                        color: AppColors.textTertiary,
                       ),
                     ),
-                    onTap: () => _copyUid(context),
                   ),
-                  _buildDivider(),
-                  _buildSettingItem(
-                    context,
-                    icon: Icons.lock_outlined,
-                    title: '修改密码',
-                    onTap: () => _showChangePasswordDialog(context),
-                  ),
-                ],
-              ),
+                  onTap: () => _copyUid(context),
+                ),
+                _buildDivider(),
+                _buildSettingItem(
+                  context,
+                  icon: Icons.lock_outlined,
+                  title: '修改密码',
+                  subtitle: '定期更新密码，能更好保护你的账号安全',
+                  onTap: () => _showChangePasswordDialog(context),
+                ),
+              ],
             ),
-
-            const SizedBox(height: 30),
-
-            // 隐私设置
-            _buildSectionTitle('隐私设置'),
-            Container(
-              margin: const EdgeInsets.symmetric(horizontal: 20),
-              decoration: BoxDecoration(
-                color: AppColors.white05,
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: Column(
-                children: [
-                  _buildSettingItem(
-                    context,
-                    icon: Icons.block_outlined,
-                    title: '黑名单',
-                    onTap: () => _showBlockedUsers(context),
+            const SizedBox(height: 28),
+            _buildSectionTitle('隐私与展示', subtitle: '优先保留影响曝光和关系边界的核心设置'),
+            _buildSectionCard(
+              children: [
+                _buildSettingItem(
+                  context,
+                  icon: Icons.visibility_off_outlined,
+                  title: '隐身模式',
+                  subtitle: '开启后，你的活跃状态和匹配曝光会更低调',
+                  trailing: Switch(
+                    value: settingsProvider.invisibleMode,
+                    onChanged: _updateInvisibleMode,
+                    activeColor: AppColors.brandBlue,
                   ),
-                  _buildDivider(),
-                  _buildSettingItem(
-                    context,
-                    icon: Icons.visibility_off_outlined,
-                    title: '隐身模式',
-                    trailing: Switch(
-                      value: settingsProvider.invisibleMode,
-                      onChanged: _updateInvisibleMode,
-                      activeColor: AppColors.brandBlue,
-                    ),
-                    onTap: null,
-                  ),
-                ],
-              ),
+                  onTap: null,
+                ),
+              ],
             ),
-
-            const SizedBox(height: 30),
-
-            // 通知设置
-            _buildSectionTitle('通知设置'),
-            Container(
-              margin: const EdgeInsets.symmetric(horizontal: 20),
-              decoration: BoxDecoration(
-                color: AppColors.white05,
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: Column(
-                children: [
-                  _buildSettingItem(
-                    context,
-                    icon: Icons.notifications_outlined,
-                    title: '消息通知',
-                    trailing: Switch(
-                      value: settingsProvider.notificationEnabled,
-                      onChanged: _updateNotificationEnabled,
-                      activeColor: AppColors.brandBlue,
-                    ),
-                    onTap: null,
+            const SizedBox(height: 28),
+            _buildSectionTitle('通知与提醒', subtitle: '建议保持消息通知开启，避免错过新回复'),
+            _buildSectionCard(
+              children: [
+                _buildSettingItem(
+                  context,
+                  icon: Icons.notifications_outlined,
+                  title: '消息通知',
+                  subtitle: '关闭后，将不再收到新消息提醒',
+                  trailing: Switch(
+                    value: settingsProvider.notificationEnabled,
+                    onChanged: _updateNotificationEnabled,
+                    activeColor: AppColors.brandBlue,
                   ),
-                  _buildDivider(),
-                  _buildSettingItem(
-                    context,
-                    icon: Icons.vibration_outlined,
-                    title: '震动',
-                    trailing: Switch(
-                      value: settingsProvider.vibrationEnabled,
-                      onChanged: _updateVibrationEnabled,
-                      activeColor: AppColors.brandBlue,
-                    ),
-                    onTap: null,
-                  ),
-                ],
-              ),
+                  onTap: null,
+                ),
+              ],
             ),
-
-            const SizedBox(height: 30),
-
-            // 关于
-            _buildSectionTitle('关于'),
-            Container(
-              margin: const EdgeInsets.symmetric(horizontal: 20),
-              decoration: BoxDecoration(
-                color: AppColors.white05,
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: Column(
-                children: [
-                  _buildSettingItem(
-                    context,
-                    icon: Icons.info_outlined,
-                    title: '关于瞬',
-                    onTap: () => context.push('/about'),
-                  ),
-                  _buildDivider(),
-                  _buildSettingItem(
-                    context,
-                    icon: Icons.privacy_tip_outlined,
-                    title: '隐私政策',
-                    onTap: () => context.push('/legal/privacy-policy'),
-                  ),
-                  _buildDivider(),
-                  _buildSettingItem(
-                    context,
-                    icon: Icons.description_outlined,
-                    title: '用户协议',
-                    onTap: () => context.push('/legal/user-agreement'),
-                  ),
-                ],
-              ),
+            const SizedBox(height: 28),
+            _buildSectionTitle('资料与展示', subtitle: '优先维护头像，背景等低频内容可按需调整'),
+            _buildSectionCard(
+              children: [
+                _buildSettingItem(
+                  context,
+                  icon: Icons.photo_outlined,
+                  title: '头像管理',
+                  subtitle: '上传、替换或删除你的当前头像',
+                  onTap: () => _showAvatarManagement(context),
+                ),
+              ],
             ),
-
-            const SizedBox(height: 40),
-
-            // 退出登录
+            const SizedBox(height: 28),
+            _buildSectionTitle('更多设置（低频）', subtitle: '这些内容通常不用频繁修改，需要时再进入即可'),
+            _buildSectionCard(
+              children: [
+                _buildSettingItem(
+                  context,
+                  icon: Icons.block_outlined,
+                  title: '黑名单',
+                  subtitle: '管理你不想再看到或接触的人',
+                  onTap: () => _showBlockedUsers(context),
+                ),
+                _buildDivider(),
+                _buildSettingItem(
+                  context,
+                  icon: Icons.vibration_outlined,
+                  title: '震动提醒',
+                  subtitle: '收到消息时通过震动给予提示',
+                  trailing: Switch(
+                    value: settingsProvider.vibrationEnabled,
+                    onChanged: _updateVibrationEnabled,
+                    activeColor: AppColors.brandBlue,
+                  ),
+                  onTap: null,
+                ),
+                _buildDivider(),
+                _buildSettingItem(
+                  context,
+                  icon: Icons.wallpaper_outlined,
+                  title: '背景管理',
+                  subtitle: '主页背景会影响别人看到你的第一印象',
+                  onTap: () => _showBackgroundManagement(context),
+                ),
+              ],
+            ),
+            const SizedBox(height: 28),
+            _buildSectionTitle('关于与协议', subtitle: '查看产品说明、协议与隐私内容'),
+            _buildSectionCard(
+              children: [
+                _buildSettingItem(
+                  context,
+                  icon: Icons.info_outlined,
+                  title: '关于瞬',
+                  subtitle: '查看产品介绍、版本信息与开发说明',
+                  onTap: () => context.push('/about'),
+                ),
+                _buildDivider(),
+                _buildSettingItem(
+                  context,
+                  icon: Icons.privacy_tip_outlined,
+                  title: '隐私政策',
+                  subtitle: '说明我们如何收集、使用和保护你的数据',
+                  onTap: () => context.push('/legal/privacy-policy'),
+                ),
+                _buildDivider(),
+                _buildSettingItem(
+                  context,
+                  icon: Icons.description_outlined,
+                  title: '用户协议',
+                  subtitle: '查看使用规则、权责说明与服务条款',
+                  onTap: () => context.push('/legal/user-agreement'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 32),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 20),
               child: OutlinedButton(
@@ -262,10 +229,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
               ),
             ),
-
-            const SizedBox(height: 20),
-
-            // 版本信息
+            const SizedBox(height: 18),
             Center(
               child: Text(
                 'V1.0.3',
@@ -275,8 +239,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
               ),
             ),
-
-            const SizedBox(height: 40),
           ],
         ),
       ),
@@ -553,21 +515,138 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  Widget _buildSectionTitle(String title) {
+  Widget _buildSettingsOverviewCard(
+    BuildContext context,
+    SettingsProvider settingsProvider,
+  ) {
+    final auth = context.watch<AuthProvider>();
+
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 20),
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: AppColors.white05,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: AppColors.white08),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            '设置总览',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w400,
+              color: AppColors.textPrimary,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            '把高频功能集中放在前面，方便你快速调整账号、安全、隐私和通知。',
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w300,
+              color: AppColors.textTertiary.withValues(alpha: 0.9),
+              height: 1.45,
+            ),
+          ),
+          const SizedBox(height: 14),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              _buildStatusChip(
+                icon: Icons.phone_iphone_outlined,
+                label: auth.phone == null ? '手机号未绑定' : '手机号已绑定',
+              ),
+              _buildStatusChip(
+                icon: Icons.badge_outlined,
+                label: auth.uid == null ? 'UID 生成中' : 'UID 已可复制',
+              ),
+              _buildStatusChip(
+                icon: Icons.notifications_outlined,
+                label: settingsProvider.notificationEnabled ? '通知已开启' : '通知已关闭',
+              ),
+              _buildStatusChip(
+                icon: Icons.visibility_off_outlined,
+                label: settingsProvider.invisibleMode ? '当前隐身中' : '正常展示中',
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStatusChip({
+    required IconData icon,
+    required String label,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      decoration: BoxDecoration(
+        color: AppColors.white08,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: AppColors.textSecondary),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: const TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w300,
+              color: AppColors.textSecondary,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSectionTitle(String title, {String? subtitle}) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(28, 0, 20, 12),
-      child: Align(
-        alignment: Alignment.centerLeft,
-        child: Text(
-          title,
-          style: const TextStyle(
-            fontSize: 13,
-            fontWeight: FontWeight.w300,
-            color: AppColors.textTertiary,
-            letterSpacing: 0.5,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: const TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w300,
+              color: AppColors.textTertiary,
+              letterSpacing: 0.5,
+            ),
           ),
-        ),
+          if (subtitle != null) ...[
+            const SizedBox(height: 4),
+            Text(
+              subtitle,
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w300,
+                color: AppColors.textDisabled.withValues(alpha: 0.9),
+                height: 1.35,
+              ),
+            ),
+          ],
+        ],
       ),
+    );
+  }
+
+  Widget _buildSectionCard({required List<Widget> children}) {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 20),
+      decoration: BoxDecoration(
+        color: AppColors.white05,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.white05),
+      ),
+      child: Column(children: children),
     );
   }
 
@@ -575,6 +654,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     BuildContext context, {
     required IconData icon,
     required String title,
+    String? subtitle,
     Widget? trailing,
     VoidCallback? onTap,
   }) {
@@ -584,20 +664,47 @@ class _SettingsScreenState extends State<SettingsScreen> {
       child: Container(
         padding: UiTokens.cardPadding,
         child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            Icon(icon, color: AppColors.textSecondary, size: 22),
-            const SizedBox(width: 16),
+            Container(
+              width: 34,
+              height: 34,
+              decoration: BoxDecoration(
+                color: AppColors.white05,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(icon, color: AppColors.textSecondary, size: 18),
+            ),
+            const SizedBox(width: 14),
             Expanded(
-              child: Text(
-                title,
-                style: const TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w300,
-                  color: AppColors.textPrimary,
-                  letterSpacing: 0.3,
-                ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w300,
+                      color: AppColors.textPrimary,
+                      letterSpacing: 0.3,
+                    ),
+                  ),
+                  if (subtitle != null) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      subtitle,
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w300,
+                        color: AppColors.textTertiary.withValues(alpha: 0.9),
+                        height: 1.35,
+                      ),
+                    ),
+                  ],
+                ],
               ),
             ),
+            const SizedBox(width: 12),
             if (trailing != null)
               trailing
             else if (onTap != null)

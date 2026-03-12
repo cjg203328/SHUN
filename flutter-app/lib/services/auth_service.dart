@@ -58,7 +58,7 @@ class AuthService {
         expireSeconds: (data['expireSeconds'] as num?)?.toInt() ?? 60,
       );
     } catch (_) {
-      if (!AppEnv.allowLocalDemoFallbacks) {
+      if (!AppEnv.allowLocalAuthFallbacks) {
         rethrow;
       }
 
@@ -104,7 +104,7 @@ class AuthService {
         deviceId: deviceId,
       );
     } catch (_) {
-      if (!AppEnv.allowLocalDemoFallbacks) {
+      if (!AppEnv.allowLocalAuthFallbacks) {
         rethrow;
       }
 

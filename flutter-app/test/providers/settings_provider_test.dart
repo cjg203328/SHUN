@@ -14,7 +14,6 @@ void main() {
     expect(provider.invisibleMode, isFalse);
     expect(provider.notificationEnabled, isTrue);
     expect(provider.vibrationEnabled, isTrue);
-    expect(provider.dayThemeEnabled, isFalse);
   });
 
   test('should persist updates across provider instances', () async {
@@ -23,12 +22,10 @@ void main() {
     await provider.updateInvisibleMode(true);
     await provider.updateNotificationEnabled(false);
     await provider.updateVibrationEnabled(false);
-    await provider.updateDayThemeEnabled(true);
 
     final restored = SettingsProvider();
     expect(restored.invisibleMode, isTrue);
     expect(restored.notificationEnabled, isFalse);
     expect(restored.vibrationEnabled, isFalse);
-    expect(restored.dayThemeEnabled, isTrue);
   });
 }

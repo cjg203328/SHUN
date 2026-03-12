@@ -10,6 +10,7 @@ export enum ErrorCode {
   BlockedRelation = 'BLOCKED_RELATION',
   MatchQuotaExceeded = 'MATCH_QUOTA_EXCEEDED',
   ThreadNotFound = 'THREAD_NOT_FOUND',
+  ThreadExpired = 'THREAD_EXPIRED',
   MessageNotFound = 'MESSAGE_NOT_FOUND',
   MessageRecallExpired = 'MESSAGE_RECALL_EXPIRED',
   InvalidInput = 'INVALID_INPUT',

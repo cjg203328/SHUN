@@ -104,10 +104,10 @@ class _ProfileTabState extends State<ProfileTab> {
                             begin: Alignment.topCenter,
                             end: Alignment.bottomCenter,
                             colors: [
-                              Colors.black.withValues(
+                              AppColors.pureBlack.withValues(
                                 alpha: isTransparentBackground ? 0.03 : 0.08,
                               ),
-                              Colors.black.withValues(
+                              AppColors.pureBlack.withValues(
                                 alpha: isTransparentBackground
                                     ? 0.16
                                     : (isPortraitFullscreen ? 0.3 : 0.4),
@@ -145,14 +145,14 @@ class _ProfileTabState extends State<ProfileTab> {
                                     child: Container(
                                       padding: const EdgeInsets.all(6),
                                       decoration: BoxDecoration(
-                                        color:
-                                            Colors.black.withValues(alpha: 0.5),
+                                        color: AppColors.pureBlack
+                                            .withValues(alpha: 0.5),
                                         shape: BoxShape.circle,
                                       ),
                                       child: const Icon(
                                         Icons.edit,
                                         size: 16,
-                                        color: Colors.white,
+                                        color: AppColors.textPrimary,
                                       ),
                                     ),
                                   )
@@ -183,7 +183,7 @@ class _ProfileTabState extends State<ProfileTab> {
                                     ),
                                     boxShadow: [
                                       BoxShadow(
-                                        color: Colors.black
+                                        color: AppColors.pureBlack
                                             .withValues(alpha: 0.16),
                                         blurRadius: 12,
                                         offset: const Offset(0, 4),
@@ -211,8 +211,7 @@ class _ProfileTabState extends State<ProfileTab> {
                                   child: Container(
                                     padding: const EdgeInsets.all(8),
                                     decoration: BoxDecoration(
-                                      color:
-                                          Colors.white.withValues(alpha: 0.26),
+                                      color: AppColors.white20,
                                       shape: BoxShape.circle,
                                       border: Border.all(
                                         color: AppColors.white20,
@@ -312,7 +311,7 @@ class _ProfileTabState extends State<ProfileTab> {
                               ),
                               decoration: BoxDecoration(
                                 color: isTransparentBackground
-                                    ? Colors.white.withValues(alpha: 0.14)
+                                    ? AppColors.white15
                                     : AppColors.white05,
                                 borderRadius: BorderRadius.circular(20),
                                 border: Border.all(
@@ -385,7 +384,7 @@ class _ProfileTabState extends State<ProfileTab> {
                     margin: const EdgeInsets.symmetric(horizontal: 20),
                     decoration: BoxDecoration(
                       color: isTransparentBackground
-                          ? Colors.white.withValues(alpha: 0.1)
+                          ? AppColors.white12
                           : AppColors.white05,
                       borderRadius: BorderRadius.circular(UiTokens.radiusMd),
                       border: Border.all(
@@ -440,7 +439,7 @@ class _ProfileTabState extends State<ProfileTab> {
         width: 34,
         height: 34,
         decoration: BoxDecoration(
-          color: Colors.black.withValues(alpha: 0.22),
+          color: AppColors.pureBlack.withValues(alpha: 0.28),
           borderRadius: BorderRadius.circular(17),
           border: Border.all(color: AppColors.white12),
         ),
@@ -562,34 +561,36 @@ class _ProfileTabState extends State<ProfileTab> {
   Future<void> _changeAvatar() async {
     final imageFile = await ImageUploadService.pickAvatar(context);
 
-    if (imageFile != null && mounted) {
-      final mediaRef = await MediaUploadService().uploadUserMedia(
-        'avatar',
-        imageFile,
-      );
-      await ImageUploadService.saveAvatarReference(mediaRef);
-      setState(() {
-        _avatarPath = mediaRef;
-      });
-      AppFeedback.showToast(context, AppToastCode.saved, subject: '头像');
-    }
+    if (imageFile == null || !mounted) return;
+
+    final mediaRef = await MediaUploadService().uploadUserMedia(
+      'avatar',
+      imageFile,
+    );
+    await ImageUploadService.saveAvatarReference(mediaRef);
+    if (!mounted) return;
+    setState(() {
+      _avatarPath = mediaRef;
+    });
+    AppFeedback.showToast(context, AppToastCode.saved, subject: '头像');
   }
 
   // 修改背景
   Future<void> _changeBackground() async {
     final imageFile = await ImageUploadService.pickBackground(context);
 
-    if (imageFile != null && mounted) {
-      final mediaRef = await MediaUploadService().uploadUserMedia(
-        'background',
-        imageFile,
-      );
-      await ImageUploadService.saveBackgroundReference(mediaRef);
-      setState(() {
-        _backgroundPath = mediaRef;
-      });
-      AppFeedback.showToast(context, AppToastCode.saved, subject: '背景');
-    }
+    if (imageFile == null || !mounted) return;
+
+    final mediaRef = await MediaUploadService().uploadUserMedia(
+      'background',
+      imageFile,
+    );
+    await ImageUploadService.saveBackgroundReference(mediaRef);
+    if (!mounted) return;
+    setState(() {
+      _backgroundPath = mediaRef;
+    });
+    AppFeedback.showToast(context, AppToastCode.saved, subject: '背景');
   }
 
   ImageProvider _buildImageProvider(String path) {

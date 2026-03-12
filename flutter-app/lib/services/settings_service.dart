@@ -76,14 +76,14 @@ class SettingsService {
       try {
         final settings = await _apiClient.patch<Map<String, dynamic>>(
           '/settings/me',
-          data: {'dayThemeEnabled': enabled},
+          data: {'dayThemeEnabled': false},
         );
         await _persist(settings);
         return loadState();
       } catch (_) {}
     }
 
-    await _repository.saveDayThemeEnabled(enabled);
+    await _repository.saveDayThemeEnabled(false);
     return loadState();
   }
 
@@ -100,7 +100,7 @@ class SettingsService {
     await _repository.saveVibrationEnabled(
       settings['vibrationEnabled'] != false,
     );
-    await _repository.saveDayThemeEnabled(settings['dayThemeEnabled'] == true);
+    await _repository.saveDayThemeEnabled(false);
     await _repository.saveTransparentHomepage(
       settings['transparentHomepage'] == true,
     );

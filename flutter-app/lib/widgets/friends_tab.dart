@@ -163,11 +163,18 @@ class FriendsTab extends StatelessWidget {
               return _FriendItem(
                 friend: friend,
                 onTap: () async {
-                  final thread = await context
-                      .read<ChatProvider>()
-                      .ensureDirectThreadForUser(friend.user, isFriend: true);
+                  final chatProvider = context.read<ChatProvider>();
+                  final thread = await chatProvider.ensureDirectThreadForUser(
+                    friend.user,
+                    isFriend: true,
+                  );
                   if (!context.mounted) return;
-                  context.push('/chat/${thread.id}').then((_) {
+                  final routeThreadId = chatProvider.routeThreadId(
+                        threadId: thread.id,
+                        userId: friend.user.id,
+                      ) ??
+                      thread.id;
+                  context.push('/chat/$routeThreadId').then((_) {
                     if (context.mounted) {
                       context.go('/main?tab=2');
                     }
@@ -548,7 +555,7 @@ class FriendsTab extends StatelessWidget {
         final chatProvider = context.read<ChatProvider>();
         final thread = chatProvider.getThread(friend.id);
         if (thread != null) {
-          chatProvider.unfollowFriend(friend.id);
+          chatProvider.unfollowFriend(thread.id);
         }
         AppFeedback.showToast(
           context,
@@ -567,6 +574,7 @@ class FriendsTab extends StatelessWidget {
 
       if (confirm == true && context.mounted) {
         context.read<FriendProvider>().removeFriend(friend.id);
+        context.read<ChatProvider>().handleFriendRemoved(friend.id);
         AppFeedback.showToast(context, AppToastCode.deleted, subject: '好友');
       }
     } else if (action == 'block' && context.mounted) {
@@ -580,6 +588,8 @@ class FriendsTab extends StatelessWidget {
 
       if (confirm == true && context.mounted) {
         await context.read<FriendProvider>().blockUser(friend.id);
+        if (!context.mounted) return;
+        context.read<ChatProvider>().handleUserBlocked(friend.id);
         if (!context.mounted) return;
         AppFeedback.showToast(context, AppToastCode.enabled, subject: '拉黑');
       }
@@ -1064,9 +1074,12 @@ class _FriendRequestItem extends StatelessWidget {
               const SizedBox(width: 8),
               TextButton(
                 onPressed: () async {
+                  final userId = request.fromUser.id;
                   await context
                       .read<FriendProvider>()
                       .acceptFriendRequestRemote(request.id);
+                  if (!context.mounted) return;
+                  context.read<ChatProvider>().handleFriendAccepted(userId);
                   if (!context.mounted) return;
                   AppFeedback.showToast(
                     context,

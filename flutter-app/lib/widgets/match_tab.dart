@@ -29,7 +29,7 @@ class _MatchTabState extends State<MatchTab>
   bool _showGreetingBanner = false;
   bool _isPreparingMatch = false;
 
-  final List<String> _quickGreetings = ['嗨', '你好', '在吗', '聊聊', '失眠了', '晚安'];
+  static const List<String> _defaultQuickGreetings = ['嗨，你好', '晚上好呀', '想聊聊吗', '今天过得怎么样', '刚好看到你', '想认识一下你'];
 
   @override
   void initState() {
@@ -50,8 +50,13 @@ class _MatchTabState extends State<MatchTab>
 
   void _showGreetingSentFeedback(ChatThread thread) {
     _greetingBannerTimer?.cancel();
+    final canonicalThreadId = context.read<ChatProvider>().routeThreadId(
+          threadId: thread.id,
+          userId: thread.otherUser.id,
+        ) ??
+        thread.id;
     setState(() {
-      _recentThreadId = thread.id;
+      _recentThreadId = canonicalThreadId;
       _recentNickname = thread.otherUser.nickname;
       _showGreetingBanner = true;
     });
@@ -62,6 +67,16 @@ class _MatchTabState extends State<MatchTab>
         _showGreetingBanner = false;
       });
     });
+  }
+
+  void _openRecentChat() {
+    final recentThreadId = _recentThreadId;
+    if (recentThreadId == null) return;
+    final canonicalThreadId = context.read<ChatProvider>().routeThreadId(
+          threadId: recentThreadId,
+        ) ??
+        recentThreadId;
+    context.push('/chat/$canonicalThreadId');
   }
 
   Future<void> _handleMatchButtonPressed(MatchProvider provider) async {
@@ -146,7 +161,11 @@ class _MatchTabState extends State<MatchTab>
                         // 顶部情感化文案 + 次数显示
                         _buildHeader(matchProvider),
 
-                        const SizedBox(height: 60),
+                        const SizedBox(height: 18),
+
+                        _buildMatchingGuide(matchProvider),
+
+                        const SizedBox(height: 42),
 
                         // 光球
                         _buildMatchOrb(matchProvider),
@@ -257,6 +276,45 @@ class _MatchTabState extends State<MatchTab>
     );
   }
 
+  Widget _buildMatchingGuide(MatchProvider provider) {
+    final tips = provider.matchCount <= 0
+        ? const ['今日次数已用完', '明天会自动恢复', '可以先去消息页回复已有对话']
+        : provider.isMatching
+            ? const ['正在为你筛选合适的人', '保持网络稳定', '不想等了可随时取消']
+            : const ['点击下方开始匹配', '匹配成功后先发一句话', '回复率会更高'];
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: AppColors.white05,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.white08),
+      ),
+      child: Row(
+        children: [
+          const Icon(
+            Icons.tips_and_updates_outlined,
+            size: 18,
+            color: AppColors.textTertiary,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              tips.join(' · '),
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w300,
+                color: AppColors.textTertiary.withValues(alpha: 0.92),
+                height: 1.45,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildMatchOrb(MatchProvider provider) {
     return Center(
       child: AnimatedBuilder(
@@ -328,7 +386,7 @@ class _MatchTabState extends State<MatchTab>
                     vertical: 3,
                   ),
                   decoration: BoxDecoration(
-                    color: const Color(0xFF4CAF50).withValues(alpha: 0.15),
+                    color: AppColors.success.withValues(alpha: 0.15),
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: Row(
@@ -338,7 +396,7 @@ class _MatchTabState extends State<MatchTab>
                         width: 6,
                         height: 6,
                         decoration: const BoxDecoration(
-                          color: Color(0xFF4CAF50),
+                          color: AppColors.success,
                           shape: BoxShape.circle,
                         ),
                       ),
@@ -348,7 +406,7 @@ class _MatchTabState extends State<MatchTab>
                         style: TextStyle(
                           fontSize: 11,
                           fontWeight: FontWeight.w500,
-                          color: Color(0xFF4CAF50),
+                          color: AppColors.success,
                         ),
                       ),
                     ],
@@ -368,14 +426,14 @@ class _MatchTabState extends State<MatchTab>
               borderRadius: BorderRadius.circular(20),
               border: Border.all(
                 color: isOnline
-                    ? const Color(0xFF4CAF50).withValues(alpha: 0.2)
+                    ? AppColors.success.withValues(alpha: 0.2)
                     : AppColors.white08,
               ),
               // 在线用户：微妙的发光效果
               boxShadow: isOnline
                   ? [
                       BoxShadow(
-                        color: const Color(0xFF4CAF50).withValues(alpha: 0.1),
+                        color: AppColors.success.withValues(alpha: 0.1),
                         blurRadius: 20,
                         spreadRadius: 0,
                       ),
@@ -395,7 +453,7 @@ class _MatchTabState extends State<MatchTab>
                         color: AppColors.white08,
                         border: Border.all(
                           color: isOnline
-                              ? const Color(0xFF4CAF50).withValues(alpha: 0.3)
+                              ? AppColors.success.withValues(alpha: 0.3)
                               : AppColors.white05,
                           width: 2,
                         ),
@@ -416,7 +474,7 @@ class _MatchTabState extends State<MatchTab>
                           width: 16,
                           height: 16,
                           decoration: BoxDecoration(
-                            color: const Color(0xFF4CAF50),
+                            color: AppColors.success,
                             shape: BoxShape.circle,
                             border: Border.all(
                               color: AppColors.cardBg,
@@ -504,9 +562,11 @@ class _MatchTabState extends State<MatchTab>
 
           // 招呼语区域（紧凑版）
           Expanded(
-            child: _buildCompactGreetingSection(),
+            child: _buildCompactGreetingSection(user),
           ),
 
+          const SizedBox(height: 12),
+          _buildMatchedUserHint(user),
           const SizedBox(height: 16),
 
           // 底部按钮
@@ -517,13 +577,14 @@ class _MatchTabState extends State<MatchTab>
   }
 
   // 紧凑版招呼语区域（一屏展示）
-  Widget _buildCompactGreetingSection() {
+  Widget _buildCompactGreetingSection(User user) {
+    final quickGreetings = _resolveQuickGreetings(user);
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // 标题
         const Text(
-          '打个招呼',
+          '先发一句轻松的开场白',
           style: TextStyle(
             fontSize: 15,
             fontWeight: FontWeight.w300,
@@ -531,14 +592,24 @@ class _MatchTabState extends State<MatchTab>
             letterSpacing: 1,
           ),
         ),
+        const SizedBox(height: 6),
+        Text(
+          user.isOnline
+              ? '对方现在在线，简短一点更容易立刻收到回复。'
+              : '先留下一句舒服的话，等 TA 回来时会第一眼看到。',
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w300,
+            color: AppColors.textTertiary.withValues(alpha: 0.9),
+            height: 1.45,
+          ),
+        ),
         const SizedBox(height: 16),
-
-        // 快捷语（仅在未自定义时显示）
         if (_greetingController.text.isEmpty)
           Wrap(
             spacing: 8,
             runSpacing: 8,
-            children: _quickGreetings.map((greeting) {
+            children: quickGreetings.map((greeting) {
               final isSelected = _selectedQuickGreeting == greeting;
 
               return GestureDetector(
@@ -571,18 +642,44 @@ class _MatchTabState extends State<MatchTab>
               );
             }).toList(),
           ),
-
-        // 自定义输入（仅在未选择快捷语时显示）
         if (_selectedQuickGreeting == null) ...[
           const SizedBox(height: 12),
-
-          // 自定义输入框
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              color: AppColors.white05,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: AppColors.white08),
+            ),
+            child: Row(
+              children: [
+                const Icon(
+                  Icons.lightbulb_outline,
+                  size: 16,
+                  color: AppColors.textTertiary,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    '建议别太正式，像“嗨，今天过得怎么样”这种最自然。',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w300,
+                      color: AppColors.textTertiary.withValues(alpha: 0.92),
+                      height: 1.4,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
           TextField(
             controller: _greetingController,
             maxLength: 25,
             maxLines: 2,
             decoration: InputDecoration(
-              hintText: '或者自己写点什么...',
+              hintText: '或者自己写一句更像你的开场白...',
               hintStyle: const TextStyle(
                 fontSize: 13,
                 color: AppColors.textTertiary,
@@ -615,8 +712,6 @@ class _MatchTabState extends State<MatchTab>
             },
           ),
         ],
-
-        // 已选择快捷语时，显示切换按钮
         if (_selectedQuickGreeting != null) ...[
           const SizedBox(height: 12),
           Center(
@@ -640,6 +735,33 @@ class _MatchTabState extends State<MatchTab>
         ],
       ],
     );
+  }
+
+  List<String> _resolveQuickGreetings(User user) {
+    final scenarioGreetings = user.isOnline
+        ? const [
+            '嗨，刚好刷到你',
+            '晚上好呀',
+            '想聊聊你现在在做什么',
+            '看起来你也还没睡',
+            '可以认识一下吗',
+            '今天过得怎么样',
+          ]
+        : const [
+            '先给你留个言',
+            '等你看到时回我就好',
+            '你好呀，想认识一下你',
+            '晚点有空可以聊聊',
+            '看到你状态挺有意思',
+            '祝你今晚好梦',
+          ];
+
+    final mergedGreetings = <String>{
+      ...scenarioGreetings,
+      ..._defaultQuickGreetings,
+    };
+
+    return mergedGreetings.take(6).toList();
   }
 
   // ignore: unused_element
@@ -680,7 +802,7 @@ class _MatchTabState extends State<MatchTab>
           Wrap(
             spacing: 10,
             runSpacing: 10,
-            children: _quickGreetings.map((greeting) {
+            children: _defaultQuickGreetings.map((greeting) {
               final isSelected = _selectedQuickGreeting == greeting;
 
               return GestureDetector(
@@ -812,14 +934,19 @@ class _MatchTabState extends State<MatchTab>
 
   Widget _buildMatchButton(MatchProvider provider) {
     String buttonText;
+    String helperText;
     if (_isPreparingMatch) {
       buttonText = '准备中...';
+      helperText = '正在检查权限并准备本轮候选人';
     } else if (provider.isMatching) {
-      buttonText = '取消';
+      buttonText = '取消匹配';
+      helperText = '如果不想继续等待，可以随时取消，本次不会额外扣次数';
     } else if (provider.matchCount <= 0) {
       buttonText = '今日已用完';
+      helperText = '明日 9:00 会自动恢复匹配次数';
     } else {
       buttonText = '开始匹配';
+      helperText = '匹配到人后，先发一句简短问候，回复率通常更高';
     }
 
     final showLocationTip =
@@ -830,7 +957,7 @@ class _MatchTabState extends State<MatchTab>
         SizedBox(
           width: double.infinity,
           child: ElevatedButton(
-            onPressed: provider.matchCount <= 0
+            onPressed: provider.matchCount <= 0 || _isPreparingMatch
                 ? null
                 : () => _handleMatchButtonPressed(provider),
             style: ElevatedButton.styleFrom(
@@ -859,10 +986,22 @@ class _MatchTabState extends State<MatchTab>
             ),
           ),
         ),
+        const SizedBox(height: 10),
+        Text(
+          helperText,
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w300,
+            color: AppColors.textTertiary.withValues(alpha: 0.88),
+            height: 1.45,
+            letterSpacing: 0.2,
+          ),
+          textAlign: TextAlign.center,
+        ),
         if (showLocationTip) ...[
-          const SizedBox(height: 10),
+          const SizedBox(height: 8),
           const Text(
-            '当前未开启位置，将为你随机匹配',
+            '未开启位置也可以匹配，我们会优先为你安排随机相遇',
             style: TextStyle(
               fontSize: 12,
               fontWeight: FontWeight.w300,
@@ -907,13 +1046,56 @@ class _MatchTabState extends State<MatchTab>
           TextButton(
             onPressed: _recentThreadId == null
                 ? null
-                : () => context.push('/chat/$_recentThreadId'),
+                : _openRecentChat,
             style: TextButton.styleFrom(
               foregroundColor: AppColors.brandBlue,
               minimumSize: Size.zero,
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
             ),
             child: const Text('去聊天'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMatchedUserHint(User user) {
+    final hint = user.isOnline
+        ? '对方现在在线，建议直接发一句轻松的开场白，通常更容易接上话。'
+        : '对方当前不在线，留一句自然一点的话，回来后会先看到你的消息。';
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: AppColors.white05,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: user.isOnline
+              ? AppColors.success.withValues(alpha: 0.18)
+              : AppColors.white08,
+        ),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            user.isOnline ? Icons.bolt_outlined : Icons.schedule_outlined,
+            size: 16,
+            color: user.isOnline
+                ? AppColors.success
+                : AppColors.textTertiary,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              hint,
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w300,
+                color: AppColors.textTertiary.withValues(alpha: 0.92),
+                height: 1.4,
+              ),
+            ),
           ),
         ],
       ),

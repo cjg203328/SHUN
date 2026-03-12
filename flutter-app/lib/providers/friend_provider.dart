@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:uuid/uuid.dart';
+import '../models/app_notification.dart';
 import '../models/models.dart';
 import '../services/analytics_service.dart';
 import 'notification_center_provider.dart';
@@ -98,31 +99,38 @@ class FriendProvider extends ChangeNotifier {
   }
 
   Future<void> _hydrateRemote() async {
-    final friends = await _friendService.loadFriends();
-    final requests = await _friendService.loadPendingRequests();
-    final blockedUsers = await _friendService.loadBlockedUsers();
+    final snapshot = await _friendService.loadHydrationSnapshot();
+    if (snapshot == null) return;
+
+    final friends = snapshot.friends;
+    final requests = snapshot.requests;
+    final blockedUsers = snapshot.blockedUsers;
     final nextPendingIds = requests
         .where((request) => request.status == FriendRequestStatus.pending)
         .map((request) => request.id)
         .toSet();
     final newRequestIds = nextPendingIds.difference(_knownPendingRequestIds);
-
-    if (friends.isEmpty && requests.isEmpty && blockedUsers.isEmpty) {
-      _knownPendingRequestIds
-        ..clear()
-        ..addAll(nextPendingIds);
-      return;
-    }
+    final nextFriends = <String, Friend>{
+      for (final friend in friends) friend.id: friend,
+    };
+    final nextRequests = <String, FriendRequest>{
+      for (final request in requests) request.id: request,
+    };
+    final nextBlockedUserIds = blockedUsers.map((user) => user.id).toSet();
+    final hasRelationshipChanges =
+        !_mapEquals(_friends, nextFriends) ||
+        !_mapEquals(_requests, nextRequests) ||
+        !_setEquals(_blockedUserIds, nextBlockedUserIds);
 
     _friends
       ..clear()
-      ..addEntries(friends.map((friend) => MapEntry(friend.id, friend)));
+      ..addAll(nextFriends);
     _requests
       ..clear()
-      ..addEntries(requests.map((request) => MapEntry(request.id, request)));
+      ..addAll(nextRequests);
     _blockedUserIds
       ..clear()
-      ..addAll(blockedUsers.map((user) => user.id));
+      ..addAll(nextBlockedUserIds);
 
     for (final friend in friends) {
       registerDiscoverableUser(friend.user);
@@ -142,7 +150,9 @@ class FriendProvider extends ChangeNotifier {
       ..addAll(nextPendingIds);
 
     await StorageService.saveBlockedUserIds(_blockedUserIds.toList());
-    notifyListeners();
+    if (hasRelationshipChanges || newRequestIds.isNotEmpty) {
+      notifyListeners();
+    }
   }
 
   Future<void> refreshFromRemote() async {
@@ -220,6 +230,24 @@ class FriendProvider extends ChangeNotifier {
     return _friends.containsKey(userId);
   }
 
+  bool _mapEquals<T>(Map<String, T> left, Map<String, T> right) {
+    if (identical(left, right)) return true;
+    if (left.length != right.length) return false;
+    for (final entry in left.entries) {
+      if (right[entry.key] != entry.value) return false;
+    }
+    return true;
+  }
+
+  bool _setEquals(Set<String> left, Set<String> right) {
+    if (identical(left, right)) return true;
+    if (left.length != right.length) return false;
+    for (final value in left) {
+      if (!right.contains(value)) return false;
+    }
+    return true;
+  }
+
   bool hasPendingRequest(String userId) {
     return _requests.values.any(
       (r) => r.fromUser.id == userId && r.status == FriendRequestStatus.pending,
@@ -235,6 +263,13 @@ class FriendProvider extends ChangeNotifier {
     if (_blockedUserIds.add(userId)) {
       // 保留好友与历史数据，解除拉黑后可恢复
       _requests.removeWhere((_, request) => request.fromUser.id == userId);
+      await NotificationCenterProvider.instance.removeUserNotifications(
+        userId,
+        types: {
+          AppNotificationType.friendRequest,
+          AppNotificationType.friendAccepted,
+        },
+      );
       await StorageService.saveBlockedUserIds(_blockedUserIds.toList());
       notifyListeners();
     }
@@ -282,6 +317,10 @@ class FriendProvider extends ChangeNotifier {
           createdAt: request.createdAt,
           status: FriendRequestStatus.rejected,
         );
+        unawaited(
+          NotificationCenterProvider.instance
+              .removeFriendRequestNotification(requestId),
+        );
         notifyListeners();
         return;
       }
@@ -302,6 +341,10 @@ class FriendProvider extends ChangeNotifier {
       );
 
       _knownPendingRequestIds.remove(requestId);
+      unawaited(
+        NotificationCenterProvider.instance
+            .removeFriendRequestNotification(requestId),
+      );
       unawaited(
         NotificationCenterProvider.instance
             .addFriendAcceptedNotification(request.fromUser),
@@ -331,6 +374,10 @@ class FriendProvider extends ChangeNotifier {
         status: FriendRequestStatus.rejected,
       );
       _knownPendingRequestIds.remove(requestId);
+      unawaited(
+        NotificationCenterProvider.instance
+            .removeFriendRequestNotification(requestId),
+      );
       notifyListeners();
     }
   }
@@ -372,6 +419,12 @@ class FriendProvider extends ChangeNotifier {
 
   void removeFriend(String userId) {
     _friends.remove(userId);
+    unawaited(
+      NotificationCenterProvider.instance.removeUserNotifications(
+        userId,
+        types: {AppNotificationType.friendAccepted},
+      ),
+    );
     notifyListeners();
   }
 }

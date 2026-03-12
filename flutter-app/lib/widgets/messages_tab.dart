@@ -5,6 +5,7 @@ import '../config/theme.dart';
 import '../core/feedback/app_feedback.dart';
 import '../core/ui/ui_tokens.dart';
 import '../providers/chat_provider.dart';
+import '../providers/friend_provider.dart';
 import '../providers/notification_center_provider.dart';
 import '../models/models.dart';
 import 'app_toast.dart';
@@ -81,7 +82,7 @@ class _MessagesTabState extends State<MessagesTab> {
                           style: const TextStyle(
                             fontSize: 10,
                             fontWeight: FontWeight.w500,
-                            color: Colors.white,
+                          color: AppColors.pureBlack,
                           ),
                           textAlign: TextAlign.center,
                         ),
@@ -93,8 +94,8 @@ class _MessagesTabState extends State<MessagesTab> {
           ),
         ],
       ),
-      body: Consumer<ChatProvider>(
-        builder: (context, chatProvider, child) {
+      body: Consumer2<ChatProvider, FriendProvider>(
+        builder: (context, chatProvider, friendProvider, child) {
           final threads = chatProvider.sortedThreads;
 
           if (threads.isEmpty) {
@@ -167,9 +168,16 @@ class _MessagesTabState extends State<MessagesTab> {
                 child: _ThreadItem(
                   thread: thread,
                   lastMessage: lastMessage,
+                  isFriend: friendProvider.isFriend(thread.otherUser.id) &&
+                      !friendProvider.isBlocked(thread.otherUser.id),
                   onTap: () {
+                    final routeThreadId = chatProvider.routeThreadId(
+                          threadId: thread.id,
+                          userId: thread.otherUser.id,
+                        ) ??
+                        thread.id;
                     // 从消息页进入聊天，返回时应该回到消息页
-                    context.push('/chat/${thread.id}').then((_) {
+                    context.push('/chat/$routeThreadId').then((_) {
                       // 返回后切换到消息页
                       if (context.mounted) {
                         context.go('/main?tab=1');
@@ -189,18 +197,19 @@ class _MessagesTabState extends State<MessagesTab> {
 class _ThreadItem extends StatelessWidget {
   final ChatThread thread;
   final Message? lastMessage;
+  final bool isFriend;
   final VoidCallback onTap;
 
   const _ThreadItem({
     required this.thread,
     required this.lastMessage,
+    required this.isFriend,
     required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
     final isOnline = thread.otherUser.isOnline;
-    final isFriend = thread.isFriend;
 
     return InkWell(
       onTap: onTap,
@@ -246,7 +255,7 @@ class _ThreadItem extends StatelessWidget {
                       thread.otherUser.avatar ?? '👤',
                       style: const TextStyle(
                         fontSize: 28,
-                        color: AppColors.textPrimary,
+                        color: AppColors.pureBlack,
                       ),
                     ),
                   ),
@@ -261,7 +270,7 @@ class _ThreadItem extends StatelessWidget {
                       width: 14,
                       height: 14,
                       decoration: BoxDecoration(
-                        color: const Color(0xFF4CAF50), // 绿色
+                        color: AppColors.success,
                         shape: BoxShape.circle,
                         border: Border.all(
                           color: AppColors.pureBlack,
@@ -270,7 +279,7 @@ class _ThreadItem extends StatelessWidget {
                         boxShadow: [
                           BoxShadow(
                             color:
-                                const Color(0xFF4CAF50).withValues(alpha: 0.5),
+                                AppColors.success.withValues(alpha: 0.5),
                             blurRadius: 4,
                             spreadRadius: 1,
                           ),
@@ -301,7 +310,7 @@ class _ThreadItem extends StatelessWidget {
                         style: const TextStyle(
                           fontSize: 10,
                           fontWeight: FontWeight.w500,
-                          color: Colors.white,
+                          color: AppColors.pureBlack,
                         ),
                         textAlign: TextAlign.center,
                       ),
@@ -364,7 +373,7 @@ class _ThreadItem extends StatelessWidget {
                                   vertical: 2,
                                 ),
                                 decoration: BoxDecoration(
-                                  color: const Color(0xFF4CAF50)
+                                  color: AppColors.success
                                       .withValues(alpha: 0.15),
                                   borderRadius: BorderRadius.circular(4),
                                 ),
@@ -373,7 +382,7 @@ class _ThreadItem extends StatelessWidget {
                                   style: TextStyle(
                                     fontSize: 10,
                                     fontWeight: FontWeight.w500,
-                                    color: Color(0xFF4CAF50),
+                                    color: AppColors.success,
                                   ),
                                 ),
                               ),

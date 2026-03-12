@@ -181,6 +181,9 @@ class AppDataRepository {
 
   Future<void> savePortraitFullscreenBackground(bool enabled) async {
     await StorageService.savePortraitFullscreenBackground(enabled);
+    if (!enabled) {
+      await StorageService.saveTransparentHomepage(false);
+    }
   }
 
   MatchStateSnapshot loadMatchState() {
