@@ -93,25 +93,63 @@ describe('Runtime state persistence', () => {
   });
 
   it('persists match quota consumption', async () => {
-    const userStore = new InMemoryUserSettingsStore();
-    const runtimeStore = new InMemoryRuntimeStateStore();
-    const userA = buildUser(3);
-    const userB = buildUser(4);
-    await userStore.saveUser(userA);
-    await userStore.saveUser(userB);
+    const previousAppEnv = process.env.APP_ENV;
+    try {
+      process.env.APP_ENV = 'test';
+      const userStore = new InMemoryUserSettingsStore();
+      const runtimeStore = new InMemoryRuntimeStateStore();
+      const userA = buildUser(3);
+      const userB = buildUser(4);
+      await userStore.saveUser(userA);
+      await userStore.saveUser(userB);
 
-    const friendsService = new FriendsService(userStore, runtimeStore);
-    await friendsService.onModuleInit();
+      const friendsService = new FriendsService(userStore, runtimeStore);
+      await friendsService.onModuleInit();
 
-    const matchV1 = new MatchService(friendsService, runtimeStore, userStore);
-    await matchV1.onModuleInit();
-    const quota = await matchV1.getQuota(asTokenUser(userA));
-    await matchV1.startMatch(asTokenUser(userA), [userB.userId]);
+      const matchV1 = new MatchService(friendsService, runtimeStore, userStore);
+      await matchV1.onModuleInit();
+      const quota = await matchV1.getQuota(asTokenUser(userA));
+      await matchV1.startMatch(asTokenUser(userA), [userB.userId]);
 
-    const matchV2 = new MatchService(friendsService, runtimeStore, userStore);
-    await matchV2.onModuleInit();
-    const quotaAfterReload = await matchV2.getQuota(asTokenUser(userA));
-    expect(quotaAfterReload.remaining).toBe(quota.remaining - 1);
+      const matchV2 = new MatchService(friendsService, runtimeStore, userStore);
+      await matchV2.onModuleInit();
+      const quotaAfterReload = await matchV2.getQuota(asTokenUser(userA));
+      expect(quotaAfterReload.remaining).toBe(quota.remaining - 1);
+    } finally {
+      process.env.APP_ENV = previousAppEnv;
+    }
+  });
+
+  it('does not register demo candidates outside demo-like environments', async () => {
+    const previousAppEnv = process.env.APP_ENV;
+    try {
+      process.env.APP_ENV = 'staging';
+
+      const userStore = new InMemoryUserSettingsStore();
+      const runtimeStore = new InMemoryRuntimeStateStore();
+      const userA = buildUser(30);
+      await userStore.saveUser(userA);
+
+      const friendsService = new FriendsService(userStore, runtimeStore);
+      await friendsService.onModuleInit();
+
+      const matchService = new MatchService(
+        friendsService,
+        runtimeStore,
+        userStore,
+      );
+      await matchService.onModuleInit();
+
+      await expect(
+        matchService.startMatch(asTokenUser(userA)),
+      ).rejects.toMatchObject({
+        code: ErrorCode.MatchUnavailable,
+        status: 503,
+      });
+      await expect(userStore.getUserById('u_001')).resolves.toBeNull();
+    } finally {
+      process.env.APP_ENV = previousAppEnv;
+    }
   });
 
   it('persists chat threads/messages/read-state', async () => {

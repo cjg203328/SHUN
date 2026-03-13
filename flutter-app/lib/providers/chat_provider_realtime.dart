@@ -37,7 +37,7 @@ extension ChatProviderRealtime on ChatProvider {
   }
 
   Future<void> _ensureRealtimeReady() async {
-    if (!_chatService.hasSession) return;
+    if (!_enableRealtime || !_chatService.hasSession) return;
     final wasConnected = _chatSocketService.isConnected;
     final connected = await _chatSocketService.connect();
     if (connected && !wasConnected) {
@@ -97,6 +97,7 @@ extension ChatProviderRealtime on ChatProvider {
       messages[index] = _mergeRemoteMessage(previous, event.message);
       if (previous.status != MessageStatus.sent) {
         _addIntimacy(event.threadId, previous.content, true);
+        _recordDeliverySuccess(previous.type, previous.id);
       }
     } else if (!messages.any((msg) => msg.id == event.message.id)) {
       messages.add(event.message);
@@ -174,6 +175,7 @@ extension ChatProviderRealtime on ChatProvider {
       messages[localIndex] = _mergeRemoteMessage(previous, remoteMessage);
       if (previous.status != MessageStatus.sent) {
         _addIntimacy(threadId, previous.content, true);
+        _recordDeliverySuccess(previous.type, previous.id);
       }
     } else if (!messages.any((msg) => msg.id == remoteMessage.id)) {
       messages.add(remoteMessage);

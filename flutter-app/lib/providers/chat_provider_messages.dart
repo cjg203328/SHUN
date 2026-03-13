@@ -164,8 +164,10 @@ extension ChatProviderMessages on ChatProvider {
     if (remoteMessage != null) {
       messages[index] = remoteMessage;
       _addIntimacy(threadId, content, true);
+      _recordDeliverySuccess(MessageType.text, localMessageId);
     } else {
       messages[index] = messages[index].copyWith(status: MessageStatus.failed);
+      _recordDeliveryFailure(MessageType.text, localMessageId);
     }
     notifyListeners();
   }
@@ -186,6 +188,11 @@ extension ChatProviderMessages on ChatProvider {
         messages[index] = messages[index].copyWith(
           status: isSuccess ? MessageStatus.sent : MessageStatus.failed,
         );
+        if (isSuccess) {
+          _recordDeliverySuccess(MessageType.text, messageId);
+        } else {
+          _recordDeliveryFailure(MessageType.text, messageId);
+        }
         notifyListeners();
 
         if (isSuccess) {
@@ -244,6 +251,27 @@ extension ChatProviderMessages on ChatProvider {
         message.type == MessageType.text;
   }
 
+  Future<bool> retryFailedMessage(String threadId, String messageId) async {
+    threadId = _resolveThreadId(threadId);
+    final messages = _messages[threadId];
+    if (messages == null) {
+      return false;
+    }
+    final message = messages.cast<Message?>().firstWhere(
+          (msg) => msg?.id == messageId,
+          orElse: () => null,
+        );
+    if (message == null ||
+        !message.isMe ||
+        message.status != MessageStatus.failed) {
+      return false;
+    }
+    if (message.type == MessageType.image) {
+      return resendImageMessage(threadId, messageId);
+    }
+    return resendMessage(threadId, messageId);
+  }
+
   Future<bool> resendImageMessage(String threadId, String messageId) async {
     threadId = _resolveThreadId(threadId);
     final thread = _getSendableThread(
@@ -268,13 +296,17 @@ extension ChatProviderMessages on ChatProvider {
 
     final imagePath = message.imagePath;
     if (imagePath == null || imagePath.isEmpty) {
+      _deliveryStatsService.recordImageReselectRequired();
       return false;
     }
     final imageFile = File(imagePath);
     if (!await imageFile.exists()) {
+      _deliveryStatsService.recordImageReselectRequired();
       return false;
     }
 
+    _deliveryStatsService.recordRetryRequested();
+    _retryingMessageIds.add(messageId);
     messages[index] = message.copyWith(status: MessageStatus.sending);
     notifyListeners();
 
@@ -317,6 +349,8 @@ extension ChatProviderMessages on ChatProvider {
     if (index == -1) return false;
 
     final content = messages[index].content;
+    _deliveryStatsService.recordRetryRequested();
+    _retryingMessageIds.add(messageId);
     messages[index] = messages[index].copyWith(
       status: MessageStatus.sending,
     );
@@ -341,7 +375,9 @@ extension ChatProviderMessages on ChatProvider {
     if (messages == null) return;
     final index = messages.indexWhere((msg) => msg.id == messageId);
     if (index == -1) return;
-    messages[index] = messages[index].copyWith(status: MessageStatus.failed);
+    final message = messages[index];
+    messages[index] = message.copyWith(status: MessageStatus.failed);
+    _recordDeliveryFailure(message.type, messageId);
     notifyListeners();
   }
 
@@ -714,6 +750,11 @@ extension ChatProviderMessages on ChatProvider {
         messages[index] = messages[index].copyWith(
           status: isSuccess ? MessageStatus.sent : MessageStatus.failed,
         );
+        if (isSuccess) {
+          _recordDeliverySuccess(MessageType.image, messageId);
+        } else {
+          _recordDeliveryFailure(MessageType.image, messageId);
+        }
         notifyListeners();
 
         if (isSuccess) {
@@ -744,8 +785,10 @@ extension ChatProviderMessages on ChatProvider {
     if (remoteMessage != null) {
       messages[index] = _mergeRemoteMessage(messages[index], remoteMessage);
       _addIntimacy(threadId, '[图片]', true);
+      _recordDeliverySuccess(MessageType.image, localMessageId);
     } else {
       messages[index] = messages[index].copyWith(status: MessageStatus.failed);
+      _recordDeliveryFailure(MessageType.image, localMessageId);
     }
     notifyListeners();
   }
@@ -856,5 +899,27 @@ extension ChatProviderMessages on ChatProvider {
       return true;
     }
     return File(imagePath).existsSync();
+  }
+
+  void _recordDeliverySuccess(MessageType type, String messageId) {
+    if (type == MessageType.image) {
+      _deliveryStatsService.recordImageSucceeded();
+    } else {
+      _deliveryStatsService.recordTextSucceeded();
+    }
+    if (_retryingMessageIds.remove(messageId)) {
+      _deliveryStatsService.recordRetrySucceeded();
+    }
+  }
+
+  void _recordDeliveryFailure(MessageType type, String messageId) {
+    if (type == MessageType.image) {
+      _deliveryStatsService.recordImageFailed();
+    } else {
+      _deliveryStatsService.recordTextFailed();
+    }
+    if (_retryingMessageIds.remove(messageId)) {
+      _deliveryStatsService.recordRetryFailed();
+    }
   }
 }

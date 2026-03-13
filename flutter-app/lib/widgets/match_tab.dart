@@ -18,6 +18,188 @@ class MatchTab extends StatefulWidget {
   State<MatchTab> createState() => _MatchTabState();
 }
 
+class _MatchLayoutSpec {
+  const _MatchLayoutSpec({
+    required this.isCompact,
+    required this.horizontalPadding,
+    required this.verticalPadding,
+    required this.titleSize,
+    required this.titleLetterSpacing,
+    required this.titleToSubtitleSpacing,
+    required this.subtitleSize,
+    required this.subtitleLetterSpacing,
+    required this.subtitleToCountSpacing,
+    required this.countHorizontalPadding,
+    required this.countVerticalPadding,
+    required this.countSize,
+    required this.countUnitSpacing,
+    required this.countUnitSize,
+    required this.countToResetSpacing,
+    required this.resetHintSize,
+    required this.resetToStatusSpacing,
+    required this.statusChipHorizontalPadding,
+    required this.statusChipVerticalPadding,
+    required this.statusChipIconSize,
+    required this.statusChipIconSpacing,
+    required this.statusChipTextSize,
+    required this.headerToGuideSpacing,
+    required this.guideHorizontalPadding,
+    required this.guideVerticalPadding,
+    required this.guideRadius,
+    required this.guideIconSize,
+    required this.guideIconSpacing,
+    required this.guideTextSize,
+    required this.guideToOrbSpacing,
+    required this.orbSize,
+    required this.orbShadowBlur,
+    required this.orbShadowSpread,
+    required this.orbToFeedbackSpacing,
+    required this.feedbackGap,
+    required this.buttonVerticalPadding,
+    required this.buttonTextSize,
+    required this.buttonToHelperSpacing,
+    required this.helperTextSize,
+    required this.helperToLocationSpacing,
+    required this.locationHintSize,
+  });
+
+  final bool isCompact;
+  final double horizontalPadding;
+  final double verticalPadding;
+  final double titleSize;
+  final double titleLetterSpacing;
+  final double titleToSubtitleSpacing;
+  final double subtitleSize;
+  final double subtitleLetterSpacing;
+  final double subtitleToCountSpacing;
+  final double countHorizontalPadding;
+  final double countVerticalPadding;
+  final double countSize;
+  final double countUnitSpacing;
+  final double countUnitSize;
+  final double countToResetSpacing;
+  final double resetHintSize;
+  final double resetToStatusSpacing;
+  final double statusChipHorizontalPadding;
+  final double statusChipVerticalPadding;
+  final double statusChipIconSize;
+  final double statusChipIconSpacing;
+  final double statusChipTextSize;
+  final double headerToGuideSpacing;
+  final double guideHorizontalPadding;
+  final double guideVerticalPadding;
+  final double guideRadius;
+  final double guideIconSize;
+  final double guideIconSpacing;
+  final double guideTextSize;
+  final double guideToOrbSpacing;
+  final double orbSize;
+  final double orbShadowBlur;
+  final double orbShadowSpread;
+  final double orbToFeedbackSpacing;
+  final double feedbackGap;
+  final double buttonVerticalPadding;
+  final double buttonTextSize;
+  final double buttonToHelperSpacing;
+  final double helperTextSize;
+  final double helperToLocationSpacing;
+  final double locationHintSize;
+
+  static _MatchLayoutSpec fromConstraints(BoxConstraints constraints) {
+    final isCompact =
+        constraints.maxHeight <= 720 || constraints.maxWidth <= 390;
+    if (isCompact) {
+      return const _MatchLayoutSpec(
+        isCompact: true,
+        horizontalPadding: 18,
+        verticalPadding: 22,
+        titleSize: 24,
+        titleLetterSpacing: 6,
+        titleToSubtitleSpacing: 12,
+        subtitleSize: 13,
+        subtitleLetterSpacing: 1.2,
+        subtitleToCountSpacing: 24,
+        countHorizontalPadding: 24,
+        countVerticalPadding: 14,
+        countSize: 48,
+        countUnitSpacing: 10,
+        countUnitSize: 16,
+        countToResetSpacing: 6,
+        resetHintSize: 11,
+        resetToStatusSpacing: 12,
+        statusChipHorizontalPadding: 12,
+        statusChipVerticalPadding: 8,
+        statusChipIconSize: 14,
+        statusChipIconSpacing: 6,
+        statusChipTextSize: 11,
+        headerToGuideSpacing: 14,
+        guideHorizontalPadding: 12,
+        guideVerticalPadding: 10,
+        guideRadius: 12,
+        guideIconSize: 16,
+        guideIconSpacing: 8,
+        guideTextSize: 11,
+        guideToOrbSpacing: 24,
+        orbSize: 164,
+        orbShadowBlur: 42,
+        orbShadowSpread: 14,
+        orbToFeedbackSpacing: 20,
+        feedbackGap: 14,
+        buttonVerticalPadding: 14,
+        buttonTextSize: 14,
+        buttonToHelperSpacing: 8,
+        helperTextSize: 11,
+        helperToLocationSpacing: 6,
+        locationHintSize: 11,
+      );
+    }
+
+    return const _MatchLayoutSpec(
+      isCompact: false,
+      horizontalPadding: 20,
+      verticalPadding: 40,
+      titleSize: 28,
+      titleLetterSpacing: 8,
+      titleToSubtitleSpacing: 16,
+      subtitleSize: 14,
+      subtitleLetterSpacing: 2,
+      subtitleToCountSpacing: 48,
+      countHorizontalPadding: 32,
+      countVerticalPadding: 20,
+      countSize: 56,
+      countUnitSpacing: 12,
+      countUnitSize: 18,
+      countToResetSpacing: 8,
+      resetHintSize: 12,
+      resetToStatusSpacing: 16,
+      statusChipHorizontalPadding: 14,
+      statusChipVerticalPadding: 9,
+      statusChipIconSize: 15,
+      statusChipIconSpacing: 7,
+      statusChipTextSize: 12,
+      headerToGuideSpacing: 18,
+      guideHorizontalPadding: 14,
+      guideVerticalPadding: 12,
+      guideRadius: 14,
+      guideIconSize: 18,
+      guideIconSpacing: 10,
+      guideTextSize: 12,
+      guideToOrbSpacing: 42,
+      orbSize: 200,
+      orbShadowBlur: 60,
+      orbShadowSpread: 20,
+      orbToFeedbackSpacing: 34,
+      feedbackGap: 18,
+      buttonVerticalPadding: 16,
+      buttonTextSize: 15,
+      buttonToHelperSpacing: 10,
+      helperTextSize: 12,
+      helperToLocationSpacing: 8,
+      locationHintSize: 12,
+    );
+  }
+}
+
 class _MatchTabState extends State<MatchTab>
     with SingleTickerProviderStateMixin {
   late AnimationController _orbController;
@@ -29,7 +211,14 @@ class _MatchTabState extends State<MatchTab>
   bool _showGreetingBanner = false;
   bool _isPreparingMatch = false;
 
-  static const List<String> _defaultQuickGreetings = ['嗨，你好', '晚上好呀', '想聊聊吗', '今天过得怎么样', '刚好看到你', '想认识一下你'];
+  static const List<String> _defaultQuickGreetings = [
+    '嗨，你好',
+    '晚上好呀',
+    '想聊聊吗',
+    '今天过得怎么样',
+    '刚好看到你',
+    '想认识一下你'
+  ];
 
   @override
   void initState() {
@@ -51,9 +240,9 @@ class _MatchTabState extends State<MatchTab>
   void _showGreetingSentFeedback(ChatThread thread) {
     _greetingBannerTimer?.cancel();
     final canonicalThreadId = context.read<ChatProvider>().routeThreadId(
-          threadId: thread.id,
-          userId: thread.otherUser.id,
-        ) ??
+              threadId: thread.id,
+              userId: thread.otherUser.id,
+            ) ??
         thread.id;
     setState(() {
       _recentThreadId = canonicalThreadId;
@@ -73,8 +262,8 @@ class _MatchTabState extends State<MatchTab>
     final recentThreadId = _recentThreadId;
     if (recentThreadId == null) return;
     final canonicalThreadId = context.read<ChatProvider>().routeThreadId(
-          threadId: recentThreadId,
-        ) ??
+              threadId: recentThreadId,
+            ) ??
         recentThreadId;
     context.push('/chat/$canonicalThreadId');
   }
@@ -97,7 +286,16 @@ class _MatchTabState extends State<MatchTab>
       if (!mounted) return;
 
       final blockedUserIds = context.read<FriendProvider>().blockedUserIds;
-      unawaited(provider.startMatch(excludedUserIds: blockedUserIds));
+      await provider.startMatch(excludedUserIds: blockedUserIds);
+      if (!mounted) return;
+      final failureMessage = provider.lastFailureMessage;
+      if (failureMessage != null && failureMessage.isNotEmpty) {
+        AppFeedback.showError(
+          context,
+          AppErrorCode.unknown,
+          detail: failureMessage,
+        );
+      }
 
       // 刷新按钮下方提示，避免反复弹窗覆盖主操作区
       setState(() {});
@@ -121,7 +319,8 @@ class _MatchTabState extends State<MatchTab>
       if (!mounted) return;
       final chatProvider = context.read<ChatProvider>();
       unawaited(() async {
-        final thread = await chatProvider.ensureDirectThreadForUser(matchedUser);
+        final thread =
+            await chatProvider.ensureDirectThreadForUser(matchedUser);
         if (!mounted) return;
         final queued = chatProvider.sendMessage(thread.id, greeting);
         if (queued) {
@@ -147,30 +346,36 @@ class _MatchTabState extends State<MatchTab>
             // 未匹配时显示匹配界面
             return LayoutBuilder(
               builder: (context, constraints) {
+                final layout = _MatchLayoutSpec.fromConstraints(constraints);
                 return SingleChildScrollView(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 20, vertical: 40),
+                  padding: EdgeInsets.symmetric(
+                    horizontal: layout.horizontalPadding,
+                    vertical: layout.verticalPadding,
+                  ),
                   child: ConstrainedBox(
                     constraints: BoxConstraints(
-                      minHeight: constraints.maxHeight - 80,
+                      minHeight:
+                          constraints.maxHeight - (layout.verticalPadding * 2),
                     ),
                     child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
+                      mainAxisAlignment: layout.isCompact
+                          ? MainAxisAlignment.start
+                          : MainAxisAlignment.center,
                       crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
                         // 顶部情感化文案 + 次数显示
-                        _buildHeader(matchProvider),
+                        _buildHeader(matchProvider, layout),
 
-                        const SizedBox(height: 18),
+                        SizedBox(height: layout.headerToGuideSpacing),
 
-                        _buildMatchingGuide(matchProvider),
+                        _buildMatchingGuide(matchProvider, layout),
 
-                        const SizedBox(height: 42),
+                        SizedBox(height: layout.guideToOrbSpacing),
 
                         // 光球
-                        _buildMatchOrb(matchProvider),
+                        _buildMatchOrb(matchProvider, layout),
 
-                        const SizedBox(height: 34),
+                        SizedBox(height: layout.orbToFeedbackSpacing),
 
                         AnimatedSwitcher(
                           duration: const Duration(milliseconds: 260),
@@ -179,10 +384,12 @@ class _MatchTabState extends State<MatchTab>
                               : const SizedBox(height: 0),
                         ),
 
-                        SizedBox(height: _showGreetingBanner ? 18 : 0),
+                        SizedBox(
+                          height: _showGreetingBanner ? layout.feedbackGap : 0,
+                        ),
 
                         // 按钮
-                        _buildMatchButton(matchProvider),
+                        _buildMatchButton(matchProvider, layout),
                       ],
                     ),
                   ),
@@ -195,7 +402,7 @@ class _MatchTabState extends State<MatchTab>
     );
   }
 
-  Widget _buildHeader(MatchProvider provider) {
+  Widget _buildHeader(MatchProvider provider, _MatchLayoutSpec layout) {
     return Column(
       mainAxisAlignment: MainAxisAlignment.center,
       crossAxisAlignment: CrossAxisAlignment.center,
@@ -204,34 +411,37 @@ class _MatchTabState extends State<MatchTab>
         Text(
           '瞬间',
           style: TextStyle(
-            fontSize: 28,
+            fontSize: layout.titleSize,
             fontWeight: FontWeight.w200,
             color: AppColors.textPrimary,
-            letterSpacing: 8,
+            letterSpacing: layout.titleLetterSpacing,
             height: 1.2,
           ),
           textAlign: TextAlign.center,
         ),
-        const SizedBox(height: 16),
+        SizedBox(height: layout.titleToSubtitleSpacing),
 
         // 副标题
         Text(
           '此刻有人也在等待相遇',
           style: TextStyle(
-            fontSize: 14,
+            fontSize: layout.subtitleSize,
             fontWeight: FontWeight.w300,
             color: AppColors.textTertiary,
-            letterSpacing: 2,
+            letterSpacing: layout.subtitleLetterSpacing,
             height: 1.5,
           ),
           textAlign: TextAlign.center,
         ),
 
-        const SizedBox(height: 48),
+        SizedBox(height: layout.subtitleToCountSpacing),
 
         // 次数显示区域
         Container(
-          padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 20),
+          padding: EdgeInsets.symmetric(
+            horizontal: layout.countHorizontalPadding,
+            vertical: layout.countVerticalPadding,
+          ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.end,
@@ -239,17 +449,17 @@ class _MatchTabState extends State<MatchTab>
               Text(
                 '${provider.matchCount}',
                 style: TextStyle(
-                  fontSize: 56,
+                  fontSize: layout.countSize,
                   fontWeight: FontWeight.w200,
                   color: AppColors.textPrimary,
                   height: 1,
                 ),
               ),
-              const SizedBox(width: 12),
+              SizedBox(width: layout.countUnitSpacing),
               Text(
                 '次',
                 style: TextStyle(
-                  fontSize: 18,
+                  fontSize: layout.countUnitSize,
                   fontWeight: FontWeight.w300,
                   color: AppColors.textSecondary,
                   letterSpacing: 1,
@@ -259,53 +469,160 @@ class _MatchTabState extends State<MatchTab>
           ),
         ),
 
-        const SizedBox(height: 8),
+        SizedBox(height: layout.countToResetSpacing),
 
         // 说明文字
         Text(
           provider.matchCount > 0 ? '今日剩余机会' : '明日 9:00 重置',
           style: TextStyle(
-            fontSize: 12,
+            fontSize: layout.resetHintSize,
             fontWeight: FontWeight.w300,
             color: AppColors.textTertiary.withValues(alpha: 0.6),
             letterSpacing: 2,
           ),
           textAlign: TextAlign.center,
         ),
+        SizedBox(height: layout.resetToStatusSpacing),
+        _buildStatusChip(provider, layout),
       ],
     );
   }
 
-  Widget _buildMatchingGuide(MatchProvider provider) {
+  Widget _buildStatusChip(MatchProvider provider, _MatchLayoutSpec layout) {
+    final failureMessage = provider.lastFailureMessage;
+    final isFailureState = !provider.isMatching &&
+        provider.matchCount > 0 &&
+        failureMessage != null &&
+        failureMessage.isNotEmpty;
+    final bool locationSkipped =
+        PermissionManager.getSessionLocationPermission() == false;
+
+    IconData icon;
+    String label;
+    Color tint;
+
+    if (_isPreparingMatch) {
+      icon = Icons.tune_rounded;
+      label = '正在准备本轮匹配';
+      tint = AppColors.textPrimary.withValues(alpha: 0.92);
+    } else if (provider.isMatching) {
+      icon = Icons.radar_rounded;
+      label = '优先寻找当前在线的人';
+      tint = AppColors.textPrimary.withValues(alpha: 0.92);
+    } else if (isFailureState) {
+      icon = Icons.error_outline_rounded;
+      label = '建议先检查服务环境';
+      tint = AppColors.error.withValues(alpha: 0.96);
+    } else if (provider.matchCount <= 0) {
+      icon = Icons.schedule_rounded;
+      label = '今日机会已用完';
+      tint = AppColors.warning.withValues(alpha: 0.92);
+    } else if (locationSkipped) {
+      icon = Icons.near_me_outlined;
+      label = '未开位置也能继续匹配';
+      tint = AppColors.textSecondary.withValues(alpha: 0.9);
+    } else {
+      icon = Icons.auto_awesome_outlined;
+      label = '先发第一句，回复率更高';
+      tint = AppColors.textPrimary.withValues(alpha: 0.92);
+    }
+
+    final background = isFailureState
+        ? AppColors.error.withValues(alpha: 0.1)
+        : AppColors.white08;
+    final border = isFailureState
+        ? AppColors.error.withValues(alpha: 0.22)
+        : AppColors.white12;
+
+    return AnimatedContainer(
+      key: const Key('match-status-chip'),
+      duration: const Duration(milliseconds: 220),
+      curve: Curves.easeOutCubic,
+      padding: EdgeInsets.symmetric(
+        horizontal: layout.statusChipHorizontalPadding,
+        vertical: layout.statusChipVerticalPadding,
+      ),
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: border),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: layout.statusChipIconSize, color: tint),
+          SizedBox(width: layout.statusChipIconSpacing),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: layout.statusChipTextSize,
+              fontWeight: FontWeight.w300,
+              color: tint,
+              letterSpacing: 0.2,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMatchingGuide(MatchProvider provider, _MatchLayoutSpec layout) {
+    final failureMessage = provider.lastFailureMessage;
+    final isFailureState = !provider.isMatching &&
+        provider.matchCount > 0 &&
+        failureMessage != null &&
+        failureMessage.isNotEmpty;
     final tips = provider.matchCount <= 0
         ? const ['今日次数已用完', '明天会自动恢复', '可以先去消息页回复已有对话']
         : provider.isMatching
             ? const ['正在为你筛选合适的人', '保持网络稳定', '不想等了可随时取消']
-            : const ['点击下方开始匹配', '匹配成功后先发一句话', '回复率会更高'];
+            : isFailureState
+                ? <String>[
+                    failureMessage,
+                    '建议先检查当前服务环境是否可用',
+                    '准备好后可再次点击开始匹配',
+                  ]
+                : const ['点击下方开始匹配', '匹配成功后先发一句话', '回复率会更高'];
 
     return Container(
+      key: const Key('match-guide-card'),
       width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      padding: EdgeInsets.symmetric(
+        horizontal: layout.guideHorizontalPadding,
+        vertical: layout.guideVerticalPadding,
+      ),
       decoration: BoxDecoration(
-        color: AppColors.white05,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: AppColors.white08),
+        color: isFailureState
+            ? AppColors.error.withValues(alpha: 0.08)
+            : AppColors.white05,
+        borderRadius: BorderRadius.circular(layout.guideRadius),
+        border: Border.all(
+          color: isFailureState
+              ? AppColors.error.withValues(alpha: 0.22)
+              : AppColors.white08,
+        ),
       ),
       child: Row(
         children: [
-          const Icon(
-            Icons.tips_and_updates_outlined,
-            size: 18,
-            color: AppColors.textTertiary,
+          Icon(
+            isFailureState
+                ? Icons.error_outline_rounded
+                : Icons.tips_and_updates_outlined,
+            size: layout.guideIconSize,
+            color: isFailureState
+                ? AppColors.error.withValues(alpha: 0.92)
+                : AppColors.textTertiary,
           ),
-          const SizedBox(width: 10),
+          SizedBox(width: layout.guideIconSpacing),
           Expanded(
             child: Text(
               tips.join(' · '),
               style: TextStyle(
-                fontSize: 12,
+                fontSize: layout.guideTextSize,
                 fontWeight: FontWeight.w300,
-                color: AppColors.textTertiary.withValues(alpha: 0.92),
+                color: isFailureState
+                    ? AppColors.error.withValues(alpha: 0.9)
+                    : AppColors.textTertiary.withValues(alpha: 0.92),
                 height: 1.45,
               ),
             ),
@@ -315,14 +632,14 @@ class _MatchTabState extends State<MatchTab>
     );
   }
 
-  Widget _buildMatchOrb(MatchProvider provider) {
+  Widget _buildMatchOrb(MatchProvider provider, _MatchLayoutSpec layout) {
     return Center(
       child: AnimatedBuilder(
         animation: _orbController,
         builder: (context, child) {
           return Container(
-            width: 200,
-            height: 200,
+            width: layout.orbSize,
+            height: layout.orbSize,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               gradient: RadialGradient(
@@ -343,8 +660,8 @@ class _MatchTabState extends State<MatchTab>
                       BoxShadow(
                         color: AppColors.textPrimary
                             .withValues(alpha: 0.15 * _orbController.value),
-                        blurRadius: 60,
-                        spreadRadius: 20,
+                        blurRadius: layout.orbShadowBlur,
+                        spreadRadius: layout.orbShadowSpread,
                       ),
                     ]
                   : null,
@@ -594,9 +911,7 @@ class _MatchTabState extends State<MatchTab>
         ),
         const SizedBox(height: 6),
         Text(
-          user.isOnline
-              ? '对方现在在线，简短一点更容易立刻收到回复。'
-              : '先留下一句舒服的话，等 TA 回来时会第一眼看到。',
+          user.isOnline ? '对方现在在线，简短一点更容易立刻收到回复。' : '先留下一句舒服的话，等 TA 回来时会第一眼看到。',
           style: TextStyle(
             fontSize: 12,
             fontWeight: FontWeight.w300,
@@ -932,7 +1247,7 @@ class _MatchTabState extends State<MatchTab>
     );
   }
 
-  Widget _buildMatchButton(MatchProvider provider) {
+  Widget _buildMatchButton(MatchProvider provider, _MatchLayoutSpec layout) {
     String buttonText;
     String helperText;
     if (_isPreparingMatch) {
@@ -957,11 +1272,13 @@ class _MatchTabState extends State<MatchTab>
         SizedBox(
           width: double.infinity,
           child: ElevatedButton(
+            key: const Key('match-primary-action'),
             onPressed: provider.matchCount <= 0 || _isPreparingMatch
                 ? null
                 : () => _handleMatchButtonPressed(provider),
             style: ElevatedButton.styleFrom(
-              padding: const EdgeInsets.symmetric(vertical: 16),
+              padding:
+                  EdgeInsets.symmetric(vertical: layout.buttonVerticalPadding),
               backgroundColor: _isPreparingMatch
                   ? AppColors.white08
                   : provider.isMatching
@@ -976,21 +1293,39 @@ class _MatchTabState extends State<MatchTab>
                 borderRadius: BorderRadius.circular(12),
               ),
             ),
-            child: Text(
-              buttonText,
-              style: const TextStyle(
-                fontSize: 15,
-                fontWeight: FontWeight.w300,
-                letterSpacing: 1,
-              ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (_isPreparingMatch) ...[
+                  SizedBox(
+                    width: 14,
+                    height: 14,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 1.8,
+                      valueColor: AlwaysStoppedAnimation<Color>(
+                        AppColors.textPrimary.withValues(alpha: 0.92),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                ],
+                Text(
+                  buttonText,
+                  style: TextStyle(
+                    fontSize: layout.buttonTextSize,
+                    fontWeight: FontWeight.w300,
+                    letterSpacing: 1,
+                  ),
+                ),
+              ],
             ),
           ),
         ),
-        const SizedBox(height: 10),
+        SizedBox(height: layout.buttonToHelperSpacing),
         Text(
           helperText,
           style: TextStyle(
-            fontSize: 12,
+            fontSize: layout.helperTextSize,
             fontWeight: FontWeight.w300,
             color: AppColors.textTertiary.withValues(alpha: 0.88),
             height: 1.45,
@@ -999,11 +1334,11 @@ class _MatchTabState extends State<MatchTab>
           textAlign: TextAlign.center,
         ),
         if (showLocationTip) ...[
-          const SizedBox(height: 8),
-          const Text(
+          SizedBox(height: layout.helperToLocationSpacing),
+          Text(
             '未开启位置也可以匹配，我们会优先为你安排随机相遇',
             style: TextStyle(
-              fontSize: 12,
+              fontSize: layout.locationHintSize,
               fontWeight: FontWeight.w300,
               color: AppColors.textTertiary,
               letterSpacing: 0.3,
@@ -1044,9 +1379,7 @@ class _MatchTabState extends State<MatchTab>
             ),
           ),
           TextButton(
-            onPressed: _recentThreadId == null
-                ? null
-                : _openRecentChat,
+            onPressed: _recentThreadId == null ? null : _openRecentChat,
             style: TextButton.styleFrom(
               foregroundColor: AppColors.brandBlue,
               minimumSize: Size.zero,
@@ -1081,9 +1414,7 @@ class _MatchTabState extends State<MatchTab>
           Icon(
             user.isOnline ? Icons.bolt_outlined : Icons.schedule_outlined,
             size: 16,
-            color: user.isOnline
-                ? AppColors.success
-                : AppColors.textTertiary,
+            color: user.isOnline ? AppColors.success : AppColors.textTertiary,
           ),
           const SizedBox(width: 8),
           Expanded(

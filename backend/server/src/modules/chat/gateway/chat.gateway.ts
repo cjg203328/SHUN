@@ -112,7 +112,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   ): Promise<{ joined: true; threadId: string } | AckErrorResponse> {
     try {
       const actor = this.requireSocketUser(client);
-      this.chatService.getThreadPeerUserId(actor.userId, payload.threadId);
+      this.chatService.getRealtimeThreadPeerUserId(actor.userId, payload.threadId);
       await client.join(this.threadRoom(payload.threadId));
       return { joined: true, threadId: payload.threadId };
     } catch (error) {
@@ -224,15 +224,22 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   onTyping(
     @ConnectedSocket() client: Socket,
     @MessageBody() payload: TypingPayload,
-  ): { ok: true } {
-    const actor = this.requireSocketUser(client);
-    const peerUserId = this.chatService.getThreadPeerUserId(actor.userId, payload.threadId);
-    this.emitToUser(peerUserId, 'typing', {
-      threadId: payload.threadId,
-      userId: actor.userId,
-      isTyping: payload.isTyping,
-    });
-    return { ok: true };
+  ): { ok: true } | AckErrorResponse {
+    try {
+      const actor = this.requireSocketUser(client);
+      const peerUserId = this.chatService.getRealtimeThreadPeerUserId(
+        actor.userId,
+        payload.threadId,
+      );
+      this.emitToUser(peerUserId, 'typing', {
+        threadId: payload.threadId,
+        userId: actor.userId,
+        isTyping: payload.isTyping,
+      });
+      return { ok: true };
+    } catch (error) {
+      return this.toAckError(error);
+    }
   }
 
   private resolveToken(client: Socket): string {

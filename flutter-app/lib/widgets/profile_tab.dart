@@ -8,6 +8,7 @@ import '../core/ui/ui_tokens.dart';
 import '../providers/profile_provider.dart';
 import '../services/image_upload_service.dart';
 import '../services/media_upload_service.dart';
+import '../services/profile_service.dart';
 import 'app_toast.dart';
 
 class ProfileTab extends StatefulWidget {
@@ -233,7 +234,8 @@ class _ProfileTabState extends State<ProfileTab> {
 
                           // 昵称
                           GestureDetector(
-                            onTap: () => _showEditNickname(context),
+                            key: const Key('profile-nickname-trigger'),
+                            onTap: () => _presentNicknameEditor(context),
                             child: Row(
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
@@ -260,7 +262,8 @@ class _ProfileTabState extends State<ProfileTab> {
 
                           // 个性签名
                           GestureDetector(
-                            onTap: () => _showEditSignature(context),
+                            key: const Key('profile-signature-trigger'),
+                            onTap: () => _presentSignatureEditor(context),
                             child: Container(
                               constraints: const BoxConstraints(maxWidth: 290),
                               padding: const EdgeInsets.symmetric(
@@ -303,7 +306,8 @@ class _ProfileTabState extends State<ProfileTab> {
 
                           // 状态
                           GestureDetector(
-                            onTap: () => _showEditStatus(context),
+                            key: const Key('profile-status-trigger'),
+                            onTap: () => _presentStatusEditor(context),
                             child: Container(
                               padding: const EdgeInsets.symmetric(
                                 horizontal: 20,
@@ -380,6 +384,18 @@ class _ProfileTabState extends State<ProfileTab> {
               // 功能列表
               if (!isPortraitFullscreen)
                 SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
+                    child: _buildQuickActionsCard(
+                      context,
+                      hasBackground: hasBackground,
+                      profileProvider: profileProvider,
+                    ),
+                  ),
+                ),
+
+              if (!isPortraitFullscreen)
+                SliverToBoxAdapter(
                   child: Container(
                     margin: const EdgeInsets.symmetric(horizontal: 20),
                     decoration: BoxDecoration(
@@ -425,6 +441,310 @@ class _ProfileTabState extends State<ProfileTab> {
             ],
           );
         },
+      ),
+    );
+  }
+
+  Widget _buildQuickActionsCard(
+    BuildContext context, {
+    required bool hasBackground,
+    required ProfileProvider profileProvider,
+  }) {
+    final readinessState = _resolveReadinessState(
+      hasBackground: hasBackground,
+      profileProvider: profileProvider,
+    );
+
+    return Container(
+      key: const Key('profile-quick-actions-card'),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.white05,
+        borderRadius: BorderRadius.circular(UiTokens.radiusMd),
+        border: Border.all(color: AppColors.white08),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            '今天先调整这些',
+            style: TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.w400,
+              color: AppColors.textPrimary,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            hasBackground
+                ? '优先把签名、背景展示和设置入口收拾好，别人会更容易记住你。'
+                : '先补背景和签名，会让个人页第一眼更完整。',
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w300,
+              color: AppColors.textTertiary.withValues(alpha: 0.92),
+              height: 1.45,
+            ),
+          ),
+          const SizedBox(height: 14),
+          Container(
+            key: const Key('profile-readiness-chip'),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              color: AppColors.white08,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: AppColors.white12),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(
+                  readinessState.icon,
+                  size: 16,
+                  color: readinessState.isReady
+                      ? AppColors.textSecondary
+                      : AppColors.brandBlue,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        readinessState.title,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w400,
+                          color: AppColors.textPrimary,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        readinessState.subtitle,
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w300,
+                          color: AppColors.textTertiary.withValues(alpha: 0.92),
+                          height: 1.4,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          _buildProfileCompletionChecklist(
+            hasBackground: hasBackground,
+            profileProvider: profileProvider,
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: [
+              _buildQuickActionButton(
+                key: const Key('profile-quick-signature'),
+                icon: Icons.edit_note_outlined,
+                label: '编辑签名',
+                onTap: () => _presentSignatureEditor(context),
+              ),
+              _buildQuickActionButton(
+                key: const Key('profile-quick-background-mode'),
+                icon: Icons.layers_outlined,
+                label: '背景模式',
+                onTap: () => _showBackgroundModeSheet(
+                  context,
+                  hasBackground: hasBackground,
+                ),
+              ),
+              _buildQuickActionButton(
+                key: const Key('profile-quick-settings'),
+                icon: Icons.settings_outlined,
+                label: '打开设置',
+                onTap: () =>
+                    context.push('/settings').then((_) => _loadImages()),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildProfileCompletionChecklist({
+    required bool hasBackground,
+    required ProfileProvider profileProvider,
+  }) {
+    final hasCustomSignature = profileProvider.signature.trim().isNotEmpty &&
+        profileProvider.signature.trim() != ProfileService.defaultSignature;
+    final hasCustomStatus = profileProvider.status.trim().isNotEmpty &&
+        profileProvider.status.trim() != '想找人聊聊';
+    final items = <_ProfileChecklistItem>[
+      _ProfileChecklistItem(
+        key: const Key('profile-check-background'),
+        label: '背景图',
+        isReady: hasBackground,
+      ),
+      _ProfileChecklistItem(
+        key: const Key('profile-check-signature'),
+        label: '个性签名',
+        isReady: hasCustomSignature,
+      ),
+      _ProfileChecklistItem(
+        key: const Key('profile-check-status'),
+        label: '聊天状态',
+        isReady: hasCustomStatus,
+      ),
+    ];
+
+    return Container(
+      key: const Key('profile-completion-checklist'),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppColors.white08,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.white12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            '个人页完成清单',
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w400,
+              color: AppColors.textPrimary,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            '补齐这三项后，别人从匹配页或消息列表点进来时，会更容易建立第一印象。',
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w300,
+              color: AppColors.textTertiary.withValues(alpha: 0.92),
+              height: 1.4,
+            ),
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: items.map(_buildChecklistChip).toList(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildChecklistChip(_ProfileChecklistItem item) {
+    return Container(
+      key: item.key,
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: item.isReady
+            ? AppColors.white12
+            : AppColors.brandBlue.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(
+          color: item.isReady
+              ? AppColors.white12
+              : AppColors.brandBlue.withValues(alpha: 0.18),
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            item.isReady
+                ? Icons.check_circle_outline
+                : Icons.radio_button_unchecked,
+            size: 14,
+            color: item.isReady ? AppColors.textSecondary : AppColors.brandBlue,
+          ),
+          const SizedBox(width: 6),
+          Text(
+            item.label,
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w300,
+              color:
+                  item.isReady ? AppColors.textSecondary : AppColors.brandBlue,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  _ProfileReadinessState _resolveReadinessState({
+    required bool hasBackground,
+    required ProfileProvider profileProvider,
+  }) {
+    final hasCustomSignature = profileProvider.signature.trim().isNotEmpty &&
+        profileProvider.signature.trim() != ProfileService.defaultSignature;
+    final hasCustomStatus = profileProvider.status.trim().isNotEmpty &&
+        profileProvider.status.trim() != '想找人聊聊';
+    final completedCount = (hasBackground ? 1 : 0) +
+        (hasCustomSignature ? 1 : 0) +
+        (hasCustomStatus ? 1 : 0);
+
+    if (completedCount >= 3) {
+      return const _ProfileReadinessState(
+        icon: Icons.verified_outlined,
+        title: '个人页已整理完成 3/3',
+        subtitle: '背景、签名和状态都已经就绪，当前观感已经接近正式上线版本。',
+        isReady: true,
+      );
+    }
+
+    final missingLabels = <String>[
+      if (!hasBackground) '背景图',
+      if (!hasCustomSignature) '个性签名',
+      if (!hasCustomStatus) '状态',
+    ];
+
+    return _ProfileReadinessState(
+      icon: Icons.auto_awesome_outlined,
+      title: '个人页还差 ${3 - completedCount} 项细节',
+      subtitle: '建议优先补齐${missingLabels.join('、')}，这样第一眼信息会更完整，也更像真实可互动的人。',
+    );
+  }
+
+  Widget _buildQuickActionButton({
+    required Key key,
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      key: key,
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(14),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: AppColors.white08,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: AppColors.white12),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 16, color: AppColors.textSecondary),
+            const SizedBox(width: 8),
+            Text(
+              label,
+              style: const TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w300,
+                color: AppColors.textPrimary,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -689,6 +1009,287 @@ class _ProfileTabState extends State<ProfileTab> {
     );
   }
 
+  Future<void> _presentNicknameEditor(BuildContext context) async {
+    final profileProvider = context.read<ProfileProvider>();
+    final controller = TextEditingController(text: profileProvider.nickname);
+    final result = await _showProfileEditorSheet(
+      context,
+      sheetKey: const Key('profile-nickname-sheet'),
+      title: '修改昵称',
+      description: '推荐保留容易被记住的称呼，后续别人回看消息列表时更容易认出你。',
+      hintText: '输入昵称',
+      helperText: '建议 2 到 8 个字，避免纯符号或测试占位名。',
+      controller: controller,
+      maxLength: 12,
+    );
+
+    if (result == true && context.mounted) {
+      final nickname = controller.text.trim();
+      if (nickname.isNotEmpty) {
+        await context.read<ProfileProvider>().updateNickname(nickname);
+        if (context.mounted) {
+          AppFeedback.showToast(context, AppToastCode.saved, subject: '昵称');
+        }
+      }
+    }
+
+    controller.dispose();
+  }
+
+  Future<void> _presentSignatureEditor(BuildContext context) async {
+    final profileProvider = context.read<ProfileProvider>();
+    final controller = TextEditingController(text: profileProvider.signature);
+    final result = await _showProfileEditorSheet(
+      context,
+      sheetKey: const Key('profile-signature-sheet'),
+      title: '个性签名',
+      description: '一句短签名就够了，最好能让别人快速感受到你的状态和聊天气质。',
+      hintText: '输入你的签名',
+      helperText: '适合 10 到 24 个字，越具体越容易让人主动开口。',
+      controller: controller,
+      maxLength: 30,
+    );
+
+    if (result == true && context.mounted) {
+      final signature = controller.text.trim();
+      await context.read<ProfileProvider>().updateSignature(
+            signature.isEmpty ? ProfileService.defaultSignature : signature,
+          );
+      if (context.mounted) {
+        AppFeedback.showToast(context, AppToastCode.saved, subject: '签名');
+      }
+    }
+
+    controller.dispose();
+  }
+
+  Future<void> _presentStatusEditor(BuildContext context) async {
+    const statuses = <String>[
+      '想找人聊聊',
+      '有点失眠',
+      '心情不好',
+      '分享快乐',
+      '深夜emo',
+      '随便聊聊',
+    ];
+
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      sheetAnimationStyle: AppDialog.sheetAnimationStyle,
+      builder: (sheetContext) => Container(
+        key: const Key('profile-status-sheet'),
+        child: AppDialog.buildSheetSurface(
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 18),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _buildProfileSheetHeader(
+                title: '选择状态',
+                description: '状态会直接出现在个人页上，适合选一个能代表你当下聊天氛围的短句。',
+              ),
+              ...statuses.asMap().entries.map(
+                    (entry) => Padding(
+                      padding: EdgeInsets.only(
+                        bottom: entry.key == statuses.length - 1 ? 0 : 10,
+                      ),
+                      child: InkWell(
+                        key: Key('profile-status-option-${entry.key}'),
+                        onTap: () async {
+                          Navigator.pop(sheetContext);
+                          await context
+                              .read<ProfileProvider>()
+                              .updateStatus(entry.value);
+                          if (context.mounted) {
+                            AppFeedback.showToast(
+                              context,
+                              AppToastCode.saved,
+                              subject: '状态',
+                            );
+                          }
+                        },
+                        borderRadius: BorderRadius.circular(16),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 14,
+                            vertical: 14,
+                          ),
+                          decoration: BoxDecoration(
+                            color: AppColors.white05,
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(color: AppColors.white08),
+                          ),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  entry.value,
+                                  style: const TextStyle(
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w300,
+                                    color: AppColors.textPrimary,
+                                  ),
+                                ),
+                              ),
+                              const Icon(
+                                Icons.chevron_right,
+                                size: 18,
+                                color: AppColors.textTertiary,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<bool?> _showProfileEditorSheet(
+    BuildContext context, {
+    required Key sheetKey,
+    required String title,
+    required String description,
+    required String hintText,
+    required String helperText,
+    required TextEditingController controller,
+    required int maxLength,
+  }) {
+    return showModalBottomSheet<bool>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      sheetAnimationStyle: AppDialog.sheetAnimationStyle,
+      builder: (sheetContext) => Padding(
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.of(sheetContext).viewInsets.bottom,
+        ),
+        child: Container(
+          key: sheetKey,
+          child: AppDialog.buildSheetSurface(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _buildProfileSheetHeader(
+                    title: title,
+                    description: description,
+                  ),
+                  TextField(
+                    key: const Key('profile-editor-input'),
+                    controller: controller,
+                    maxLength: maxLength,
+                    autofocus: false,
+                    decoration: InputDecoration(
+                      hintText: hintText,
+                      counterText: '',
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    helperText,
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w300,
+                      color: AppColors.textTertiary.withValues(alpha: 0.9),
+                      height: 1.4,
+                    ),
+                  ),
+                  const SizedBox(height: 18),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextButton(
+                          key: const Key('profile-editor-cancel'),
+                          onPressed: () => Navigator.pop(sheetContext, false),
+                          style: TextButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                            backgroundColor: AppColors.white05,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                          child: const Text(
+                            '取消',
+                            style: TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w300,
+                              color: AppColors.textSecondary,
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: TextButton(
+                          key: const Key('profile-editor-save'),
+                          onPressed: () => Navigator.pop(sheetContext, true),
+                          style: TextButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                            backgroundColor: AppColors.white12,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                          child: const Text(
+                            '保存',
+                            style: TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w300,
+                              color: AppColors.textPrimary,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildProfileSheetHeader({
+    required String title,
+    required String description,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          title,
+          style: const TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.w400,
+            color: AppColors.textPrimary,
+          ),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          description,
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w300,
+            color: AppColors.textTertiary.withValues(alpha: 0.92),
+            height: 1.45,
+          ),
+        ),
+        const SizedBox(height: 18),
+      ],
+    );
+  }
+
+  // ignore: unused_element
   void _showEditNickname(BuildContext context) async {
     final profileProvider = context.read<ProfileProvider>();
     final controller = TextEditingController(text: profileProvider.nickname);
@@ -791,6 +1392,7 @@ class _ProfileTabState extends State<ProfileTab> {
     controller.dispose();
   }
 
+  // ignore: unused_element
   void _showEditSignature(BuildContext context) async {
     final profileProvider = context.read<ProfileProvider>();
     final controller = TextEditingController(text: profileProvider.signature);
@@ -893,6 +1495,7 @@ class _ProfileTabState extends State<ProfileTab> {
     controller.dispose();
   }
 
+  // ignore: unused_element
   void _showEditStatus(BuildContext context) async {
     final statuses = [
       '想找人聊聊',
@@ -968,4 +1571,30 @@ class _ProfileTabState extends State<ProfileTab> {
       ),
     );
   }
+}
+
+class _ProfileReadinessState {
+  const _ProfileReadinessState({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    this.isReady = false,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final bool isReady;
+}
+
+class _ProfileChecklistItem {
+  const _ProfileChecklistItem({
+    required this.key,
+    required this.label,
+    required this.isReady,
+  });
+
+  final Key key;
+  final String label;
+  final bool isReady;
 }

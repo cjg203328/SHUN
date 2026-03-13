@@ -109,6 +109,43 @@ describe('Auth + Users + Settings (integration)', () => {
       .expect(201);
     expect(avatarUploadRes.body.data.uploaded).toBe(true);
 
+    await request(app.getHttpServer())
+      .post('/api/v1/users/me/avatar/upload')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .field('uploadToken', avatarUploadTokenRes.body.data.uploadToken)
+      .field('objectKey', avatarUploadTokenRes.body.data.objectKey)
+      .attach('file', Buffer.from([0xff, 0xd8, 0xff, 0xd9]), {
+        filename: 'avatar-test-reuse.jpg',
+        contentType: 'image/jpeg',
+      })
+      .expect(400);
+
+    await request(app.getHttpServer())
+      .post('/api/v1/users/me/avatar/upload')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .field('uploadToken', 'upl_forged_avatar_token')
+      .field('objectKey', avatarUploadTokenRes.body.data.objectKey)
+      .attach('file', Buffer.from([0xff, 0xd8, 0xff, 0xd9]), {
+        filename: 'avatar-forged.jpg',
+        contentType: 'image/jpeg',
+      })
+      .expect(400);
+
+    const avatarLargeUploadTokenRes = await request(app.getHttpServer())
+      .post('/api/v1/users/me/avatar/upload-token')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .expect(201);
+    await request(app.getHttpServer())
+      .post('/api/v1/users/me/avatar/upload')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .field('uploadToken', avatarLargeUploadTokenRes.body.data.uploadToken)
+      .field('objectKey', avatarLargeUploadTokenRes.body.data.objectKey)
+      .attach('file', Buffer.alloc(8 * 1024 * 1024 + 1, 0), {
+        filename: 'avatar-too-large.jpg',
+        contentType: 'image/jpeg',
+      })
+      .expect(400);
+
     const getAvatarRes = await request(app.getHttpServer())
       .get('/api/v1/users/me')
       .set('Authorization', `Bearer ${accessToken}`)
@@ -515,6 +552,22 @@ describe('Auth + Users + Settings (integration)', () => {
       .field('objectKey', `chat/${forgedThreadId}/${userE.user.userId}/forged.jpg`)
       .attach('file', Buffer.from([0xff, 0xd8, 0xff, 0xd9]), {
         filename: 'chat-forged.jpg',
+        contentType: 'image/jpeg',
+      })
+      .expect(400);
+
+    const uploadTokenRes = await request(app.getHttpServer())
+      .post(`/api/v1/threads/${forgedThreadId}/messages/image/upload-token`)
+      .set('Authorization', `Bearer ${userE.accessToken}`)
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .post(`/api/v1/threads/${forgedThreadId}/messages/image/upload`)
+      .set('Authorization', `Bearer ${userE.accessToken}`)
+      .field('uploadToken', uploadTokenRes.body.data.uploadToken)
+      .field('objectKey', uploadTokenRes.body.data.objectKey)
+      .attach('file', Buffer.alloc(8 * 1024 * 1024 + 1, 0), {
+        filename: 'chat-too-large.jpg',
         contentType: 'image/jpeg',
       })
       .expect(400);

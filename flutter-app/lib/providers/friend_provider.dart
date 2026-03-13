@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:uuid/uuid.dart';
+import '../config/app_env.dart';
 import '../models/app_notification.dart';
 import '../models/models.dart';
 import '../services/analytics_service.dart';
@@ -11,6 +12,7 @@ import '../services/storage_service.dart';
 
 class FriendProvider extends ChangeNotifier {
   final FriendService _friendService;
+  final bool _enableRemoteHydration;
   final Map<String, Friend> _friends = {};
   final Map<String, FriendRequest> _requests = {};
   final Set<String> _blockedUserIds = <String>{};
@@ -91,11 +93,16 @@ class FriendProvider extends ChangeNotifier {
 
   int get pendingRequestCount => pendingRequests.length;
 
-  FriendProvider({FriendService? friendService})
-      : _friendService = friendService ?? FriendService() {
+  FriendProvider({
+    FriendService? friendService,
+    bool enableRemoteHydration = true,
+  })  : _friendService = friendService ?? FriendService(),
+        _enableRemoteHydration = enableRemoteHydration {
     _blockedUserIds.addAll(StorageService.getBlockedUserIds());
     _seedDiscoverableUsers();
-    _hydrateRemote();
+    if (_enableRemoteHydration) {
+      _hydrateRemote();
+    }
   }
 
   Future<void> _hydrateRemote() async {
@@ -117,8 +124,7 @@ class FriendProvider extends ChangeNotifier {
       for (final request in requests) request.id: request,
     };
     final nextBlockedUserIds = blockedUsers.map((user) => user.id).toSet();
-    final hasRelationshipChanges =
-        !_mapEquals(_friends, nextFriends) ||
+    final hasRelationshipChanges = !_mapEquals(_friends, nextFriends) ||
         !_mapEquals(_requests, nextRequests) ||
         !_setEquals(_blockedUserIds, nextBlockedUserIds);
 
@@ -160,6 +166,9 @@ class FriendProvider extends ChangeNotifier {
   }
 
   void _seedDiscoverableUsers() {
+    if (!AppEnv.allowMockFriendDirectory) {
+      return;
+    }
     for (final profile in _discoverableProfiles) {
       final user = User(
         id: profile['id']!,

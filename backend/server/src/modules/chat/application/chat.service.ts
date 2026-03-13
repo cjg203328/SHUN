@@ -125,6 +125,7 @@ interface ActorContext {
 export class ChatService implements OnModuleInit {
   private readonly stateKey = 'chat:state:v1';
   private readonly uploadTokenExpireSeconds = 300;
+  private readonly maxUploadBytes = 8 * 1024 * 1024;
   private readonly threads = new Map<string, ThreadRuntime>();
   private readonly messagesByThread = new Map<string, MessageRuntime[]>();
   private readonly unreadCountByThreadUser = new Map<string, number>();
@@ -240,6 +241,20 @@ export class ChatService implements OnModuleInit {
     const thread = this.getThreadById(threadId);
     this.assertThreadVisibleToUser(actorUserId, thread);
     return this.peerUserId(actorUserId, thread);
+  }
+
+  getRealtimeThreadPeerUserId(actorUserId: string, threadId: string): string {
+    const thread = this.getThreadById(threadId);
+    this.assertThreadVisibleToUser(actorUserId, thread);
+    const peerUserId = this.peerUserId(actorUserId, thread);
+    if (this.friendsService.isBlockedBetween(actorUserId, peerUserId)) {
+      throw new BusinessError(
+        ErrorCode.BlockedRelation,
+        403,
+        'Blocked relation does not allow realtime interaction',
+      );
+    }
+    return peerUserId;
   }
 
   async getMessageViewForUser(
@@ -375,6 +390,10 @@ export class ChatService implements OnModuleInit {
 
     if (!file.mimetype?.startsWith('image/')) {
       throw new BusinessError(ErrorCode.InvalidInput, 400, 'Only image upload is allowed');
+    }
+
+    if (file.buffer.byteLength > this.maxUploadBytes) {
+      throw new BusinessError(ErrorCode.InvalidInput, 400, 'Image file is too large');
     }
 
     const objectKey = payload.objectKey.trim();

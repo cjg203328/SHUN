@@ -61,6 +61,7 @@ class AppEnv {
 
   static bool get allowLocalDemoFallbacks => isDemoEnv || isDevelopmentEnv;
   static bool get allowLocalAuthFallbacks => isDemoEnv;
+  static bool get allowMockFriendDirectory => isDemoEnv || isDevelopmentEnv;
   static bool get allowMockMatchPool => isDemoEnv || isDevelopmentEnv;
   static bool get allowMockChatReplies => isDemoEnv;
   static bool get allowDayTheme => false;

@@ -71,6 +71,39 @@ void main() {
     expect(messages.first.status, MessageStatus.sending);
   });
 
+  test('draft should be saved, cleared and migrated with upgraded thread',
+      () async {
+    final localThread = _buildThread('u_chat_draft_local');
+    final remoteThread = ChatThread(
+      id: 'th_chat_draft_remote',
+      otherUser: localThread.otherUser,
+      createdAt: localThread.createdAt,
+      expiresAt: localThread.expiresAt,
+      intimacyPoints: localThread.intimacyPoints,
+    );
+    final provider = ChatProvider(
+      chatService: _FakeChatService(
+        directThreadsByUserId: {localThread.otherUser.id: remoteThread},
+        hasSessionOverride: true,
+      ),
+    );
+    addTearDown(provider.dispose);
+
+    provider.addThread(localThread);
+    provider.saveDraft(localThread.id, '还没发出的草稿');
+
+    expect(provider.draftForThread(localThread.id), '还没发出的草稿');
+
+    await provider.ensureDirectThreadForUser(localThread.otherUser);
+
+    expect(provider.draftForThread(localThread.id), '还没发出的草稿');
+    expect(provider.draftForThread(remoteThread.id), '还没发出的草稿');
+
+    provider.clearDraft(remoteThread.id);
+    expect(provider.draftForThread(localThread.id), isEmpty);
+    expect(provider.draftForThread(remoteThread.id), isEmpty);
+  });
+
   test('sendMessage should ignore rapid duplicate pending text submit', () {
     final provider = ChatProvider();
     addTearDown(provider.dispose);
@@ -2676,6 +2709,110 @@ void main() {
     expect(sameThreadItems, isEmpty);
     expect(otherThreadItems, hasLength(1));
     expect(otherThreadItems.first.threadId, otherThread.id);
+  });
+  test('retry delivery stats should track success and reselect requirements',
+      () async {
+    final remoteThread = _buildThread('th_chat_delivery_stats');
+    final fakeSocketService = _FakeChatSocketService();
+    final provider = ChatProvider(
+      chatService: _FakeChatService(
+        threads: [remoteThread],
+        hasSessionOverride: true,
+      ),
+      chatSocketService: fakeSocketService,
+    );
+    addTearDown(provider.dispose);
+    provider.addThread(remoteThread);
+    provider.getMessages(remoteThread.id).add(
+          Message(
+            id: 'retry-stats-text-1',
+            content: 'retry me',
+            isMe: true,
+            timestamp: DateTime.now(),
+            status: MessageStatus.failed,
+            type: MessageType.text,
+          ),
+        );
+
+    final resent =
+        provider.resendMessage(remoteThread.id, 'retry-stats-text-1');
+    expect(resent, isTrue);
+
+    fakeSocketService.onMessageAck?.call(
+      MessageAckEvent(
+        threadId: remoteThread.id,
+        clientMsgId: 'retry-stats-text-1',
+        message: Message(
+          id: 'retry-stats-text-remote-1',
+          content: 'retry me',
+          isMe: true,
+          timestamp: DateTime.now(),
+          status: MessageStatus.sent,
+          type: MessageType.text,
+        ),
+      ),
+    );
+
+    provider.getMessages(remoteThread.id).add(
+          Message(
+            id: 'retry-stats-image-1',
+            content: '[图片]',
+            isMe: true,
+            timestamp: DateTime.now(),
+            status: MessageStatus.failed,
+            type: MessageType.image,
+            imagePath: r'C:\mock\missing-original.jpg',
+            imageQuality: ImageQuality.original,
+          ),
+        );
+
+    final imageResent = await provider.resendImageMessage(
+      remoteThread.id,
+      'retry-stats-image-1',
+    );
+
+    expect(imageResent, isFalse);
+    expect(provider.deliveryStats['retries_requested'], 1);
+    expect(provider.deliveryStats['retries_succeeded'], 1);
+    expect(provider.deliveryStats['retries_failed'], 0);
+    expect(provider.deliveryStats['text_succeeded'], 1);
+    expect(provider.deliveryStats['image_reselect_required'], 1);
+    expect(provider.recentDeliveryEvents, isNotEmpty);
+    expect(provider.recentDeliveryEvents.first.label, '原图失效，需重选图片');
+    expect(provider.recentDeliveryEvents.first.tagLabel, '图片');
+    expect(provider.hasDeliveryStats, isTrue);
+  });
+
+  test('resetDeliveryStats should clear delivery counters', () async {
+    final provider = ChatProvider();
+    addTearDown(provider.dispose);
+    final thread = _buildThread('u_chat_delivery_stats_reset');
+    provider.addThread(thread);
+    provider.getMessages(thread.id).add(
+          Message(
+            id: 'retry-stats-reset-image-1',
+            content: '[图片]',
+            isMe: true,
+            timestamp: DateTime.now(),
+            status: MessageStatus.failed,
+            type: MessageType.image,
+            imagePath: r'C:\mock\missing-reset.jpg',
+            imageQuality: ImageQuality.original,
+          ),
+        );
+
+    await provider.resendImageMessage(thread.id, 'retry-stats-reset-image-1');
+
+    expect(provider.hasDeliveryStats, isTrue);
+
+    provider.resetDeliveryStats();
+
+    expect(provider.hasDeliveryStats, isFalse);
+    expect(
+      provider.deliveryStats.values.every((value) => value == 0),
+      isTrue,
+    );
+    expect(provider.recentDeliveryEvents, isEmpty);
   });
 }
 

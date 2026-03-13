@@ -1,15 +1,18 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
+import 'package:provider/provider.dart';
+
 import '../config/theme.dart';
 import '../core/feedback/app_feedback.dart';
 import '../core/ui/ui_tokens.dart';
+import '../models/models.dart';
 import '../providers/chat_provider.dart';
 import '../providers/friend_provider.dart';
 import '../providers/notification_center_provider.dart';
-import '../models/models.dart';
 import 'app_toast.dart';
-import 'dart:async';
+import 'chat_delivery_status.dart';
 
 class MessagesTab extends StatefulWidget {
   const MessagesTab({super.key});
@@ -18,16 +21,79 @@ class MessagesTab extends StatefulWidget {
   State<MessagesTab> createState() => _MessagesTabState();
 }
 
+class _MessagesLayoutSpec {
+  const _MessagesLayoutSpec({
+    required this.isCompact,
+    required this.itemPadding,
+    required this.avatarSize,
+    required this.avatarTextSize,
+    required this.avatarGap,
+    required this.titleSize,
+    required this.previewSize,
+    required this.metaSize,
+    required this.tagSpacing,
+    required this.previewGap,
+    required this.priorityTopSpacing,
+  });
+
+  final bool isCompact;
+  final EdgeInsets itemPadding;
+  final double avatarSize;
+  final double avatarTextSize;
+  final double avatarGap;
+  final double titleSize;
+  final double previewSize;
+  final double metaSize;
+  final double tagSpacing;
+  final double previewGap;
+  final double priorityTopSpacing;
+
+  static _MessagesLayoutSpec fromSize(Size size) {
+    final isCompact = size.width <= 390 || size.height <= 720;
+    if (isCompact) {
+      return const _MessagesLayoutSpec(
+        isCompact: true,
+        itemPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        avatarSize: 52,
+        avatarTextSize: 25,
+        avatarGap: 12,
+        titleSize: 15,
+        previewSize: 13,
+        metaSize: 11,
+        tagSpacing: 6,
+        previewGap: 5,
+        priorityTopSpacing: 7,
+      );
+    }
+
+    return const _MessagesLayoutSpec(
+      isCompact: false,
+      itemPadding: UiTokens.cardPadding,
+      avatarSize: 56,
+      avatarTextSize: 28,
+      avatarGap: 16,
+      titleSize: 16,
+      previewSize: 14,
+      metaSize: 12,
+      tagSpacing: 8,
+      previewGap: 6,
+      priorityTopSpacing: 8,
+    );
+  }
+}
+
 class _MessagesTabState extends State<MessagesTab> {
-  Timer? _timer;
   static const Duration _threadRefreshInterval = Duration(seconds: 30);
+
+  Timer? _timer;
 
   @override
   void initState() {
     super.initState();
-    // 会话剩余时长只需分钟级刷新，避免每秒触发整页重建
     _timer = Timer.periodic(_threadRefreshInterval, (_) {
-      if (mounted) setState(() {});
+      if (mounted) {
+        setState(() {});
+      }
     });
   }
 
@@ -82,7 +148,7 @@ class _MessagesTabState extends State<MessagesTab> {
                           style: const TextStyle(
                             fontSize: 10,
                             fontWeight: FontWeight.w500,
-                          color: AppColors.pureBlack,
+                            color: AppColors.pureBlack,
                           ),
                           textAlign: TextAlign.center,
                         ),
@@ -97,34 +163,8 @@ class _MessagesTabState extends State<MessagesTab> {
       body: Consumer2<ChatProvider, FriendProvider>(
         builder: (context, chatProvider, friendProvider, child) {
           final threads = chatProvider.sortedThreads;
-
           if (threads.isEmpty) {
-            return Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text(
-                    '💬',
-                    style: TextStyle(
-                      fontSize: 64,
-                      color: AppColors.textTertiary.withValues(alpha: 0.3),
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-                  Text(
-                    '暂无消息',
-                    style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                          color: AppColors.textTertiary,
-                        ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    '去匹配页开始聊天吧',
-                    style: Theme.of(context).textTheme.bodySmall,
-                  ),
-                ],
-              ),
-            );
+            return _EmptyMessagesState();
           }
 
           return ListView.builder(
@@ -133,14 +173,17 @@ class _MessagesTabState extends State<MessagesTab> {
               final thread = threads[index];
               final messages = chatProvider.getMessages(thread.id);
               final lastMessage = messages.isNotEmpty ? messages.last : null;
+              final draft = chatProvider.draftForThread(thread.id);
+              final isFriend = friendProvider.isFriend(thread.otherUser.id) &&
+                  !friendProvider.isBlocked(thread.otherUser.id);
 
               return Dismissible(
                 key: Key(thread.id),
                 direction: DismissDirection.endToStart,
-                confirmDismiss: (direction) async {
+                confirmDismiss: (_) async {
                   final confirm = await AppDialog.showConfirm(
                     context,
-                    title: '确定要删除这个对话吗？',
+                    title: '确定要删除这段对话吗？',
                     content: '删除后将无法恢复',
                     confirmText: '删除',
                     isDanger: true,
@@ -168,17 +211,15 @@ class _MessagesTabState extends State<MessagesTab> {
                 child: _ThreadItem(
                   thread: thread,
                   lastMessage: lastMessage,
-                  isFriend: friendProvider.isFriend(thread.otherUser.id) &&
-                      !friendProvider.isBlocked(thread.otherUser.id),
+                  draft: draft,
+                  isFriend: isFriend,
                   onTap: () {
                     final routeThreadId = chatProvider.routeThreadId(
                           threadId: thread.id,
                           userId: thread.otherUser.id,
                         ) ??
                         thread.id;
-                    // 从消息页进入聊天，返回时应该回到消息页
                     context.push('/chat/$routeThreadId').then((_) {
-                      // 返回后切换到消息页
                       if (context.mounted) {
                         context.go('/main?tab=1');
                       }
@@ -194,29 +235,85 @@ class _MessagesTabState extends State<MessagesTab> {
   }
 }
 
-class _ThreadItem extends StatelessWidget {
-  final ChatThread thread;
-  final Message? lastMessage;
-  final bool isFriend;
-  final VoidCallback onTap;
+class _EmptyMessagesState extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Text(
+            '💵',
+            style: TextStyle(
+              fontSize: 64,
+              color: AppColors.textTertiary.withValues(alpha: 0.3),
+            ),
+          ),
+          const SizedBox(height: 24),
+          Text(
+            '暂无消息',
+            style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                  color: AppColors.textTertiary,
+                ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            '去匹配页开始聊天吧',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+        ],
+      ),
+    );
+  }
+}
 
+class _ThreadItem extends StatelessWidget {
   const _ThreadItem({
     required this.thread,
     required this.lastMessage,
+    required this.draft,
     required this.isFriend,
     required this.onTap,
   });
 
+  final ChatThread thread;
+  final Message? lastMessage;
+  final String draft;
+  final bool isFriend;
+  final VoidCallback onTap;
+
   @override
   Widget build(BuildContext context) {
     final isOnline = thread.otherUser.isOnline;
+    final hasDraft = draft.trim().isNotEmpty;
+    final message = lastMessage;
+    final layout = _MessagesLayoutSpec.fromSize(MediaQuery.of(context).size);
+    final deliveryState = message == null
+        ? const ChatDeliveryStatusSpec()
+        : (resolveChatDeliveryStatus(message) ??
+            const ChatDeliveryStatusSpec());
+    final priority = _resolvePriorityState(
+      hasDraft: hasDraft,
+      isFriend: isFriend,
+      deliveryState: deliveryState,
+    );
+    final showUrgencyHint = !isFriend && thread.timeRemaining.inHours < 3;
+    final accentColor = priority?.color ??
+        (thread.unreadCount > 0
+            ? AppColors.brandBlue.withValues(alpha: 0.2)
+            : AppColors.white05);
 
     return InkWell(
       onTap: onTap,
       child: Container(
-        padding: UiTokens.cardPadding,
+        key: Key('messages-thread-item-${thread.id}'),
+        padding: layout.itemPadding,
         decoration: BoxDecoration(
-          // 在线陌生人：微妙的渐变背景吸引注意
+          color: hasDraft
+              ? AppColors.warning.withValues(alpha: 0.04)
+              : (thread.unreadCount > 0
+                  ? AppColors.brandBlue.withValues(alpha: 0.035)
+                  : null),
           gradient: isOnline && !isFriend
               ? LinearGradient(
                   colors: [
@@ -228,100 +325,18 @@ class _ThreadItem extends StatelessWidget {
                 )
               : null,
           border: Border(
-            bottom: BorderSide(color: AppColors.white05),
+            bottom: BorderSide(color: accentColor),
           ),
         ),
         child: Row(
           children: [
-            // 头像
-            Stack(
-              children: [
-                Container(
-                  width: 56,
-                  height: 56,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: AppColors.white08,
-                    // 好友：蓝色边框
-                    border: Border.all(
-                      color: isFriend
-                          ? AppColors.brandBlue.withValues(alpha: 0.5)
-                          : AppColors.white05,
-                      width: 2,
-                    ),
-                  ),
-                  child: Center(
-                    child: Text(
-                      thread.otherUser.avatar ?? '👤',
-                      style: const TextStyle(
-                        fontSize: 28,
-                        color: AppColors.pureBlack,
-                      ),
-                    ),
-                  ),
-                ),
-
-                // 在线状态绿点
-                if (isOnline)
-                  Positioned(
-                    right: 2,
-                    bottom: 2,
-                    child: Container(
-                      width: 14,
-                      height: 14,
-                      decoration: BoxDecoration(
-                        color: AppColors.success,
-                        shape: BoxShape.circle,
-                        border: Border.all(
-                          color: AppColors.pureBlack,
-                          width: 2,
-                        ),
-                        boxShadow: [
-                          BoxShadow(
-                            color:
-                                AppColors.success.withValues(alpha: 0.5),
-                            blurRadius: 4,
-                            spreadRadius: 1,
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-
-                // 未读数角标
-                if (thread.unreadCount > 0)
-                  Positioned(
-                    right: 0,
-                    top: 0,
-                    child: Container(
-                      padding: const EdgeInsets.all(4),
-                      decoration: const BoxDecoration(
-                        color: AppColors.error,
-                        shape: BoxShape.circle,
-                      ),
-                      constraints: const BoxConstraints(
-                        minWidth: 20,
-                        minHeight: 20,
-                      ),
-                      child: Text(
-                        thread.unreadCount > 99
-                            ? '99+'
-                            : '${thread.unreadCount}',
-                        style: const TextStyle(
-                          fontSize: 10,
-                          fontWeight: FontWeight.w500,
-                          color: AppColors.pureBlack,
-                        ),
-                        textAlign: TextAlign.center,
-                      ),
-                    ),
-                  ),
-              ],
+            _ThreadAvatar(
+              thread: thread,
+              isFriend: isFriend,
+              isOnline: isOnline,
+              layout: layout,
             ),
-
-            const SizedBox(width: 16),
-
-            // 内容
+            SizedBox(width: layout.avatarGap),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -329,61 +344,34 @@ class _ThreadItem extends StatelessWidget {
                   Row(
                     children: [
                       Expanded(
-                        child: Row(
+                        child: Wrap(
+                          spacing: layout.tagSpacing,
+                          runSpacing: 6,
+                          crossAxisAlignment: WrapCrossAlignment.center,
                           children: [
-                            // 昵称
                             Text(
                               thread.otherUser.nickname,
-                              style: const TextStyle(
-                                fontSize: 16,
+                              style: TextStyle(
+                                fontSize: layout.titleSize,
                                 fontWeight: FontWeight.w400,
                                 color: AppColors.textPrimary,
                               ),
                             ),
-                            const SizedBox(width: 8),
-
-                            // 好友标签
                             if (isFriend)
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 6,
-                                  vertical: 2,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: AppColors.brandBlue
-                                      .withValues(alpha: 0.15),
-                                  borderRadius: BorderRadius.circular(4),
-                                ),
-                                child: const Text(
-                                  '好友',
-                                  style: TextStyle(
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.w500,
-                                    color: AppColors.brandBlue,
-                                  ),
-                                ),
+                              _TinyTag(
+                                label: '好友',
+                                background:
+                                    AppColors.brandBlue.withValues(alpha: 0.15),
+                                foreground: AppColors.brandBlue,
                               ),
-
-                            // 在线标识（仅陌生人显示）
                             if (isOnline && !isFriend)
                               Container(
                                 margin: const EdgeInsets.only(left: 6),
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 6,
-                                  vertical: 2,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: AppColors.success
-                                      .withValues(alpha: 0.15),
-                                  borderRadius: BorderRadius.circular(4),
-                                ),
-                                child: const Text(
-                                  '在线',
-                                  style: TextStyle(
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.w500,
-                                    color: AppColors.success,
-                                  ),
+                                child: _TinyTag(
+                                  label: '在线',
+                                  background:
+                                      AppColors.success.withValues(alpha: 0.15),
+                                  foreground: AppColors.success,
                                 ),
                               ),
                           ],
@@ -391,49 +379,72 @@ class _ThreadItem extends StatelessWidget {
                       ),
                       Text(
                         _formatTime(lastMessage?.timestamp),
-                        style: Theme.of(context).textTheme.bodySmall,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              fontSize: layout.metaSize,
+                            ),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 6),
+                  SizedBox(height: layout.previewGap),
                   Row(
                     children: [
                       Expanded(
-                        child: Text(
-                          lastMessage?.content ?? '开始聊天吧',
-                          style: TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w300,
-                            color: thread.unreadCount > 0
-                                ? AppColors.textSecondary
-                                : AppColors.textTertiary,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
+                        child: hasDraft
+                            ? Row(
+                                children: [
+                                  _TinyTag(
+                                    label: '草稿',
+                                    background: AppColors.warning
+                                        .withValues(alpha: 0.14),
+                                    foreground: AppColors.warning,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      draft,
+                                      style: TextStyle(
+                                        fontSize: layout.previewSize,
+                                        fontWeight: FontWeight.w300,
+                                        color: AppColors.textSecondary,
+                                      ),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                ],
+                              )
+                            : Text(
+                                deliveryState.previewText ??
+                                    lastMessage?.content ??
+                                    '开始聊天吧',
+                                style: TextStyle(
+                                  fontSize: layout.previewSize,
+                                  fontWeight: FontWeight.w300,
+                                  color: deliveryState.previewColor ??
+                                      (thread.unreadCount > 0
+                                          ? AppColors.textSecondary
+                                          : AppColors.textTertiary),
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
                       ),
-                      if (lastMessage != null &&
-                          lastMessage!.isMe &&
-                          lastMessage!.status == MessageStatus.sent &&
-                          !lastMessage!.isBurnAfterReading) ...[
+                      if (!hasDraft && deliveryState.hasBadge) ...[
                         const SizedBox(width: 8),
-                        Text(
-                          lastMessage!.isRead ? '对方已读' : '对方未读',
-                          style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w300,
-                            color: lastMessage!.isRead
-                                ? AppColors.textTertiary.withValues(alpha: 0.7)
-                                : AppColors.textSecondary
-                                    .withValues(alpha: 0.85),
-                          ),
+                        ChatDeliveryBadge(
+                          label: deliveryState.badgeLabel!,
+                          color: deliveryState.badgeColor!,
+                          icon: deliveryState.badgeIcon!,
+                          emphasized: deliveryState.isSuccessState,
                         ),
                       ],
                       if (!isFriend) ...[
                         const SizedBox(width: 8),
                         Container(
                           padding: const EdgeInsets.symmetric(
-                              horizontal: 6, vertical: 2),
+                            horizontal: 6,
+                            vertical: 2,
+                          ),
                           decoration: BoxDecoration(
                             color: Colors.orange.withValues(alpha: 0.15),
                             borderRadius: BorderRadius.circular(8),
@@ -443,14 +454,14 @@ class _ThreadItem extends StatelessWidget {
                             children: [
                               Icon(
                                 Icons.favorite,
-                                size: 10,
+                                size: layout.metaSize - 1,
                                 color: Colors.orange.shade400,
                               ),
                               const SizedBox(width: 3),
                               Text(
                                 '${thread.intimacyPoints}',
                                 style: TextStyle(
-                                  fontSize: 10,
+                                  fontSize: layout.metaSize - 1,
                                   fontWeight: FontWeight.w500,
                                   color: Colors.orange.shade400,
                                 ),
@@ -461,28 +472,51 @@ class _ThreadItem extends StatelessWidget {
                       ],
                     ],
                   ),
-
-                  // 倒计时（仅陌生人显示）
+                  if (priority != null || showUrgencyHint) ...[
+                    SizedBox(height: layout.priorityTopSpacing),
+                    Wrap(
+                      spacing: layout.tagSpacing,
+                      runSpacing: 6,
+                      children: [
+                        if (priority != null)
+                          _TinyTag(
+                            label: priority.label,
+                            background: priority.color.withValues(alpha: 0.14),
+                            foreground: priority.color,
+                          ),
+                        if (showUrgencyHint)
+                          _TinyTag(
+                            label: '鍗冲皢鍒版湡',
+                            background: AppColors.error.withValues(alpha: 0.12),
+                            foreground: AppColors.error,
+                          ),
+                      ],
+                    ),
+                  ],
                   if (!isFriend) ...[
-                    const SizedBox(height: 6),
+                    SizedBox(height: layout.previewGap),
                     Row(
                       children: [
                         Icon(
                           Icons.access_time,
-                          size: 12,
+                          size: layout.metaSize,
                           color: thread.timeRemaining.inHours < 3
                               ? AppColors.error
                               : AppColors.textTertiary,
                         ),
                         const SizedBox(width: 4),
-                        Text(
-                          _formatTimeRemaining(thread.timeRemaining),
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w300,
-                            color: thread.timeRemaining.inHours < 3
-                                ? AppColors.error
-                                : AppColors.textTertiary,
+                        Expanded(
+                          child: Text(
+                            _formatTimeRemaining(thread.timeRemaining),
+                            style: TextStyle(
+                              fontSize: layout.metaSize,
+                              fontWeight: FontWeight.w300,
+                              color: thread.timeRemaining.inHours < 3
+                                  ? AppColors.error
+                                  : AppColors.textTertiary,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                           ),
                         ),
                       ],
@@ -495,6 +529,44 @@ class _ThreadItem extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  _ThreadPriorityState? _resolvePriorityState({
+    required bool hasDraft,
+    required bool isFriend,
+    required ChatDeliveryStatusSpec deliveryState,
+  }) {
+    if (hasDraft) {
+      return const _ThreadPriorityState(
+        label: '寰呭彂鑽夌',
+        color: AppColors.warning,
+      );
+    }
+    if (deliveryState.actionType == ChatDeliveryAction.retry) {
+      return const _ThreadPriorityState(
+        label: '寤鸿浼樺厛澶勭悊',
+        color: AppColors.error,
+      );
+    }
+    if (deliveryState.actionType == ChatDeliveryAction.showGuide) {
+      return const _ThreadPriorityState(
+        label: '鍥剧墖闇€閲嶆柊閫夋嫨',
+        color: AppColors.error,
+      );
+    }
+    if (thread.unreadCount > 0) {
+      return const _ThreadPriorityState(
+        label: '鏈夋柊娑堟伅',
+        color: AppColors.brandBlue,
+      );
+    }
+    if (!isFriend && thread.otherUser.isOnline) {
+      return const _ThreadPriorityState(
+        label: '鐜板湪閫傚悎鍥炲',
+        color: AppColors.success,
+      );
+    }
+    return null;
   }
 
   String _formatTime(DateTime? time) {
@@ -513,5 +585,140 @@ class _ThreadItem extends StatelessWidget {
     final hours = duration.inHours;
     final minutes = duration.inMinutes % 60;
     return '剩余 $hours小时$minutes分钟';
+  }
+}
+
+class _ThreadPriorityState {
+  const _ThreadPriorityState({
+    required this.label,
+    required this.color,
+  });
+
+  final String label;
+  final Color color;
+}
+
+class _ThreadAvatar extends StatelessWidget {
+  const _ThreadAvatar({
+    required this.thread,
+    required this.isFriend,
+    required this.isOnline,
+    required this.layout,
+  });
+
+  final ChatThread thread;
+  final bool isFriend;
+  final bool isOnline;
+  final _MessagesLayoutSpec layout;
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      children: [
+        Container(
+          width: layout.avatarSize,
+          height: layout.avatarSize,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: AppColors.white08,
+            border: Border.all(
+              color: isFriend
+                  ? AppColors.brandBlue.withValues(alpha: 0.5)
+                  : AppColors.white05,
+              width: 2,
+            ),
+          ),
+          child: Center(
+            child: Text(
+              thread.otherUser.avatar ?? '👤',
+              style: TextStyle(
+                fontSize: layout.avatarTextSize,
+                color: AppColors.pureBlack,
+              ),
+            ),
+          ),
+        ),
+        if (isOnline)
+          Positioned(
+            right: 2,
+            bottom: 2,
+            child: Container(
+              width: 14,
+              height: 14,
+              decoration: BoxDecoration(
+                color: AppColors.success,
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: AppColors.pureBlack,
+                  width: 2,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: AppColors.success.withValues(alpha: 0.5),
+                    blurRadius: 4,
+                    spreadRadius: 1,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        if (thread.unreadCount > 0)
+          Positioned(
+            right: 0,
+            top: 0,
+            child: Container(
+              padding: const EdgeInsets.all(4),
+              decoration: const BoxDecoration(
+                color: AppColors.error,
+                shape: BoxShape.circle,
+              ),
+              constraints: const BoxConstraints(
+                minWidth: 20,
+                minHeight: 20,
+              ),
+              child: Text(
+                thread.unreadCount > 99 ? '99+' : '${thread.unreadCount}',
+                style: const TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.w500,
+                  color: AppColors.pureBlack,
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+class _TinyTag extends StatelessWidget {
+  const _TinyTag({
+    required this.label,
+    required this.background,
+    required this.foreground,
+  });
+
+  final String label;
+  final Color background;
+  final Color foreground;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 10,
+          fontWeight: FontWeight.w500,
+          color: foreground,
+        ),
+      ),
+    );
   }
 }

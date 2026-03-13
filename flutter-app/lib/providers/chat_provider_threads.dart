@@ -149,9 +149,8 @@ extension ChatProviderThreads on ChatProvider {
 
     _threads[thread.id] = thread;
     _messages.putIfAbsent(thread.id, () => <Message>[]);
-    _deletedThreads[thread.id] = restoreDeleted
-        ? false
-        : (_deletedThreads[thread.id] ?? false);
+    _deletedThreads[thread.id] =
+        restoreDeleted ? false : (_deletedThreads[thread.id] ?? false);
     unawaited(_joinThreadRealtime(thread.id));
     if (notify) {
       notifyListeners();
@@ -198,6 +197,7 @@ extension ChatProviderThreads on ChatProvider {
         _lastReadSyncMessageIds.remove(oldThreadId);
     final previousRemoteMessageSyncAt =
         _lastRemoteMessageSyncAt.remove(oldThreadId);
+    final previousDraft = _threadDrafts.remove(oldThreadId);
     final previousRecalledMessageIds = _recalledMessageIds.remove(oldThreadId);
     final previousDeleted = _deletedThreads.remove(oldThreadId) ?? false;
     final previousActiveClaims = _activeThreadClaims.remove(oldThreadId);
@@ -242,10 +242,17 @@ extension ChatProviderThreads on ChatProvider {
       _lastReadSyncMessageIds[newThread.id] = previousLastReadSyncMessageId;
     }
     if (previousRemoteMessageSyncAt != null) {
-      final existingRemoteMessageSyncAt = _lastRemoteMessageSyncAt[newThread.id];
+      final existingRemoteMessageSyncAt =
+          _lastRemoteMessageSyncAt[newThread.id];
       if (existingRemoteMessageSyncAt == null ||
           previousRemoteMessageSyncAt.isAfter(existingRemoteMessageSyncAt)) {
         _lastRemoteMessageSyncAt[newThread.id] = previousRemoteMessageSyncAt;
+      }
+    }
+    if (previousDraft != null && previousDraft.isNotEmpty) {
+      final existingDraft = _threadDrafts[newThread.id] ?? '';
+      if (existingDraft.isEmpty) {
+        _threadDrafts[newThread.id] = previousDraft;
       }
     }
 

@@ -17,7 +17,8 @@ class SettingsService {
   Future<SettingsStateSnapshot> refreshState() async {
     if (!_hasSession) return loadState();
     try {
-      final settings = await _apiClient.get<Map<String, dynamic>>('/settings/me');
+      final settings =
+          await _apiClient.get<Map<String, dynamic>>('/settings/me');
       await _persist(settings);
     } catch (_) {}
     return loadState();
@@ -68,6 +69,32 @@ class SettingsService {
     }
 
     await _repository.saveVibrationEnabled(enabled);
+    return loadState();
+  }
+
+  Future<SettingsStateSnapshot> saveState({
+    required bool invisibleMode,
+    required bool notificationEnabled,
+    required bool vibrationEnabled,
+  }) async {
+    if (_hasSession) {
+      try {
+        final settings = await _apiClient.patch<Map<String, dynamic>>(
+          '/settings/me',
+          data: {
+            'invisibleMode': invisibleMode,
+            'notificationEnabled': notificationEnabled,
+            'vibrationEnabled': vibrationEnabled,
+          },
+        );
+        await _persist(settings);
+        return loadState();
+      } catch (_) {}
+    }
+
+    await _repository.saveInvisibleMode(invisibleMode);
+    await _repository.saveNotificationEnabled(notificationEnabled);
+    await _repository.saveVibrationEnabled(vibrationEnabled);
     return loadState();
   }
 

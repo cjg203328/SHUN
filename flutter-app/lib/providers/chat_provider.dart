@@ -9,6 +9,7 @@ import '../models/models.dart';
 import '../repositories/app_data_repository.dart';
 import '../services/analytics_service.dart';
 import '../services/chat_service.dart';
+import '../services/chat_delivery_stats_service.dart';
 import '../services/chat_socket_service.dart';
 import '../services/media_upload_service.dart';
 import '../utils/image_helper.dart';
@@ -25,12 +26,14 @@ class ChatProvider extends ChangeNotifier {
   final ChatService _chatService;
   final ChatSocketService _chatSocketService;
   final MediaUploadService _mediaUploadService;
+  final ChatDeliveryStatsService _deliveryStatsService;
   final Map<String, List<Message>> _messages = {};
   final Map<String, ChatThread> _threads = {};
   final Map<String, String> _threadIdAliases = {};
   final Map<String, DateTime> _lastMessageTime = {};
   final Map<String, DateTime> _lastRemoteMessageSyncAt = {};
   final Map<String, DateTime> _recentImageSubmitAt = {};
+  final Map<String, String> _threadDrafts = {};
   final Map<String, Set<String>> _recalledMessageIds = {};
   final Map<String, bool> _deletedThreads = {};
   final Map<String, Future<void>> _remoteMessageLoads = {};
@@ -39,6 +42,9 @@ class ChatProvider extends ChangeNotifier {
   final List<String> _activeThreadFocusOrder = <String>[];
   final Set<String> _joinedRealtimeThreads = <String>{};
   final Map<String, Future<bool>> _joiningRealtimeThreads = {};
+  final Set<String> _retryingMessageIds = <String>{};
+  final bool _enableRealtime;
+  final bool _enableRemoteHydration;
   String? _activeThreadId;
   Timer? _persistTimer;
   bool _isRestoring = false;
@@ -49,20 +55,33 @@ class ChatProvider extends ChangeNotifier {
     ChatService? chatService,
     ChatSocketService? chatSocketService,
     MediaUploadService? mediaUploadService,
+    ChatDeliveryStatsService? deliveryStatsService,
+    bool enableRealtime = true,
+    bool enableRemoteHydration = true,
   })  : _repository = repository ?? AppDataRepository.instance,
         _chatService = chatService ?? ChatService(),
         _chatSocketService = chatSocketService ?? ChatSocketService.instance,
-        _mediaUploadService = mediaUploadService ?? MediaUploadService() {
-    _bindRealtime();
+        _mediaUploadService = mediaUploadService ?? MediaUploadService(),
+        _deliveryStatsService =
+            deliveryStatsService ?? ChatDeliveryStatsService(),
+        _enableRealtime = enableRealtime,
+        _enableRemoteHydration = enableRemoteHydration {
+    if (_enableRealtime) {
+      _bindRealtime();
+    }
     _restoreFromStorage();
-    unawaited(_hydrateRemote());
+    if (_enableRemoteHydration) {
+      unawaited(_hydrateRemote());
+    }
   }
 
   @override
   void dispose() {
     _isDisposed = true;
     _persistTimer?.cancel();
-    _unbindRealtime();
+    if (_enableRealtime) {
+      _unbindRealtime();
+    }
     super.dispose();
   }
 
@@ -102,6 +121,36 @@ class ChatProvider extends ChangeNotifier {
 
   ChatThread? getThread(String threadId) {
     return _threads[_resolveThreadId(threadId)];
+  }
+
+  String draftForThread(String threadId) {
+    return _threadDrafts[_resolveThreadId(threadId)] ?? '';
+  }
+
+  void saveDraft(String threadId, String text, {bool notify = false}) {
+    final resolvedThreadId = _resolveThreadId(threadId);
+    final normalized = text.trimRight();
+    final previous = _threadDrafts[resolvedThreadId] ?? '';
+    if (normalized.isEmpty) {
+      if (_threadDrafts.remove(resolvedThreadId) != null && notify) {
+        notifyListeners();
+      }
+      return;
+    }
+    if (previous == normalized) {
+      return;
+    }
+    _threadDrafts[resolvedThreadId] = normalized;
+    if (notify) {
+      notifyListeners();
+    }
+  }
+
+  void clearDraft(String threadId, {bool notify = false}) {
+    final resolvedThreadId = _resolveThreadId(threadId);
+    if (_threadDrafts.remove(resolvedThreadId) != null && notify) {
+      notifyListeners();
+    }
   }
 
   String? canonicalThreadId(String threadId) {
@@ -161,5 +210,17 @@ class ChatProvider extends ChangeNotifier {
       return messages.last.timestamp;
     }
     return thread.createdAt;
+  }
+
+  Map<String, int> get deliveryStats => _deliveryStatsService.counters;
+
+  List<ChatDeliveryStatEvent> get recentDeliveryEvents =>
+      _deliveryStatsService.recentEvents;
+
+  bool get hasDeliveryStats => _deliveryStatsService.hasData;
+
+  void resetDeliveryStats() {
+    _deliveryStatsService.clear();
+    notifyListeners();
   }
 }

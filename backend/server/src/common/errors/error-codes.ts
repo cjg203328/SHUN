@@ -9,6 +9,7 @@ export enum ErrorCode {
   FriendAlreadyExists = 'FRIEND_ALREADY_EXISTS',
   BlockedRelation = 'BLOCKED_RELATION',
   MatchQuotaExceeded = 'MATCH_QUOTA_EXCEEDED',
+  MatchUnavailable = 'MATCH_UNAVAILABLE',
   ThreadNotFound = 'THREAD_NOT_FOUND',
   ThreadExpired = 'THREAD_EXPIRED',
   MessageNotFound = 'MESSAGE_NOT_FOUND',

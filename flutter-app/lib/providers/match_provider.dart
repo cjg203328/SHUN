@@ -5,13 +5,18 @@ import '../services/match_service.dart';
 
 class MatchProvider extends ChangeNotifier {
   final MatchService _matchService;
+  final bool _allowMockFallback;
   int _matchCount = 20;
   bool _isMatching = false;
   User? _matchedUser;
+  String? _lastFailureMessage;
+  String? _lastFailureCode;
 
   int get matchCount => _matchCount;
   bool get isMatching => _isMatching;
   User? get matchedUser => _matchedUser;
+  String? get lastFailureMessage => _lastFailureMessage;
+  String? get lastFailureCode => _lastFailureCode;
 
   static const List<Map<String, String>> _mockProfiles = [
     {
@@ -72,8 +77,11 @@ class MatchProvider extends ChangeNotifier {
     },
   ];
 
-  MatchProvider({MatchService? matchService})
-      : _matchService = matchService ?? MatchService() {
+  MatchProvider({
+    MatchService? matchService,
+    bool? allowMockFallback,
+  })  : _matchService = matchService ?? MatchService(),
+        _allowMockFallback = allowMockFallback ?? AppEnv.allowMockMatchPool {
     _loadMatchCount();
     _checkDailyReset();
     _refreshRemoteQuota();
@@ -111,25 +119,29 @@ class MatchProvider extends ChangeNotifier {
 
     _isMatching = true;
     _matchedUser = null;
+    _lastFailureMessage = null;
+    _lastFailureCode = null;
     notifyListeners();
 
-    final remoteResult = await _matchService.startMatch(
+    final remoteAttempt = await _matchService.startMatch(
       excludedUserIds: (excludedUserIds ?? const <String>{}).toList(),
     );
 
     if (!_isMatching) return;
 
-    if (remoteResult != null) {
-      _matchedUser = remoteResult.user;
-      _matchCount = remoteResult.remaining;
+    if (remoteAttempt.isSuccess) {
+      _matchedUser = remoteAttempt.result!.user;
+      _matchCount = remoteAttempt.result!.remaining;
       _isMatching = false;
       notifyListeners();
       return;
     }
 
-    if (!AppEnv.allowMockMatchPool) {
+    if (!_allowMockFallback) {
       _isMatching = false;
       _matchedUser = null;
+      _lastFailureCode = remoteAttempt.errorCode;
+      _lastFailureMessage = _resolveMatchFailureMessage(remoteAttempt);
       notifyListeners();
       return;
     }
@@ -138,6 +150,8 @@ class MatchProvider extends ChangeNotifier {
     if (!_isMatching) return;
     _matchedUser = _generateMockUser(excludedUserIds: excludedUserIds);
     _isMatching = false;
+    _lastFailureMessage = null;
+    _lastFailureCode = null;
 
     // 匹配成功，立即消耗次数
     await _consumeMatch(notify: false);
@@ -149,6 +163,8 @@ class MatchProvider extends ChangeNotifier {
       _matchService.cancelMatch();
       _isMatching = false;
       _matchedUser = null;
+      _lastFailureMessage = null;
+      _lastFailureCode = null;
       notifyListeners();
     }
   }
@@ -166,6 +182,17 @@ class MatchProvider extends ChangeNotifier {
   void clearMatchedUser() {
     _matchedUser = null;
     notifyListeners();
+  }
+
+  String _resolveMatchFailureMessage(MatchStartAttempt attempt) {
+    switch (attempt.errorCode) {
+      case 'MATCH_UNAVAILABLE':
+        return '当前环境还没有可用匹配对象，请先完成联调配置。';
+      case 'MATCH_SESSION_MISSING':
+        return '登录状态已失效，请重新进入后再试。';
+      default:
+        return attempt.errorMessage ?? '匹配暂时不可用，请稍后重试。';
+    }
   }
 
   User _generateMockUser({Set<String>? excludedUserIds}) {

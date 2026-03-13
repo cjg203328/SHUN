@@ -329,4 +329,53 @@ describe('Chat Gateway (integration)', () => {
     expect(response.error.status).toBe(400);
     expect(socketA.connected).toBe(true);
   });
+
+  it('should reject websocket join and typing after relation is blocked', async () => {
+    const userA = await login('13800138108', 'device-ws-i');
+    const userB = await login('13800138109', 'device-ws-j');
+
+    const createThreadRes = await request(app.getHttpServer())
+      .post('/api/v1/threads/direct')
+      .set('Authorization', `Bearer ${userA.accessToken}`)
+      .send({ targetUserId: userB.user.userId })
+      .expect(201);
+    const threadId = createThreadRes.body.data.threadId as string;
+
+    await request(app.getHttpServer())
+      .post(`/api/v1/friends/${userB.user.userId}/block`)
+      .set('Authorization', `Bearer ${userA.accessToken}`)
+      .expect(201);
+
+    socketA = await connectSocket(userA.accessToken);
+    socketB = await connectSocket(userB.accessToken);
+
+    const joinResponse = await emitWithAck<{
+      ok: false;
+      error: { code: string; message: string; status: number };
+    }>(socketA, 'thread.join', { threadId });
+
+    expect(joinResponse.ok).toBe(false);
+    expect(joinResponse.error.code).toBe('BLOCKED_RELATION');
+    expect(joinResponse.error.status).toBe(403);
+
+    let typingDelivered = false;
+    socketB.on('typing', () => {
+      typingDelivered = true;
+    });
+
+    const typingResponse = await emitWithAck<
+      { ok: true } | { ok: false; error: { code: string; status: number } }
+    >(socketA, 'typing', {
+      threadId,
+      isTyping: true,
+    });
+
+    expect(typingResponse.ok).toBe(false);
+    if (!typingResponse.ok) {
+      expect(typingResponse.error.code).toBe('BLOCKED_RELATION');
+      expect(typingResponse.error.status).toBe(403);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(typingDelivered).toBe(false);
+  });
 });

@@ -28,6 +28,7 @@ extension ChatProviderStorage on ChatProvider {
         (key, value) => MapEntry(key, value.toList(growable: false)),
       ),
       'deletedThreads': _deletedThreads,
+      'deliveryStats': _deliveryStatsService.toJson(),
     };
     await _repository.saveChatState(snapshot);
   }
@@ -41,6 +42,7 @@ extension ChatProviderStorage on ChatProvider {
     final rawLastMessageTime = snapshot['lastMessageTime'];
     final rawRecalledMessageIds = snapshot['recalledMessageIds'];
     final rawDeletedThreads = snapshot['deletedThreads'];
+    final rawDeliveryStats = snapshot['deliveryStats'];
 
     _isRestoring = true;
     try {
@@ -49,6 +51,7 @@ extension ChatProviderStorage on ChatProvider {
       _lastMessageTime.clear();
       _recalledMessageIds.clear();
       _deletedThreads.clear();
+      _deliveryStatsService.clear();
 
       if (rawThreads is Map) {
         for (final entry in rawThreads.entries) {
@@ -112,6 +115,8 @@ extension ChatProviderStorage on ChatProvider {
         }
       }
 
+      _deliveryStatsService.loadSnapshot(rawDeliveryStats);
+
       for (final threadId in _threads.keys) {
         _messages.putIfAbsent(threadId, () => <Message>[]);
         _recalledMessageIds.putIfAbsent(threadId, () => <String>{});
@@ -132,9 +137,7 @@ extension ChatProviderStorage on ChatProvider {
     if (snapshot == null) return;
 
     final remoteThreads = snapshot.threads;
-    final remoteThreadIds = remoteThreads
-        .map((thread) => thread.id)
-        .toSet();
+    final remoteThreadIds = remoteThreads.map((thread) => thread.id).toSet();
     final staleRemoteThreadIds = _threads.keys
         .where(
           (threadId) =>
@@ -256,6 +259,7 @@ extension ChatProviderStorage on ChatProvider {
     _lastMessageTime.remove(threadId);
     _lastRemoteMessageSyncAt.remove(threadId);
     _recentImageSubmitAt.remove(threadId);
+    _threadDrafts.remove(threadId);
     _recalledMessageIds.remove(threadId);
     _deletedThreads.remove(threadId);
     _remoteMessageLoads.remove(threadId);
@@ -355,7 +359,8 @@ extension ChatProviderStorage on ChatProvider {
       return true;
     }
 
-    return localMessage.isBurnAfterReading == remoteMessage.isBurnAfterReading &&
+    return localMessage.isBurnAfterReading ==
+            remoteMessage.isBurnAfterReading &&
         localMessage.imageQuality == remoteMessage.imageQuality;
   }
 

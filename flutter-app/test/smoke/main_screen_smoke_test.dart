@@ -18,9 +18,9 @@ void main() {
     await initTestAppStorage();
   });
 
-  Widget buildApp() {
+  Widget buildApp({String initialLocation = '/main'}) {
     final router = GoRouter(
-      initialLocation: '/main',
+      initialLocation: initialLocation,
       routes: [
         GoRoute(
           path: '/main',
@@ -40,14 +40,21 @@ void main() {
           value: NotificationCenterProvider.instance,
         ),
         ChangeNotifierProvider(create: (_) => MatchProvider()),
-        ChangeNotifierProvider(create: (_) => ChatProvider()),
-        ChangeNotifierProvider(create: (_) => FriendProvider()),
+        ChangeNotifierProvider(
+          create: (_) => ChatProvider(
+            enableRealtime: false,
+            enableRemoteHydration: false,
+          ),
+        ),
+        ChangeNotifierProvider(
+          create: (_) => FriendProvider(enableRemoteHydration: false),
+        ),
         ChangeNotifierProvider(create: (_) => ProfileProvider()),
-        ChangeNotifierProvider(create: (_) => SettingsProvider()),
+        ChangeNotifierProvider(
+          create: (_) => SettingsProvider(enableRemoteHydration: false),
+        ),
       ],
-      child: MaterialApp.router(
-        routerConfig: router,
-      ),
+      child: MaterialApp.router(routerConfig: router),
     );
   }
 
@@ -57,12 +64,13 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
 
-    expect(find.text('瞬间'), findsOneWidget);
-    expect(find.text('开始匹配'), findsOneWidget);
-    expect(find.text('匹配'), findsOneWidget);
+    expect(find.byType(IndexedStack), findsOneWidget);
+    expect(find.byKey(const Key('match-guide-card')), findsOneWidget);
+    expect(find.byIcon(Icons.person_outline), findsOneWidget);
   });
 
-  testWidgets('main screen should keep content visible on compact size',
+  testWidgets(
+      'main screen should keep profile quick actions visible on compact size',
       (tester) async {
     tester.view.physicalSize = const Size(360, 640);
     tester.view.devicePixelRatio = 1.0;
@@ -71,14 +79,43 @@ void main() {
       tester.view.resetDevicePixelRatio();
     });
 
-    await tester.pumpWidget(buildApp());
+    await tester.pumpWidget(buildApp(initialLocation: '/main?tab=3'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
 
-    expect(find.text('开始匹配'), findsOneWidget);
-    await tester.tap(find.text('我的'));
+    expect(find.byKey(const Key('profile-quick-actions-card')), findsOneWidget);
+    expect(find.byKey(const Key('profile-readiness-chip')), findsOneWidget);
+    expect(
+        find.byKey(const Key('profile-completion-checklist')), findsOneWidget);
+    expect(find.byKey(const Key('profile-check-background')), findsOneWidget);
+    expect(find.byKey(const Key('profile-check-signature')), findsOneWidget);
+    expect(find.byKey(const Key('profile-check-status')), findsOneWidget);
+    expect(find.byKey(const Key('profile-quick-signature')), findsOneWidget);
+    expect(
+      find.byKey(const Key('profile-quick-background-mode')),
+      findsOneWidget,
+    );
+    expect(find.byKey(const Key('profile-quick-settings')), findsOneWidget);
+  });
+
+  testWidgets('profile tab should open premium-style editor sheets',
+      (tester) async {
+    await tester.pumpWidget(buildApp(initialLocation: '/main?tab=3'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
-    expect(find.text('背景显示模式'), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('profile-signature-trigger')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(find.byKey(const Key('profile-signature-sheet')), findsOneWidget);
+    expect(find.byKey(const Key('profile-editor-input')), findsOneWidget);
+    expect(find.byKey(const Key('profile-editor-save')), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('profile-editor-cancel')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(find.byKey(const Key('profile-signature-sheet')), findsNothing);
   });
 }

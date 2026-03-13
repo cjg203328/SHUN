@@ -18,6 +18,7 @@ import '../utils/intimacy_system.dart';
 import '../utils/image_helper.dart';
 import '../utils/permission_manager.dart';
 import '../services/screenshot_guard.dart';
+import '../widgets/chat_delivery_status.dart';
 
 class ChatScreen extends StatefulWidget {
   final String threadId;
@@ -28,7 +29,65 @@ class ChatScreen extends StatefulWidget {
   State<ChatScreen> createState() => _ChatScreenState();
 }
 
+class _ChatComposerLayoutSpec {
+  const _ChatComposerLayoutSpec({
+    required this.isCompact,
+    required this.outerPadding,
+    required this.innerPadding,
+    required this.controlSize,
+    required this.controlGap,
+    required this.fieldHorizontalPadding,
+    required this.fieldVerticalPadding,
+    required this.statusTopPadding,
+    required this.chipSpacing,
+    required this.chipRunSpacing,
+  });
+
+  final bool isCompact;
+  final EdgeInsets outerPadding;
+  final EdgeInsets innerPadding;
+  final double controlSize;
+  final double controlGap;
+  final double fieldHorizontalPadding;
+  final double fieldVerticalPadding;
+  final double statusTopPadding;
+  final double chipSpacing;
+  final double chipRunSpacing;
+
+  static _ChatComposerLayoutSpec fromSize(Size size) {
+    final isCompact = size.width <= 390 || size.height <= 720;
+    if (isCompact) {
+      return const _ChatComposerLayoutSpec(
+        isCompact: true,
+        outerPadding: EdgeInsets.fromLTRB(12, 6, 12, 8),
+        innerPadding: EdgeInsets.fromLTRB(9, 9, 9, 6),
+        controlSize: 44,
+        controlGap: 8,
+        fieldHorizontalPadding: 15,
+        fieldVerticalPadding: 12,
+        statusTopPadding: 7,
+        chipSpacing: 6,
+        chipRunSpacing: 6,
+      );
+    }
+
+    return const _ChatComposerLayoutSpec(
+      isCompact: false,
+      outerPadding: EdgeInsets.fromLTRB(14, 8, 14, 10),
+      innerPadding: EdgeInsets.fromLTRB(10, 10, 10, 6),
+      controlSize: 48,
+      controlGap: 10,
+      fieldHorizontalPadding: 18,
+      fieldVerticalPadding: 14,
+      statusTopPadding: 8,
+      chipSpacing: 8,
+      chipRunSpacing: 8,
+    );
+  }
+}
+
 class _ChatScreenState extends State<ChatScreen> {
+  static const int _messageMaxLength = 300;
   final TextEditingController _inputController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   ChatProvider? _chatProvider;
@@ -39,6 +98,8 @@ class _ChatScreenState extends State<ChatScreen> {
   int _intimacyAnimationToken = 0;
   bool _showIntimacyChange = false;
   int _intimacyChange = 0;
+  final Map<String, _ObservedOutgoingDeliveryState> _deliveryStateSnapshot =
+      <String, _ObservedOutgoingDeliveryState>{};
   bool _hasText = false; // 添加状态追踪
   bool _isBurnAfterReadEnabled = false;
   bool _scrollToBottomQueued = false;
@@ -50,6 +111,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
     // 监听输入框变化
     _inputController.addListener(() {
+      _chatProvider?.saveDraft(widget.threadId, _inputController.text);
       final hasText = _inputController.text.trim().isNotEmpty;
       if (hasText != _hasText) {
         setState(() {
@@ -71,8 +133,9 @@ class _ChatScreenState extends State<ChatScreen> {
     if (oldWidget.threadId == widget.threadId) {
       return;
     }
+    _persistDraftForThread(oldWidget.threadId);
     _chatProvider?.clearActiveThread(oldWidget.threadId);
-    _resetComposerStateForThreadChange();
+    _resetTransientComposerStateForThreadChange();
     _activateCurrentThread();
   }
 
@@ -83,6 +146,7 @@ class _ChatScreenState extends State<ChatScreen> {
       _chatProvider?.removeListener(_handleChatProviderChanged);
       _chatProviderListenerAttached = false;
     }
+    _persistDraftForThread(widget.threadId);
     _chatProvider?.clearActiveThread(widget.threadId);
     _inputController.dispose();
     _scrollController.dispose();
@@ -100,23 +164,151 @@ class _ChatScreenState extends State<ChatScreen> {
 
   void _activateCurrentThread() {
     _chatProvider?.setActiveThread(widget.threadId);
+    _hydrateDraftForThread(widget.threadId);
     final thread = _chatProvider?.getThread(widget.threadId);
     _lastIntimacyPoints = thread?.intimacyPoints ?? 0;
     _lastMessageCount = _chatProvider?.getMessages(widget.threadId).length ?? 0;
+    _captureDeliverySnapshot(widget.threadId);
     _scheduleCanonicalRouteSync();
   }
 
-  void _resetComposerStateForThreadChange() {
+  void _persistDraftForThread(String threadId) {
+    _chatProvider?.saveDraft(threadId, _inputController.text);
+  }
+
+  void _hydrateDraftForThread(String threadId) {
+    final draft = _chatProvider?.draftForThread(threadId) ?? '';
+    if (_inputController.text == draft) {
+      return;
+    }
+    _inputController.value = TextEditingValue(
+      text: draft,
+      selection: TextSelection.collapsed(offset: draft.length),
+    );
+  }
+
+  void _resetTransientComposerStateForThreadChange() {
     _intimacyHideTimer?.cancel();
     _intimacyAnimationToken += 1;
     _showIntimacyChange = false;
     _intimacyChange = 0;
+    _deliveryStateSnapshot.clear();
     _isBurnAfterReadEnabled = false;
-    _hasText = false;
     _scrollToBottomQueued = false;
-    if (_inputController.text.isNotEmpty) {
-      _inputController.value = const TextEditingValue();
+  }
+
+  void _captureDeliverySnapshot(String threadId) {
+    final messages = _chatProvider?.getMessages(threadId) ?? const <Message>[];
+    final outgoingMessages = messages.where((message) => message.isMe).toList();
+    _deliveryStateSnapshot
+      ..clear()
+      ..addEntries(outgoingMessages.asMap().entries.map(
+            (entry) => MapEntry(
+              _deliveryTrackingKey(entry.key, entry.value),
+              _ObservedOutgoingDeliveryState.fromMessage(entry.value),
+            ),
+          ));
+  }
+
+  String _deliveryTrackingKey(int index, Message message) {
+    return [
+      index,
+      message.type.name,
+      message.content,
+      message.isBurnAfterReading,
+    ].join('|');
+  }
+
+  _OutgoingDeliveryFeedback? _resolveOutgoingDeliveryFeedback(
+    List<Message> messages,
+  ) {
+    final feedbacks = <_OutgoingDeliveryFeedback>[];
+    final nextSnapshot = <String, _ObservedOutgoingDeliveryState>{};
+    final outgoingMessages = messages.where((item) => item.isMe).toList();
+
+    for (final entry in outgoingMessages.asMap().entries) {
+      final message = entry.value;
+      final trackingKey = _deliveryTrackingKey(entry.key, message);
+      final previous = _deliveryStateSnapshot[trackingKey];
+      var isRetryTransition = previous?.isRetryTransition ?? false;
+      if (previous?.status == MessageStatus.failed &&
+          message.status == MessageStatus.sending) {
+        isRetryTransition = true;
+      }
+
+      nextSnapshot[trackingKey] = _ObservedOutgoingDeliveryState.fromMessage(
+        message,
+        isRetryTransition: isRetryTransition,
+      );
+      if (previous == null || message.isBurnAfterReading) {
+        continue;
+      }
+
+      if (previous.status == MessageStatus.sending &&
+          message.status == MessageStatus.failed &&
+          previous.isRetryTransition) {
+        feedbacks.add(
+          _OutgoingDeliveryFeedback(
+            message: '重试未成功，请稍后再试',
+            isError: true,
+            priority: 4,
+            timestamp: message.timestamp,
+          ),
+        );
+        continue;
+      }
+
+      if (previous.status == MessageStatus.sending &&
+          message.status == MessageStatus.sent) {
+        feedbacks.add(
+          _OutgoingDeliveryFeedback(
+            message: previous.isRetryTransition ? '重试成功，已送达' : '消息已送达',
+            priority: previous.isRetryTransition ? 3 : 2,
+            timestamp: message.timestamp,
+          ),
+        );
+      }
+
+      if (!previous.isRead &&
+          message.isRead &&
+          message.status == MessageStatus.sent) {
+        feedbacks.add(
+          _OutgoingDeliveryFeedback(
+            message: previous.isRetryTransition ? '重试成功，对方已读' : '对方刚刚已读',
+            priority: previous.isRetryTransition ? 5 : 3,
+            timestamp: message.timestamp,
+          ),
+        );
+      }
     }
+
+    _deliveryStateSnapshot
+      ..clear()
+      ..addAll(nextSnapshot);
+
+    if (feedbacks.isEmpty) {
+      return null;
+    }
+
+    feedbacks.sort((left, right) {
+      final priorityCompare = right.priority.compareTo(left.priority);
+      if (priorityCompare != 0) {
+        return priorityCompare;
+      }
+      return right.timestamp.compareTo(left.timestamp);
+    });
+    return feedbacks.first;
+  }
+
+  void _showOutgoingDeliveryFeedback(_OutgoingDeliveryFeedback feedback) {
+    if (!mounted) {
+      return;
+    }
+    AppToast.show(
+      context,
+      feedback.message,
+      isError: feedback.isError,
+    );
   }
 
   void _scrollToBottom() {
@@ -169,6 +361,9 @@ class _ChatScreenState extends State<ChatScreen> {
     if (!mounted) return;
 
     final thread = _chatProvider?.getThread(widget.threadId);
+    final messages =
+        _chatProvider?.getMessages(widget.threadId) ?? const <Message>[];
+    final deliveryFeedback = _resolveOutgoingDeliveryFeedback(messages);
     _scheduleCanonicalRouteSync();
     if (thread != null && thread.intimacyPoints != _lastIntimacyPoints) {
       final change = thread.intimacyPoints - _lastIntimacyPoints;
@@ -192,8 +387,7 @@ class _ChatScreenState extends State<ChatScreen> {
       }
     }
 
-    final messageCount =
-        _chatProvider?.getMessages(widget.threadId).length ?? 0;
+    final messageCount = messages.length;
     if (messageCount != _lastMessageCount) {
       _lastMessageCount = messageCount;
       // 只要用户仍停留在当前会话页面，新增消息立刻按已读处理
@@ -201,6 +395,9 @@ class _ChatScreenState extends State<ChatScreen> {
         _chatProvider?.markAsRead(widget.threadId);
       }
       _scheduleScrollToBottom();
+    }
+    if (deliveryFeedback != null) {
+      _showOutgoingDeliveryFeedback(deliveryFeedback);
     }
   }
 
@@ -217,6 +414,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
     if (queued) {
       _inputController.clear();
+      context.read<ChatProvider>().clearDraft(widget.threadId);
       setState(() {
         _hasText = false;
       });
@@ -357,6 +555,14 @@ class _ChatScreenState extends State<ChatScreen> {
     String text;
     IconData icon;
     Color accent;
+    final inputLength = _inputController.text.characters.length;
+    final hasDraft = inputLength > 0;
+    final remaining = _messageMaxLength - inputLength;
+    final counterAccent = remaining <= 20
+        ? AppColors.warning
+        : remaining <= 60
+            ? AppColors.textSecondary
+            : AppColors.textTertiary;
 
     if (!canSend) {
       text = '当前无法继续发送消息，等待对方确认后再继续。';
@@ -374,6 +580,12 @@ class _ChatScreenState extends State<ChatScreen> {
       accent = AppColors.textTertiary;
     }
 
+    if (canSend && hasDraft) {
+      text = canSendImage ? '草稿已保存，发送后会自动清空。' : '草稿已保存，继续互动后可解锁图片。';
+      icon = Icons.edit_note_outlined;
+      accent = canSendImage ? AppColors.brandBlue : AppColors.textTertiary;
+    }
+
     return Padding(
       padding: const EdgeInsets.only(top: 8),
       child: Row(
@@ -389,6 +601,105 @@ class _ChatScreenState extends State<ChatScreen> {
                 color: accent.withValues(alpha: 0.92),
                 height: 1.4,
               ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          AnimatedContainer(
+            duration: UiTokens.motionFast,
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: counterAccent.withValues(alpha: 0.08),
+              borderRadius: BorderRadius.circular(999),
+              border: Border.all(
+                color: counterAccent.withValues(alpha: 0.18),
+              ),
+            ),
+            child: Text(
+              '$inputLength/$_messageMaxLength',
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w400,
+                color: counterAccent,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildComposerCapabilityChips({
+    required ChatThread? thread,
+    required bool canSend,
+    required bool canSendImage,
+    required _ChatComposerLayoutSpec layout,
+  }) {
+    final chips = <Widget>[
+      _buildComposerCapabilityChip(
+        icon: canSend ? Icons.chat_bubble_outline_rounded : Icons.lock_outline,
+        label: canSend ? '文字可发送' : '等待确认后继续发送',
+        color: canSend ? AppColors.textSecondary : AppColors.error,
+      ),
+      _buildComposerCapabilityChip(
+        icon: canSendImage
+            ? Icons.image_outlined
+            : Icons.image_not_supported_outlined,
+        label: canSendImage
+            ? '图片已解锁'
+            : thread == null
+                ? '图片暂不可用'
+                : '图片待解锁',
+        color: canSendImage ? AppColors.brandBlue : AppColors.textTertiary,
+      ),
+    ];
+
+    if (_isBurnAfterReadEnabled) {
+      chips.add(
+        _buildComposerCapabilityChip(
+          icon: Icons.local_fire_department,
+          label: '本张将作为闪图发送',
+          color: AppColors.warning,
+        ),
+      );
+    }
+
+    return Padding(
+      padding: EdgeInsets.only(bottom: layout.statusTopPadding),
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: Wrap(
+          key: const Key('chat-composer-capability-row'),
+          spacing: layout.chipSpacing,
+          runSpacing: layout.chipRunSpacing,
+          children: chips,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildComposerCapabilityChip({
+    required IconData icon,
+    required String label,
+    required Color color,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: color.withValues(alpha: 0.18)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 12, color: color.withValues(alpha: 0.92)),
+          const SizedBox(width: 5),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w400,
+              color: color.withValues(alpha: 0.94),
             ),
           ),
         ],
@@ -747,9 +1058,11 @@ class _ChatScreenState extends State<ChatScreen> {
               final canSend = thread?.canSendMessage ?? true;
               final canSendImage =
                   thread != null && FeaturePolicy.canSendImage(thread);
+              final composerLayout =
+                  _ChatComposerLayoutSpec.fromSize(MediaQuery.of(context).size);
 
               return Container(
-                padding: const EdgeInsets.fromLTRB(14, 8, 14, 10),
+                padding: composerLayout.outerPadding,
                 decoration: BoxDecoration(
                   color: AppColors.pureBlack,
                   border: Border(top: BorderSide(color: AppColors.white05)),
@@ -757,7 +1070,8 @@ class _ChatScreenState extends State<ChatScreen> {
                 child: SafeArea(
                   top: false,
                   child: Container(
-                    padding: const EdgeInsets.fromLTRB(10, 10, 10, 6),
+                    key: const Key('chat-composer-shell'),
+                    padding: composerLayout.innerPadding,
                     decoration: BoxDecoration(
                       color: AppColors.cardBg.withValues(alpha: 0.95),
                       borderRadius: BorderRadius.circular(UiTokens.radiusLg),
@@ -767,6 +1081,12 @@ class _ChatScreenState extends State<ChatScreen> {
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
+                        _buildComposerCapabilityChips(
+                          thread: thread,
+                          canSend: canSend,
+                          canSendImage: canSendImage,
+                          layout: composerLayout,
+                        ),
                         Row(
                           crossAxisAlignment: CrossAxisAlignment.end,
                           children: [
@@ -775,11 +1095,12 @@ class _ChatScreenState extends State<ChatScreen> {
                               canSendImage: canSendImage,
                               thread: thread,
                             ),
-                            const SizedBox(width: 10),
+                            SizedBox(width: composerLayout.controlGap),
                             Expanded(
                               child: TextField(
+                                key: const Key('chat-composer-input'),
                                 controller: _inputController,
-                                maxLength: 300,
+                                maxLength: _messageMaxLength,
                                 maxLines: null,
                                 textInputAction: TextInputAction.send,
                                 enabled: canSend,
@@ -788,17 +1109,19 @@ class _ChatScreenState extends State<ChatScreen> {
                                 decoration: InputDecoration(
                                   hintText: canSend ? '输入你想说的话...' : '当前无法发送消息',
                                   counterText: '',
-                                  contentPadding: const EdgeInsets.symmetric(
-                                    horizontal: 18,
-                                    vertical: 14,
+                                  contentPadding: EdgeInsets.symmetric(
+                                    horizontal:
+                                        composerLayout.fieldHorizontalPadding,
+                                    vertical:
+                                        composerLayout.fieldVerticalPadding,
                                   ),
                                 ),
                               ),
                             ),
-                            const SizedBox(width: 10),
+                            SizedBox(width: composerLayout.controlGap),
                             Container(
-                              width: 48,
-                              height: 48,
+                              width: composerLayout.controlSize,
+                              height: composerLayout.controlSize,
                               decoration: BoxDecoration(
                                 color: _hasText && canSend
                                     ? AppColors.textPrimary
@@ -808,6 +1131,7 @@ class _ChatScreenState extends State<ChatScreen> {
                                 border: Border.all(color: AppColors.white08),
                               ),
                               child: IconButton(
+                                key: const Key('chat-composer-send-button'),
                                 icon: Icon(
                                   Icons.arrow_upward,
                                   color: _hasText && canSend
@@ -924,7 +1248,9 @@ class _ChatScreenState extends State<ChatScreen> {
     }
 
     final source = await ImageHelper.showImageSourceSelector(context);
-    if (!mounted || widget.threadId != startedThreadId || source == null) return;
+    if (!mounted || widget.threadId != startedThreadId || source == null) {
+      return;
+    }
 
     bool hasPermission = false;
     if (source == ImageSource.camera) {
@@ -1935,6 +2261,43 @@ class _VoiceCallSheetState extends State<_VoiceCallSheet> {
   }
 }
 
+class _ObservedOutgoingDeliveryState {
+  const _ObservedOutgoingDeliveryState({
+    required this.status,
+    required this.isRead,
+    this.isRetryTransition = false,
+  });
+
+  factory _ObservedOutgoingDeliveryState.fromMessage(
+    Message message, {
+    bool isRetryTransition = false,
+  }) {
+    return _ObservedOutgoingDeliveryState(
+      status: message.status,
+      isRead: message.isRead,
+      isRetryTransition: isRetryTransition,
+    );
+  }
+
+  final MessageStatus status;
+  final bool isRead;
+  final bool isRetryTransition;
+}
+
+class _OutgoingDeliveryFeedback {
+  const _OutgoingDeliveryFeedback({
+    required this.message,
+    required this.priority,
+    required this.timestamp,
+    this.isError = false,
+  });
+
+  final String message;
+  final bool isError;
+  final int priority;
+  final DateTime timestamp;
+}
+
 class _MessageBubble extends StatefulWidget {
   final Message message;
   final String threadId;
@@ -1952,6 +2315,7 @@ class _MessageBubbleState extends State<_MessageBubble> {
   OverlayEntry? _burnOverlayEntry;
   bool _burnPreviewActive = false;
   bool _consumingBurn = false;
+  bool get _showLegacyDeliveryFallback => false;
 
   Message get message => widget.message;
 
@@ -1971,6 +2335,7 @@ class _MessageBubbleState extends State<_MessageBubble> {
         .canRecallMessage(widget.threadId, message.id);
     final isImage = message.type == MessageType.image;
     final isBurnImage = isImage && message.isBurnAfterReading;
+    final deliverySpec = resolveChatDeliveryStatus(message);
 
     return Align(
       alignment: message.isMe ? Alignment.centerRight : Alignment.centerLeft,
@@ -1980,7 +2345,9 @@ class _MessageBubbleState extends State<_MessageBubble> {
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
           // 发送失败的感叹号（仅自己的消息）
-          if (message.isMe && message.status == MessageStatus.failed) ...[
+          if (_showLegacyDeliveryFallback &&
+              message.isMe &&
+              message.status == MessageStatus.failed) ...[
             GestureDetector(
               onTap: () async {
                 if (isImage) {
@@ -2175,7 +2542,15 @@ class _MessageBubbleState extends State<_MessageBubble> {
                             : AppColors.textPrimary,
                       ),
                     ),
-                  if (message.isMe &&
+                  if (message.isMe && (deliverySpec?.hasCard ?? false)) ...[
+                    SizedBox(height: isImage ? 8 : 6),
+                    _buildInlineDeliveryStatusCard(
+                      context,
+                      spec: deliverySpec!,
+                    ),
+                  ],
+                  if (_showLegacyDeliveryFallback &&
+                      message.isMe &&
                       message.status == MessageStatus.failed) ...[
                     SizedBox(height: isImage ? 8 : 6),
                     Text(
@@ -2186,7 +2561,8 @@ class _MessageBubbleState extends State<_MessageBubble> {
                         color: AppColors.error.withValues(alpha: 0.88),
                       ),
                     ),
-                  ] else if (message.isMe &&
+                  ] else if (_showLegacyDeliveryFallback &&
+                      message.isMe &&
                       message.status == MessageStatus.sent &&
                       !message.isBurnAfterReading) ...[
                     SizedBox(height: isImage ? 8 : 6),
@@ -2205,19 +2581,248 @@ class _MessageBubbleState extends State<_MessageBubble> {
               ),
             ),
           ),
-          if (message.isMe && message.status == MessageStatus.sending) ...[
-            Container(
-              margin: const EdgeInsets.only(left: 8, bottom: 10),
-              width: 14,
-              height: 14,
-              child: CircularProgressIndicator(
-                strokeWidth: 1.8,
-                valueColor: AlwaysStoppedAnimation<Color>(
-                  AppColors.textTertiary,
-                ),
+        ],
+      ),
+    );
+  }
+
+  // ignore: unused_element
+  Widget _buildMessageStateLabel({required bool isImage}) {
+    final isFailed = message.status == MessageStatus.failed;
+    final statusColor = isFailed ? AppColors.error : AppColors.textTertiary;
+    final statusText = isFailed ? '发送失败' : '发送中';
+    final detailText =
+        isFailed ? (isImage ? '原图失效后需重新选择图片' : '点击左侧按钮可立即重试') : '正在投递给对方';
+
+    return Row(
+      children: [
+        if (isFailed)
+          Icon(
+            Icons.error_outline,
+            size: 12,
+            color: statusColor.withValues(alpha: 0.92),
+          )
+        else
+          SizedBox(
+            width: 12,
+            height: 12,
+            child: CircularProgressIndicator(
+              strokeWidth: 1.7,
+              valueColor: AlwaysStoppedAnimation<Color>(
+                statusColor.withValues(alpha: 0.86),
               ),
             ),
-          ],
+          ),
+        const SizedBox(width: 6),
+        Text(
+          statusText,
+          style: TextStyle(
+            fontSize: 10,
+            fontWeight: FontWeight.w500,
+            color: statusColor.withValues(alpha: 0.92),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            detailText,
+            style: TextStyle(
+              fontSize: 10,
+              fontWeight: FontWeight.w300,
+              color: statusColor.withValues(alpha: 0.82),
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildInlineDeliveryStatusCard(
+    BuildContext context, {
+    required ChatDeliveryStatusSpec spec,
+  }) {
+    return ChatDeliveryStatusCard(
+      spec: spec,
+      onActionTap: spec.actionType == null
+          ? null
+          : () => _handleInlineDeliveryAction(context, spec.actionType!),
+    );
+  }
+
+  // ignore: unused_element
+  _MessageDeliveryCardDescriptor _buildInlineDeliveryDescriptor({
+    required bool isImage,
+  }) {
+    if (message.status == MessageStatus.sending) {
+      return const _MessageDeliveryCardDescriptor(
+        title: '发送中',
+        detail: '正在投递给对方',
+        color: AppColors.brandBlue,
+        icon: Icons.schedule_rounded,
+      );
+    }
+
+    if (message.status == MessageStatus.failed) {
+      final needsReselect =
+          isImage && message.imageQuality == ImageQuality.original;
+      return _MessageDeliveryCardDescriptor(
+        title: needsReselect ? '重选图片' : '发送失败',
+        detail: needsReselect
+            ? '原图失效，请重新选择图片'
+            : (isImage ? '点击重试后重新投递图片' : '点击重试后继续发送'),
+        color: AppColors.error,
+        icon:
+            needsReselect ? Icons.photo_library_outlined : Icons.error_outline,
+        actionLabel: needsReselect ? '查看说明' : '立即重试',
+        actionType: needsReselect
+            ? _MessageDeliveryAction.showGuide
+            : _MessageDeliveryAction.retry,
+      );
+    }
+
+    final isRead = message.isRead;
+    return _MessageDeliveryCardDescriptor(
+      title: isRead ? '已读' : '已送达',
+      detail: isRead ? '对方已经查看这条消息' : '消息已到达对方设备',
+      color: isRead
+          ? AppColors.textTertiary.withValues(alpha: 0.88)
+          : AppColors.textSecondary.withValues(alpha: 0.9),
+      icon: isRead ? Icons.done_all_rounded : Icons.done_rounded,
+    );
+  }
+
+  Future<void> _handleInlineDeliveryAction(
+    BuildContext context,
+    ChatDeliveryAction action,
+  ) async {
+    final isImage = message.type == MessageType.image;
+    final chatProvider = context.read<ChatProvider>();
+    switch (action) {
+      case ChatDeliveryAction.retry:
+        await HapticFeedback.selectionClick();
+        final retried =
+            await chatProvider.retryFailedMessage(widget.threadId, message.id);
+        if (!context.mounted || retried) {
+          return;
+        }
+        AppFeedback.showError(
+          context,
+          isImage ? AppErrorCode.invalidInput : AppErrorCode.sendFailed,
+          detail: isImage ? '图片发送失败，原图失效后请重新选择图片再发送。' : '消息暂时无法重试，请稍后再发一条。',
+        );
+      case ChatDeliveryAction.showGuide:
+        _showImageReselectGuide(context);
+    }
+  }
+
+  void _showImageReselectGuide(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      sheetAnimationStyle: AppDialog.sheetAnimationStyle,
+      builder: (sheetContext) => Container(
+        decoration: AppDialog.sheetDecoration(),
+        padding: const EdgeInsets.fromLTRB(20, 20, 20, 24),
+        child: SafeArea(
+          top: false,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Text(
+                    '图片需要重新选择',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w400,
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
+                  const Spacer(),
+                  IconButton(
+                    onPressed: () => Navigator.pop(sheetContext),
+                    icon: const Icon(
+                      Icons.close,
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              Text(
+                '这次发送依赖的原图已经不可用，系统无法直接替你重试。',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w300,
+                  color: AppColors.textTertiary.withValues(alpha: 0.92),
+                  height: 1.45,
+                ),
+              ),
+              const SizedBox(height: 16),
+              _buildGuideTip(
+                icon: Icons.photo_library_outlined,
+                title: '回到输入区重新选图',
+                detail: '重新选择图片后再发送，成功率最高。',
+              ),
+              const SizedBox(height: 12),
+              _buildGuideTip(
+                icon: Icons.compress_outlined,
+                title: '弱网场景优先压缩图',
+                detail: '压缩图上传更稳，也更容易快速送达。',
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildGuideTip({
+    required IconData icon,
+    required String title,
+    required String detail,
+  }) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppColors.white05,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.white08),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 18, color: AppColors.textSecondary),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w400,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  detail,
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w300,
+                    color: AppColors.textTertiary.withValues(alpha: 0.9),
+                    height: 1.35,
+                  ),
+                ),
+              ],
+            ),
+          ),
         ],
       ),
     );
@@ -2669,6 +3274,29 @@ class _BurnHoldPreviewOverlayState extends State<_BurnHoldPreviewOverlay> {
       ),
     );
   }
+}
+
+enum _MessageDeliveryAction {
+  retry,
+  showGuide,
+}
+
+class _MessageDeliveryCardDescriptor {
+  const _MessageDeliveryCardDescriptor({
+    required this.title,
+    required this.detail,
+    required this.color,
+    required this.icon,
+    this.actionLabel,
+    this.actionType,
+  });
+
+  final String title;
+  final String detail;
+  final Color color;
+  final IconData icon;
+  final String? actionLabel;
+  final _MessageDeliveryAction? actionType;
 }
 
 class _ImagePreviewScreen extends StatefulWidget {

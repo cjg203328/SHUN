@@ -1,4 +1,5 @@
 import '../repositories/app_data_repository.dart';
+import '../core/network/api_exception.dart';
 import '../models/models.dart';
 import 'api_client.dart';
 import 'storage_service.dart';
@@ -19,6 +20,30 @@ class MatchResult {
     required this.createdAt,
     required this.expiresAt,
   });
+}
+
+class MatchStartAttempt {
+  const MatchStartAttempt._({
+    this.result,
+    this.errorCode,
+    this.errorMessage,
+  });
+
+  const MatchStartAttempt.success(MatchResult result) : this._(result: result);
+
+  const MatchStartAttempt.failure({
+    required String errorCode,
+    required String errorMessage,
+  }) : this._(
+          errorCode: errorCode,
+          errorMessage: errorMessage,
+        );
+
+  final MatchResult? result;
+  final String? errorCode;
+  final String? errorMessage;
+
+  bool get isSuccess => result != null;
 }
 
 class MatchService {
@@ -62,8 +87,7 @@ class MatchService {
         now.year == lastReset.year &&
         now.month == lastReset.month &&
         now.day == lastReset.day;
-    final shouldReset =
-        lastReset == null || (!hasSameDate && now.hour >= 9);
+    final shouldReset = lastReset == null || (!hasSameDate && now.hour >= 9);
     if (!shouldReset) return currentCount;
 
     await _repository.saveMatchCount(dailyQuota);
@@ -75,8 +99,15 @@ class MatchService {
     await _repository.saveMatchCount(count);
   }
 
-  Future<MatchResult?> startMatch({required List<String> excludedUserIds}) async {
-    if (!_hasSession) return null;
+  Future<MatchStartAttempt> startMatch({
+    required List<String> excludedUserIds,
+  }) async {
+    if (!_hasSession) {
+      return const MatchStartAttempt.failure(
+        errorCode: 'MATCH_SESSION_MISSING',
+        errorMessage: '登录状态已失效，请重新进入后再试',
+      );
+    }
 
     try {
       final data = await _apiClient.post<Map<String, dynamic>>(
@@ -88,9 +119,15 @@ class MatchService {
 
       final userJson = (data['user'] as Map?)?.cast<String, dynamic>();
       final quotaJson = (data['quota'] as Map?)?.cast<String, dynamic>();
-      if (userJson == null) return null;
+      if (userJson == null) {
+        return const MatchStartAttempt.failure(
+          errorCode: 'MATCH_RESPONSE_INVALID',
+          errorMessage: '匹配服务返回了不完整的数据，请稍后再试',
+        );
+      }
 
-      final remaining = (quotaJson?['remaining'] as num?)?.toInt() ?? dailyQuota;
+      final remaining =
+          (quotaJson?['remaining'] as num?)?.toInt() ?? dailyQuota;
       await _repository.saveMatchCount(remaining);
 
       final resetDate = DateTime.tryParse(
@@ -100,16 +137,28 @@ class MatchService {
         await _repository.saveLastResetDate(resetDate);
       }
 
-      return MatchResult(
-        matchId: data['matchId']?.toString() ?? '',
-        threadId: data['threadId']?.toString() ?? '',
-        user: _mapUser(userJson),
-        remaining: remaining,
-        createdAt: DateTime.tryParse(data['createdAt']?.toString() ?? '') ?? DateTime.now(),
-        expiresAt: DateTime.tryParse(data['expiresAt']?.toString() ?? '') ?? DateTime.now().add(const Duration(hours: 24)),
+      return MatchStartAttempt.success(
+        MatchResult(
+          matchId: data['matchId']?.toString() ?? '',
+          threadId: data['threadId']?.toString() ?? '',
+          user: _mapUser(userJson),
+          remaining: remaining,
+          createdAt: DateTime.tryParse(data['createdAt']?.toString() ?? '') ??
+              DateTime.now(),
+          expiresAt: DateTime.tryParse(data['expiresAt']?.toString() ?? '') ??
+              DateTime.now().add(const Duration(hours: 24)),
+        ),
+      );
+    } on ApiException catch (error) {
+      return MatchStartAttempt.failure(
+        errorCode: error.code,
+        errorMessage: error.userMessage,
       );
     } catch (_) {
-      return null;
+      return const MatchStartAttempt.failure(
+        errorCode: 'MATCH_START_FAILED',
+        errorMessage: '匹配暂时不可用，请稍后重试',
+      );
     }
   }
 

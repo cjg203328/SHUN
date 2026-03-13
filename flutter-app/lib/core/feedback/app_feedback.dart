@@ -39,7 +39,7 @@ class AppFeedback {
       case AppErrorCode.notSupported:
         return detail ?? '当前版本暂不支持该操作';
       case AppErrorCode.unknown:
-        return '操作失败，请稍后重试';
+        return detail ?? '操作失败，请稍后重试';
     }
   }
 

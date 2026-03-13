@@ -1,5 +1,6 @@
 import { Inject, Injectable, OnModuleInit } from '@nestjs/common';
 import { randomUUID } from 'crypto';
+import { allowDemoMatchPool } from '../../../common/app-env';
 import { BusinessError, ErrorCode } from '../../../common/errors/error-codes';
 import { TokenUser } from '../../auth/domain/token-user';
 import { FriendsService } from '../../friends/application/friends.service';
@@ -108,14 +109,23 @@ export class MatchService implements OnModuleInit {
       );
     }
 
-    const blockedAwareCandidates = this.candidates.filter((candidate) => {
+    const activeCandidates = this.activeCandidates();
+    if (activeCandidates.length === 0) {
+      throw new BusinessError(
+        ErrorCode.MatchUnavailable,
+        503,
+        'Match service has no available candidates in current environment',
+      );
+    }
+
+    const blockedAwareCandidates = activeCandidates.filter((candidate) => {
       if (excludedUserIds.includes(candidate.userId)) return false;
       if (candidate.userId === actor.userId) return false;
       return !this.friendsService.isBlockedBetween(actor.userId, candidate.userId);
     });
 
     const pool =
-      blockedAwareCandidates.length > 0 ? blockedAwareCandidates : this.candidates;
+      blockedAwareCandidates.length > 0 ? blockedAwareCandidates : activeCandidates;
     const selected = pool[Math.floor(Date.now() % pool.length)];
 
     quota.remaining -= 1;
@@ -173,6 +183,9 @@ export class MatchService implements OnModuleInit {
   }
 
   private async ensureDemoCandidatesRegistered(): Promise<void> {
+    if (!allowDemoMatchPool()) {
+      return;
+    }
     const now = new Date().toISOString();
     for (const candidate of this.candidates) {
       const existing = await this.userStore.getUserById(candidate.userId);
@@ -203,6 +216,10 @@ export class MatchService implements OnModuleInit {
         updatedAt: now,
       });
     }
+  }
+
+  private activeCandidates(): CandidateUser[] {
+    return allowDemoMatchPool() ? this.candidates : [];
   }
 
   private async persistState(): Promise<void> {

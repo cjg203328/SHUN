@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 import '../providers/notification_center_provider.dart';
@@ -78,8 +79,9 @@ class PushNotificationService {
 
   Future<void> syncSettings({required bool notificationsEnabled}) async {
     final permissionGranted = await _readPermissionGranted();
-    final deviceToken =
-        notificationsEnabled && permissionGranted ? _buildStubDeviceToken() : null;
+    final deviceToken = notificationsEnabled && permissionGranted
+        ? _buildStubDeviceToken()
+        : null;
 
     _state = _state.copyWith(
       notificationsEnabled: notificationsEnabled,
@@ -150,5 +152,10 @@ class PushNotificationService {
 
   Future<void> _persist() async {
     await StorageService.savePushRuntimeState(jsonEncode(_state.toJson()));
+  }
+
+  @visibleForTesting
+  void debugSetState(PushRuntimeState state) {
+    _state = state;
   }
 }
