@@ -5,21 +5,32 @@ services:
     image: postgres:15
     container_name: sunliao-postgres
     environment:
-      POSTGRES_DB: sunliao
-      POSTGRES_USER: sunliao
-      POSTGRES_PASSWORD: sunliao_dev
+      POSTGRES_DB: ${DB_NAME:-sunliao}
+      POSTGRES_USER: ${DB_USER:-sunliao}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-sunliao_dev}
     ports:
-      - "5432:5432"
+      - "${DB_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ../db/schema_v1.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-sunliao} -d ${DB_NAME:-sunliao}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   redis:
     image: redis:7
     container_name: sunliao-redis
     ports:
-      - "6379:6379"
+      - "${REDIS_PORT:-6379}:6379"
     volumes:
       - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
 volumes:
   postgres_data:

@@ -56,10 +56,12 @@ extension ChatProviderRealtime on ChatProvider {
     }
   }
 
-  Future<bool> _joinThreadRealtime(String threadId) {
+  Future<ChatSocketAckResult> _joinThreadRealtimeResult(String threadId) {
     if (_chatSocketService.isConnected &&
         _joinedRealtimeThreads.contains(threadId)) {
-      return Future<bool>.value(true);
+      return Future<ChatSocketAckResult>.value(
+        const ChatSocketAckResult.success(),
+      );
     }
 
     final ongoing = _joiningRealtimeThreads[threadId];
@@ -67,11 +69,11 @@ extension ChatProviderRealtime on ChatProvider {
       return ongoing;
     }
 
-    final future = _chatSocketService.joinThread(threadId).then((joined) {
-      if (joined) {
+    final future = _chatSocketService.joinThreadResult(threadId).then((result) {
+      if (result.isSuccess) {
         _joinedRealtimeThreads.add(threadId);
       }
-      return joined;
+      return result;
     });
     _joiningRealtimeThreads[threadId] = future;
     return future.whenComplete(() {
@@ -79,6 +81,11 @@ extension ChatProviderRealtime on ChatProvider {
         _joiningRealtimeThreads.remove(threadId);
       }
     });
+  }
+
+  Future<bool> _joinThreadRealtime(String threadId) {
+    return _joinThreadRealtimeResult(threadId)
+        .then((result) => result.isSuccess);
   }
 
   void _handleMessageAck(MessageAckEvent event) {
@@ -96,6 +103,7 @@ extension ChatProviderRealtime on ChatProvider {
       final previous = messages[index];
       messages[index] = _mergeRemoteMessage(previous, event.message);
       if (previous.status != MessageStatus.sent) {
+        _clearDeliveryFailureState(event.threadId, previous.id);
         _addIntimacy(event.threadId, previous.content, true);
         _recordDeliverySuccess(previous.type, previous.id);
       }
@@ -174,6 +182,7 @@ extension ChatProviderRealtime on ChatProvider {
       final previous = messages[localIndex];
       messages[localIndex] = _mergeRemoteMessage(previous, remoteMessage);
       if (previous.status != MessageStatus.sent) {
+        _clearDeliveryFailureState(threadId, previous.id);
         _addIntimacy(threadId, previous.content, true);
         _recordDeliverySuccess(previous.type, previous.id);
       }

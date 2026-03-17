@@ -1,10 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:sunliao/models/models.dart';
+import 'package:sunliao/providers/auth_provider.dart';
 import 'package:sunliao/providers/chat_provider.dart';
 import 'package:sunliao/providers/friend_provider.dart';
+import 'package:sunliao/providers/match_provider.dart';
 import 'package:sunliao/providers/notification_center_provider.dart';
+import 'package:sunliao/providers/profile_provider.dart';
+import 'package:sunliao/providers/settings_provider.dart';
+import 'package:sunliao/screens/chat_screen.dart';
+import 'package:sunliao/screens/main_screen.dart';
 import 'package:sunliao/widgets/messages_tab.dart';
 
 import '../helpers/test_bootstrap.dart';
@@ -48,6 +55,31 @@ Widget _buildHost({
   );
 }
 
+Widget _buildShellHost({
+  required GoRouter router,
+  required AuthProvider authProvider,
+  required ChatProvider chatProvider,
+  required FriendProvider friendProvider,
+  required MatchProvider matchProvider,
+  required ProfileProvider profileProvider,
+  required SettingsProvider settingsProvider,
+}) {
+  return MultiProvider(
+    providers: [
+      ChangeNotifierProvider<AuthProvider>.value(value: authProvider),
+      ChangeNotifierProvider<NotificationCenterProvider>.value(
+        value: NotificationCenterProvider.instance,
+      ),
+      ChangeNotifierProvider<MatchProvider>.value(value: matchProvider),
+      ChangeNotifierProvider<ChatProvider>.value(value: chatProvider),
+      ChangeNotifierProvider<FriendProvider>.value(value: friendProvider),
+      ChangeNotifierProvider<ProfileProvider>.value(value: profileProvider),
+      ChangeNotifierProvider<SettingsProvider>.value(value: settingsProvider),
+    ],
+    child: MaterialApp.router(routerConfig: router),
+  );
+}
+
 Future<void> _disposeHost(
   WidgetTester tester,
   ChatProvider chatProvider,
@@ -56,6 +88,25 @@ Future<void> _disposeHost(
   await tester.pumpWidget(const SizedBox.shrink());
   chatProvider.dispose();
   friendProvider.dispose();
+  await tester.pump(const Duration(milliseconds: 250));
+}
+
+Future<void> _disposeShellHost(
+  WidgetTester tester, {
+  required AuthProvider authProvider,
+  required ChatProvider chatProvider,
+  required FriendProvider friendProvider,
+  required MatchProvider matchProvider,
+  required ProfileProvider profileProvider,
+  required SettingsProvider settingsProvider,
+}) async {
+  await tester.pumpWidget(const SizedBox.shrink());
+  authProvider.dispose();
+  chatProvider.dispose();
+  friendProvider.dispose();
+  matchProvider.dispose();
+  profileProvider.dispose();
+  settingsProvider.dispose();
   await tester.pump(const Duration(milliseconds: 250));
 }
 
@@ -164,7 +215,8 @@ void main() {
     await tester.pump();
 
     expect(find.text('原图失效，请重选图片'), findsOneWidget);
-    expect(find.text('重选图片'), findsOneWidget);
+    expect(find.text('重选图片'), findsNWidgets(2));
+    expect(find.byIcon(Icons.photo_library_outlined), findsOneWidget);
 
     await _disposeHost(tester, chatProvider, friendProvider);
   });
@@ -227,7 +279,7 @@ void main() {
       otherUser: _buildUser('u_messages_priority').copyWith(isOnline: true),
       unreadCount: 3,
       createdAt: DateTime.now().subtract(const Duration(hours: 22)),
-      expiresAt: DateTime.now().add(const Duration(hours: 2, minutes: 15)),
+      expiresAt: DateTime.now().add(const Duration(hours: 1, minutes: 55)),
       intimacyPoints: 35,
     );
     chatProvider.addThread(thread);
@@ -249,8 +301,14 @@ void main() {
     );
     await tester.pump();
 
-    expect(find.text('鏈夋柊娑堟伅'), findsOneWidget);
-    expect(find.text('鍗冲皢鍒版湡'), findsOneWidget);
+    expect(
+      find.byKey(const Key('messages-thread-priority-u_messages_priority')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const Key('messages-thread-expiring-u_messages_priority')),
+      findsOneWidget,
+    );
 
     await _disposeHost(tester, chatProvider, friendProvider);
   });
@@ -296,5 +354,168 @@ void main() {
     expect(rect.bottom, lessThanOrEqualTo(640));
 
     await _disposeHost(tester, chatProvider, friendProvider);
+  });
+
+  testWidgets(
+      'messages tab should keep unread and intimacy cues readable on compact size',
+      (tester) async {
+    tester.view.physicalSize = const Size(360, 640);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    final chatProvider = ChatProvider();
+    final friendProvider = FriendProvider();
+    final thread = ChatThread(
+      id: 'u_messages_compact_dense',
+      otherUser: _buildUser('u_messages_compact_dense'),
+      unreadCount: 4,
+      createdAt: DateTime.now().subtract(const Duration(hours: 23)),
+      expiresAt: DateTime.now().add(const Duration(hours: 1, minutes: 20)),
+      intimacyPoints: 88,
+    );
+    chatProvider.addThread(thread);
+    chatProvider.getMessages(thread.id).add(
+          Message(
+            id: 'compact-dense-message',
+            content: '这条消息正在发送中，也要保证小屏信息层级清楚。',
+            isMe: true,
+            timestamp: DateTime.now(),
+            status: MessageStatus.sending,
+          ),
+        );
+
+    await tester.pumpWidget(
+      _buildHost(
+        chatProvider: chatProvider,
+        friendProvider: friendProvider,
+      ),
+    );
+    await tester.pump();
+
+    final threadFinder = find.byKey(
+      const Key('messages-thread-item-u_messages_compact_dense'),
+    );
+    final unreadFinder = find.byKey(
+      const Key('messages-thread-unread-u_messages_compact_dense'),
+    );
+    final intimacyFinder = find.byKey(
+      const Key('messages-thread-intimacy-u_messages_compact_dense'),
+    );
+
+    expect(threadFinder, findsOneWidget);
+    expect(find.text('发送中'), findsOneWidget);
+    expect(unreadFinder, findsOneWidget);
+    expect(intimacyFinder, findsOneWidget);
+    expect(tester.takeException(), isNull);
+
+    final threadRect = tester.getRect(threadFinder);
+    final unreadRect = tester.getRect(unreadFinder);
+    final intimacyRect = tester.getRect(intimacyFinder);
+
+    expect(threadRect.bottom, lessThanOrEqualTo(640));
+    expect(unreadRect.right, lessThanOrEqualTo(threadRect.right));
+    expect(intimacyRect.right, lessThanOrEqualTo(threadRect.right));
+    expect(unreadRect.bottom, lessThanOrEqualTo(threadRect.bottom));
+    expect(intimacyRect.bottom, lessThanOrEqualTo(threadRect.bottom));
+
+    await _disposeHost(tester, chatProvider, friendProvider);
+  });
+
+  testWidgets(
+      'messages tab should return to messages tab after leaving chat screen',
+      (tester) async {
+    final authProvider = AuthProvider();
+    final chatProvider = ChatProvider(
+      enableRealtime: false,
+      enableRemoteHydration: false,
+    );
+    final friendProvider = FriendProvider(enableRemoteHydration: false);
+    final matchProvider = MatchProvider();
+    final profileProvider = ProfileProvider();
+    final settingsProvider = SettingsProvider(enableRemoteHydration: false);
+
+    final thread = _buildThread('u_messages_backflow');
+    chatProvider.addThread(thread);
+    chatProvider.getMessages(thread.id).add(
+          Message(
+            id: 'backflow-message',
+            content: '从消息页点进聊天再返回',
+            isMe: false,
+            timestamp: DateTime.now(),
+            status: MessageStatus.sent,
+          ),
+        );
+
+    final router = GoRouter(
+      initialLocation: '/main?tab=1',
+      routes: [
+        GoRoute(
+          path: '/main',
+          builder: (context, state) {
+            final index =
+                int.tryParse(state.uri.queryParameters['tab'] ?? '0') ?? 0;
+            return MainScreen(initialIndex: index);
+          },
+        ),
+        GoRoute(
+          path: '/chat/:threadId',
+          builder: (context, state) => ChatScreen(
+            threadId: state.pathParameters['threadId']!,
+          ),
+        ),
+      ],
+    );
+
+    await tester.pumpWidget(
+      _buildShellHost(
+        router: router,
+        authProvider: authProvider,
+        chatProvider: chatProvider,
+        friendProvider: friendProvider,
+        matchProvider: matchProvider,
+        profileProvider: profileProvider,
+        settingsProvider: settingsProvider,
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(find.byKey(const Key('messages-tab-title')), findsOneWidget);
+    expect(
+      find.byKey(const Key('messages-thread-item-u_messages_backflow')),
+      findsOneWidget,
+    );
+
+    await tester.tap(
+      find.byKey(const Key('messages-thread-item-u_messages_backflow')),
+    );
+    await tester.pump();
+    await tester.pumpAndSettle();
+
+    expect(find.byType(ChatScreen), findsOneWidget);
+
+    await tester.tap(find.byIcon(Icons.arrow_back));
+    await tester.pump();
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('messages-tab-title')), findsOneWidget);
+    expect(find.byType(ChatScreen), findsNothing);
+    expect(
+      find.byKey(const Key('messages-thread-item-u_messages_backflow')),
+      findsOneWidget,
+    );
+
+    await _disposeShellHost(
+      tester,
+      authProvider: authProvider,
+      chatProvider: chatProvider,
+      friendProvider: friendProvider,
+      matchProvider: matchProvider,
+      profileProvider: profileProvider,
+      settingsProvider: settingsProvider,
+    );
   });
 }

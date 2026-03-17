@@ -9,6 +9,11 @@ import '../utils/permission_manager.dart';
 
 class ImageUploadService {
   static final ImagePicker _picker = ImagePicker();
+  @visibleForTesting
+  static Future<File?> Function(BuildContext context)? debugAvatarPickOverride;
+  @visibleForTesting
+  static Future<File?> Function(BuildContext context)?
+      debugBackgroundPickOverride;
 
   // 存储键
   static const String _avatarPathKey = 'user_avatar_path';
@@ -124,6 +129,10 @@ class ImageUploadService {
   /// 选择头像（完整流程）
   static Future<File?> pickAvatar(BuildContext context) async {
     // 1. 显示来源选择
+    final override = debugAvatarPickOverride;
+    if (override != null) {
+      return override(context);
+    }
     final source = await showImageSourceDialog(context);
     if (!context.mounted) return null;
     if (source == null) return null;
@@ -179,6 +188,10 @@ class ImageUploadService {
   /// 选择背景图片（完整流程）
   static Future<File?> pickBackground(BuildContext context) async {
     // 1. 显示来源选择
+    final override = debugBackgroundPickOverride;
+    if (override != null) {
+      return override(context);
+    }
     final source = await showImageSourceDialog(context);
     if (!context.mounted) return null;
     if (source == null) return null;
@@ -356,5 +369,11 @@ class ImageUploadService {
       return true;
     }
     return !path.startsWith('avatar/') && !path.startsWith('background/');
+  }
+
+  @visibleForTesting
+  static void debugResetOverrides() {
+    debugAvatarPickOverride = null;
+    debugBackgroundPickOverride = null;
   }
 }

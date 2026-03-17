@@ -19,17 +19,19 @@ class AboutScreen extends StatelessWidget {
         title: const Text(
           '关于瞬',
           style: TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.w300,
-            letterSpacing: 1,
+            fontSize: 20,
+            fontWeight: FontWeight.w400,
+            letterSpacing: 0,
           ),
         ),
-        centerTitle: true,
+        centerTitle: false,
       ),
       body: ListView(
+        key: const Key('about-screen-list'),
         padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
         children: [
           Container(
+            key: const Key('about-hero-card'),
             padding: const EdgeInsets.all(24),
             decoration: BoxDecoration(
               color: AppColors.white05,

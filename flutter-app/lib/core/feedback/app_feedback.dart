@@ -29,11 +29,11 @@ class AppFeedback {
       case AppErrorCode.permissionDenied:
         return '未开启权限，请在设置中授权后重试';
       case AppErrorCode.sendFailed:
-        return '发送失败，请检查网络后重试';
+        return detail ?? '发送失败，请检查网络后重试';
       case AppErrorCode.unlockRequired:
         return detail ?? '继续互动解锁该功能';
       case AppErrorCode.blocked:
-        return '当前不可操作，请先解除拉黑';
+        return detail ?? '当前不可操作，请先解除拉黑';
       case AppErrorCode.invalidInput:
         return detail ?? '输入内容不符合要求，请修改后重试';
       case AppErrorCode.notSupported:

@@ -1,4 +1,7 @@
-import { Body, Controller, Headers, Post } from '@nestjs/common';
+import { Body, Controller, Delete, Headers, Post, UseGuards } from '@nestjs/common';
+import { CurrentUser } from '../../../common/decorators/current-user.decorator';
+import { AuthGuard } from '../../../common/guards/auth.guard';
+import { TokenUser } from '../domain/token-user';
 import { ok } from '../../../common/dto/api-response.dto';
 import { AuthService } from '../application/auth.service';
 import { LogoutDto } from '../dto/logout.dto';
@@ -54,5 +57,18 @@ export class AuthController {
     }
     await this.authService.logout(token);
     return ok({ loggedOut: true });
+  }
+
+  @Delete('account')
+  @UseGuards(AuthGuard)
+  async deleteAccount(
+    @CurrentUser() actor: TokenUser,
+    @Headers('authorization') authHeader: string,
+  ) {
+    const token = authHeader?.startsWith('Bearer ')
+      ? authHeader.substring('Bearer '.length)
+      : '';
+    await this.authService.deleteAccount(actor, token);
+    return ok({ deleted: true });
   }
 }

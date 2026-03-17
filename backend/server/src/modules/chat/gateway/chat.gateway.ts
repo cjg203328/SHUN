@@ -54,7 +54,10 @@ type AckErrorResponse = {
 @WebSocketGateway({
   namespace: '/ws',
   cors: {
-    origin: '*',
+    origin: process.env.APP_ENV === 'production'
+      ? (process.env.ALLOWED_ORIGINS ?? '').split(',').filter(Boolean)
+      : true,
+    credentials: true,
   },
 })
 export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {

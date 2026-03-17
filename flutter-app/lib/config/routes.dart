@@ -8,6 +8,7 @@ import '../screens/notification_center_screen.dart';
 import '../screens/settings_screen.dart';
 import '../screens/about_screen.dart';
 import '../screens/legal_document_screen.dart';
+import '../screens/report_screen.dart';
 import '../content/app_legal_content.dart';
 
 class AppRouter {
@@ -27,7 +28,8 @@ class AppRouter {
             location == '/settings' ||
             location == '/about' ||
             location.startsWith('/legal/') ||
-            location.startsWith('/chat/');
+            location.startsWith('/chat/') ||
+            location.startsWith('/report/');
 
         if (authProvider.isLoggedIn) {
           if (isInLogin) return '/main';
@@ -78,14 +80,33 @@ class AppRouter {
               state.pathParameters['docType'],
             );
             return LegalDocumentScreen(
-              documentType:
-                  documentType ?? LegalDocumentType.userAgreement,
+              documentType: documentType ?? LegalDocumentType.userAgreement,
             );
           },
         ),
         GoRoute(
           path: '/notifications',
-          builder: (context, state) => const NotificationCenterScreen(),
+          builder: (context, state) => NotificationCenterScreen(
+            initialFilter: NotificationCenterSourceFilter.fromQuery(
+              state.uri.queryParameters['source'],
+            ),
+          ),
+        ),
+        GoRoute(
+          path: '/report/:targetType/:targetId',
+          builder: (context, state) {
+            final typeStr = state.pathParameters['targetType'] ?? 'user';
+            final targetId = state.pathParameters['targetId'] ?? '';
+            final targetName = state.uri.queryParameters['name'];
+            final targetType = typeStr == 'message'
+                ? ReportTargetType.message
+                : ReportTargetType.user;
+            return ReportScreen(
+              targetId: targetId,
+              targetType: targetType,
+              targetName: targetName,
+            );
+          },
         ),
       ],
     );

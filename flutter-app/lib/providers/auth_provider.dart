@@ -61,11 +61,11 @@ class AuthProvider extends ChangeNotifier {
   }
 
   Future<bool> login(String phone, String code) async {
+    // Don't auto-send OTP during login - user should explicitly request it
     if (_pendingOtpRequestId == null) {
-      final sent = await sendOtp(phone);
-      if (!sent) {
-        return false;
-      }
+      _lastError = '请先获取验证码';
+      notifyListeners();
+      return false;
     }
 
     try {
@@ -116,6 +116,26 @@ class AuthProvider extends ChangeNotifier {
       notifyListeners();
       return false;
     }
+  }
+
+  Future<bool> deleteAccount() async {
+    try {
+      await _authService.deleteAccount();
+    } catch (_) {}
+    _phone = null;
+    _token = null;
+    _uid = null;
+    _isLoggedIn = false;
+    _pendingOtpRequestId = null;
+    _lastError = null;
+    ChatSocketService.instance.disconnect();
+    await NotificationCenterProvider.instance.clearSession();
+    await PushNotificationService.instance.clearSession();
+    await AnalyticsService.instance.track('account_deleted');
+    await AnalyticsService.instance.clearSession();
+    PermissionManager.clearSessionCache();
+    notifyListeners();
+    return true;
   }
 
   Future<void> logout() async {

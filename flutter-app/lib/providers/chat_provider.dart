@@ -12,6 +12,7 @@ import '../services/chat_service.dart';
 import '../services/chat_delivery_stats_service.dart';
 import '../services/chat_socket_service.dart';
 import '../services/media_upload_service.dart';
+import '../utils/chat_delivery_state.dart';
 import '../utils/image_helper.dart';
 import '../utils/intimacy_system.dart';
 import 'notification_center_provider.dart';
@@ -41,8 +42,10 @@ class ChatProvider extends ChangeNotifier {
   final Map<String, int> _activeThreadClaims = {};
   final List<String> _activeThreadFocusOrder = <String>[];
   final Set<String> _joinedRealtimeThreads = <String>{};
-  final Map<String, Future<bool>> _joiningRealtimeThreads = {};
+  final Map<String, Future<ChatSocketAckResult>> _joiningRealtimeThreads = {};
   final Set<String> _retryingMessageIds = <String>{};
+  final Map<String, ChatDeliveryFailureState> _messageFailureStates = {};
+  final Set<String> _pinnedThreadIds = <String>{};
   final bool _enableRealtime;
   final bool _enableRemoteHydration;
   String? _activeThreadId;
@@ -108,11 +111,27 @@ class ChatProvider extends ChangeNotifier {
   List<ChatThread> get sortedThreads {
     final items = threads.values.toList();
     items.sort((a, b) {
+      final aPinned = _pinnedThreadIds.contains(a.id) ? 0 : 1;
+      final bPinned = _pinnedThreadIds.contains(b.id) ? 0 : 1;
+      if (aPinned != bPinned) return aPinned - bPinned;
       final compare = _lastActivityAt(b).compareTo(_lastActivityAt(a));
       if (compare != 0) return compare;
       return b.createdAt.compareTo(a.createdAt);
     });
     return items;
+  }
+
+  bool isThreadPinned(String threadId) =>
+      _pinnedThreadIds.contains(_resolveThreadId(threadId));
+
+  void pinThread(String threadId) {
+    final id = _resolveThreadId(threadId);
+    if (_pinnedThreadIds.add(id)) notifyListeners();
+  }
+
+  void unpinThread(String threadId) {
+    final id = _resolveThreadId(threadId);
+    if (_pinnedThreadIds.remove(id)) notifyListeners();
   }
 
   List<Message> getMessages(String threadId) {
@@ -222,5 +241,44 @@ class ChatProvider extends ChangeNotifier {
   void resetDeliveryStats() {
     _deliveryStatsService.clear();
     notifyListeners();
+  }
+
+  String _deliveryFailureKey(String threadId, String messageId) {
+    return '${_resolveThreadId(threadId)}::$messageId';
+  }
+
+  void _setDeliveryFailureState(
+    String threadId,
+    String messageId,
+    ChatDeliveryFailureState state,
+  ) {
+    _messageFailureStates[_deliveryFailureKey(threadId, messageId)] = state;
+  }
+
+  void _clearDeliveryFailureState(String threadId, String messageId) {
+    _messageFailureStates.remove(_deliveryFailureKey(threadId, messageId));
+  }
+
+  void _remapDeliveryFailureStates(String fromThreadId, String toThreadId) {
+    final updates = <String, ChatDeliveryFailureState>{};
+    final removals = <String>[];
+    final prefix = '$fromThreadId::';
+    for (final entry in _messageFailureStates.entries) {
+      if (!entry.key.startsWith(prefix)) {
+        continue;
+      }
+      final messageId = entry.key.substring(prefix.length);
+      updates[_deliveryFailureKey(toThreadId, messageId)] = entry.value;
+      removals.add(entry.key);
+    }
+    for (final key in removals) {
+      _messageFailureStates.remove(key);
+    }
+    _messageFailureStates.addAll(updates);
+  }
+
+  void _clearDeliveryFailureStatesForThread(String threadId) {
+    final prefix = '${_resolveThreadId(threadId)}::';
+    _messageFailureStates.removeWhere((key, _) => key.startsWith(prefix));
   }
 }

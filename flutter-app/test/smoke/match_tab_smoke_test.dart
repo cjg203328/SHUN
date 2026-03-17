@@ -5,6 +5,7 @@ import 'package:sunliao/providers/chat_provider.dart';
 import 'package:sunliao/providers/friend_provider.dart';
 import 'package:sunliao/providers/match_provider.dart';
 import 'package:sunliao/services/match_service.dart';
+import 'package:sunliao/models/models.dart';
 import 'package:sunliao/utils/permission_manager.dart';
 import 'package:sunliao/widgets/match_tab.dart';
 
@@ -157,6 +158,74 @@ void main() {
     final buttonRect =
         tester.getRect(find.byKey(const Key('match-primary-action')));
     expect(buttonRect.bottom, lessThanOrEqualTo(640));
+
+    await _disposeHost(
+      tester,
+      matchProvider,
+      chatProvider,
+      friendProvider,
+    );
+  });
+
+  testWidgets('match tab should keep result actions visible on compact screens',
+      (tester) async {
+    tester.view.physicalSize = const Size(360, 640);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    final matchProvider = MatchProvider(
+      matchService: _FakeMatchService(
+        startMatchHandler: (_) async => MatchStartAttempt.success(
+          MatchResult(
+            matchId: 'match-compact-success',
+            threadId: 'thread-compact-success',
+            user: User(
+              id: 'u_match_compact',
+              uid: 'SNF0A301',
+              nickname: 'Compact Match',
+              avatar: 'A',
+              distance: '2km',
+              status: 'ready to chat',
+              isOnline: true,
+              hasLocationPermission: true,
+            ),
+            remaining: 19,
+            createdAt: DateTime(2026, 3, 18, 10),
+            expiresAt: DateTime(2026, 3, 19, 10),
+          ),
+        ),
+      ),
+      allowMockFallback: false,
+    );
+    final chatProvider = ChatProvider(
+      enableRealtime: false,
+      enableRemoteHydration: false,
+    );
+    final friendProvider = FriendProvider(enableRemoteHydration: false);
+
+    await tester.pumpWidget(
+      _buildHost(
+        matchProvider: matchProvider,
+        chatProvider: chatProvider,
+        friendProvider: friendProvider,
+      ),
+    );
+    await tester.pump();
+
+    await tester.tap(find.byKey(const Key('match-primary-action')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 200));
+
+    expect(find.byKey(const Key('match-result-card')), findsOneWidget);
+    expect(find.byKey(const Key('match-result-actions')), findsOneWidget);
+
+    final actionsRect =
+        tester.getRect(find.byKey(const Key('match-result-actions')));
+    expect(actionsRect.bottom, lessThanOrEqualTo(640));
+    expect(tester.takeException(), isNull);
 
     await _disposeHost(
       tester,

@@ -3,8 +3,23 @@ import '../config/theme.dart';
 import '../core/ui/ui_tokens.dart';
 
 class AppToast {
+  static String? _lastMessage;
+  static DateTime? _lastShowTime;
+  static const Duration _debounceInterval = Duration(milliseconds: 800);
+
   static void show(BuildContext context, String message,
       {bool isError = false}) {
+    // Debounce identical messages within short time window
+    final now = DateTime.now();
+    if (_lastMessage == message &&
+        _lastShowTime != null &&
+        now.difference(_lastShowTime!) < _debounceInterval) {
+      return;
+    }
+
+    _lastMessage = message;
+    _lastShowTime = now;
+
     final mediaQuery = MediaQuery.of(context);
     final safeBottom = mediaQuery.viewPadding.bottom;
     final keyboardInset = mediaQuery.viewInsets.bottom;
@@ -12,35 +27,63 @@ class AppToast {
     ScaffoldMessenger.of(context).hideCurrentSnackBar();
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(
-          message,
-          style: TextStyle(
-            fontSize: 14,
-            fontWeight: FontWeight.w300,
-            color: AppColors.textPrimary,
-            letterSpacing: 0.5,
-          ),
-          textAlign: TextAlign.center,
+        content: Row(
+          children: [
+            Container(
+              width: 3,
+              height: 36,
+              decoration: BoxDecoration(
+                color: isError
+                    ? AppColors.error
+                    : AppColors.brandBlue,
+                borderRadius: BorderRadius.circular(3),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Icon(
+              isError
+                  ? Icons.error_outline_rounded
+                  : Icons.check_circle_outline_rounded,
+              size: 18,
+              color: isError
+                  ? AppColors.error.withValues(alpha: 0.9)
+                  : AppColors.brandBlue.withValues(alpha: 0.9),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                message,
+                style: TextStyle(
+                  fontSize: 13.5,
+                  fontWeight: FontWeight.w300,
+                  color: AppColors.textPrimary,
+                  letterSpacing: 0.3,
+                  height: 1.4,
+                ),
+              ),
+            ),
+          ],
         ),
-        backgroundColor:
-            isError ? AppColors.error.withValues(alpha: 0.14) : AppColors.cardBg,
+        backgroundColor: isError
+            ? AppColors.error.withValues(alpha: 0.10)
+            : AppColors.cardBg,
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(UiTokens.radiusMd),
           side: BorderSide(
             color: isError
-                ? AppColors.error.withValues(alpha: 0.28)
+                ? AppColors.error.withValues(alpha: 0.22)
                 : AppColors.white12,
           ),
         ),
-        margin: const EdgeInsets.symmetric(horizontal: 24).copyWith(
+        margin: const EdgeInsets.symmetric(horizontal: 16).copyWith(
           bottom: bottomInset,
         ),
         padding: const EdgeInsets.symmetric(
-          horizontal: 24,
-          vertical: 16,
+          horizontal: 16,
+          vertical: 14,
         ),
-        duration: const Duration(milliseconds: 1800),
+        duration: const Duration(milliseconds: 2400),
         elevation: 0,
       ),
     );

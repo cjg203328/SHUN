@@ -99,15 +99,32 @@ class ChatSocketService {
   }
 
   Future<bool> joinThread(String threadId) {
-    return _emitWithAck('thread.join', {'threadId': threadId});
+    return joinThreadResult(threadId).then((result) => result.isSuccess);
+  }
+
+  Future<ChatSocketAckResult> joinThreadResult(String threadId) {
+    return _emitWithAckDetailed('thread.join', {'threadId': threadId});
   }
 
   Future<bool> sendText({
     required String threadId,
     required String content,
     required String clientMsgId,
+  }) async {
+    final result = await sendTextResult(
+      threadId: threadId,
+      content: content,
+      clientMsgId: clientMsgId,
+    );
+    return result.isSuccess;
+  }
+
+  Future<ChatSocketAckResult> sendTextResult({
+    required String threadId,
+    required String content,
+    required String clientMsgId,
   }) {
-    return _emitWithAck('msg.send.text', {
+    return _emitWithAckDetailed('msg.send.text', {
       'threadId': threadId,
       'content': content,
       'clientMsgId': clientMsgId,
@@ -119,8 +136,23 @@ class ChatSocketService {
     required String imageKey,
     required bool burnAfterReading,
     required String clientMsgId,
+  }) async {
+    final result = await sendImageResult(
+      threadId: threadId,
+      imageKey: imageKey,
+      burnAfterReading: burnAfterReading,
+      clientMsgId: clientMsgId,
+    );
+    return result.isSuccess;
+  }
+
+  Future<ChatSocketAckResult> sendImageResult({
+    required String threadId,
+    required String imageKey,
+    required bool burnAfterReading,
+    required String clientMsgId,
   }) {
-    return _emitWithAck('msg.send.image', {
+    return _emitWithAckDetailed('msg.send.image', {
       'threadId': threadId,
       'imageKey': imageKey,
       'burnAfterReading': burnAfterReading,
@@ -130,7 +162,17 @@ class ChatSocketService {
   }
 
   Future<bool> markRead(String threadId, {String? lastReadMessageId}) {
-    return _emitWithAck('msg.read', {
+    return markReadResult(
+      threadId,
+      lastReadMessageId: lastReadMessageId,
+    ).then((result) => result.isSuccess);
+  }
+
+  Future<ChatSocketAckResult> markReadResult(
+    String threadId, {
+    String? lastReadMessageId,
+  }) {
+    return _emitWithAckDetailed('msg.read', {
       'threadId': threadId,
       if (lastReadMessageId != null) 'lastReadMessageId': lastReadMessageId,
     });
@@ -200,24 +242,50 @@ class ChatSocketService {
     });
   }
 
-  Future<bool> _emitWithAck(String event, Map<String, dynamic> payload) async {
+  Future<ChatSocketAckResult> _emitWithAckDetailed(
+    String event,
+    Map<String, dynamic> payload,
+  ) async {
     final connected = await connect();
     final socket = _socket;
     if (!connected || socket == null || !socket.connected) {
-      return false;
+      return const ChatSocketAckResult.transportFailure();
     }
 
-    final completer = Completer<bool>();
+    final completer = Completer<ChatSocketAckResult>();
     socket.emitWithAck(event, payload, ack: (response) {
       if (completer.isCompleted) return;
       final data = _asMap(response);
-      final hasError = data['error'] != null || data['message'] == 'error';
-      completer.complete(!hasError);
+      final error = _asMap(data['error']);
+      if (error.isNotEmpty) {
+        completer.complete(
+          ChatSocketAckResult.failure(
+            ChatRequestFailure(
+              code: (error['code'] ?? 'REQUEST_FAILED').toString(),
+              message: (error['message'] ?? '请求失败').toString(),
+              statusCode: (error['status'] as num?)?.toInt(),
+            ),
+          ),
+        );
+        return;
+      }
+      if (data['message'] == 'error') {
+        completer.complete(
+          const ChatSocketAckResult.failure(
+            ChatRequestFailure(
+              code: 'REQUEST_FAILED',
+              message: '请求失败',
+            ),
+          ),
+        );
+        return;
+      }
+      completer.complete(const ChatSocketAckResult.success());
     });
 
     Future<void>.delayed(const Duration(seconds: 5), () {
       if (!completer.isCompleted) {
-        completer.complete(false);
+        completer.complete(const ChatSocketAckResult.transportFailure());
       }
     });
 
@@ -243,6 +311,26 @@ class MessageAckEvent {
   final String threadId;
   final String clientMsgId;
   final Message message;
+}
+
+class ChatSocketAckResult {
+  const ChatSocketAckResult.success()
+      : error = null,
+        shouldFallbackToHttp = false;
+
+  const ChatSocketAckResult.failure(this.error) : shouldFallbackToHttp = false;
+
+  const ChatSocketAckResult.transportFailure()
+      : error = const ChatRequestFailure(
+          code: 'SOCKET_TRANSPORT_ERROR',
+          message: 'Socket transport unavailable',
+        ),
+        shouldFallbackToHttp = true;
+
+  final ChatRequestFailure? error;
+  final bool shouldFallbackToHttp;
+
+  bool get isSuccess => error == null && !shouldFallbackToHttp;
 }
 
 class IncomingMessageEvent {

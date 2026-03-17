@@ -1,5 +1,8 @@
+import 'package:dio/dio.dart';
+
 import '../models/models.dart';
 import '../config/app_env.dart';
+import '../core/network/api_exception.dart';
 import 'api_client.dart';
 import 'storage_service.dart';
 
@@ -11,8 +14,34 @@ class ChatThreadHydrationSnapshot {
   final List<ChatThread> threads;
 }
 
+class ChatRequestFailure {
+  const ChatRequestFailure({
+    required this.code,
+    required this.message,
+    this.statusCode,
+    this.detail,
+  });
+
+  final String code;
+  final String message;
+  final int? statusCode;
+  final String? detail;
+}
+
+class ChatRequestResult<T> {
+  const ChatRequestResult.success(this.data) : error = null;
+
+  const ChatRequestResult.failure(this.error) : data = null;
+
+  final T? data;
+  final ChatRequestFailure? error;
+
+  bool get isSuccess => data != null;
+}
+
 class ChatService {
-  ChatService({ApiClient? apiClient}) : _apiClient = apiClient ?? ApiClient.instance;
+  ChatService({ApiClient? apiClient})
+      : _apiClient = apiClient ?? ApiClient.instance;
 
   final ApiClient _apiClient;
   static const List<String> _mockReplies = [
@@ -69,7 +98,8 @@ class ChatService {
   Future<List<Message>> loadMessages(String threadId) async {
     if (!hasSession) return const [];
     try {
-      final data = await _apiClient.get<List<dynamic>>('/threads/$threadId/messages');
+      final data =
+          await _apiClient.get<List<dynamic>>('/threads/$threadId/messages');
       return data
           .whereType<Map<String, dynamic>>()
           .map(_mapMessage)
@@ -97,15 +127,31 @@ class ChatService {
     String content,
     String clientMsgId,
   ) async {
-    if (!hasSession) return null;
+    final result = await sendTextMessageResult(threadId, content, clientMsgId);
+    return result.data;
+  }
+
+  Future<ChatRequestResult<Message>> sendTextMessageResult(
+    String threadId,
+    String content,
+    String clientMsgId,
+  ) async {
+    if (!hasSession) {
+      return const ChatRequestResult.failure(
+        ChatRequestFailure(
+          code: 'AUTH_TOKEN_INVALID',
+          message: 'Missing session',
+        ),
+      );
+    }
     try {
       final data = await _apiClient.post<Map<String, dynamic>>(
         '/threads/$threadId/messages/text',
         data: {'content': content, 'clientMsgId': clientMsgId},
       );
-      return _mapMessage(data);
-    } catch (_) {
-      return null;
+      return ChatRequestResult.success(_mapMessage(data));
+    } catch (error) {
+      return ChatRequestResult.failure(_resolveRequestFailure(error));
     }
   }
 
@@ -115,7 +161,29 @@ class ChatService {
     bool burnAfterReading,
     String clientMsgId,
   ) async {
-    if (!hasSession) return null;
+    final result = await sendImageMessageResult(
+      threadId,
+      imageKey,
+      burnAfterReading,
+      clientMsgId,
+    );
+    return result.data;
+  }
+
+  Future<ChatRequestResult<Message>> sendImageMessageResult(
+    String threadId,
+    String imageKey,
+    bool burnAfterReading,
+    String clientMsgId,
+  ) async {
+    if (!hasSession) {
+      return const ChatRequestResult.failure(
+        ChatRequestFailure(
+          code: 'AUTH_TOKEN_INVALID',
+          message: 'Missing session',
+        ),
+      );
+    }
     try {
       final data = await _apiClient.post<Map<String, dynamic>>(
         '/threads/$threadId/messages/image',
@@ -126,14 +194,32 @@ class ChatService {
           'clientMsgId': clientMsgId,
         },
       );
-      return _mapMessage(data);
-    } catch (_) {
-      return null;
+      return ChatRequestResult.success(_mapMessage(data));
+    } catch (error) {
+      return ChatRequestResult.failure(_resolveRequestFailure(error));
     }
   }
 
-  Future<void> markThreadRead(String threadId, {String? lastReadMessageId}) async {
-    if (!hasSession) return;
+  Future<void> markThreadRead(String threadId,
+      {String? lastReadMessageId}) async {
+    await markThreadReadResult(
+      threadId,
+      lastReadMessageId: lastReadMessageId,
+    );
+  }
+
+  Future<ChatRequestResult<bool>> markThreadReadResult(
+    String threadId, {
+    String? lastReadMessageId,
+  }) async {
+    if (!hasSession) {
+      return const ChatRequestResult.failure(
+        ChatRequestFailure(
+          code: 'AUTH_TOKEN_INVALID',
+          message: 'Missing session',
+        ),
+      );
+    }
     try {
       await _apiClient.post<Map<String, dynamic>>(
         '/threads/$threadId/read',
@@ -141,7 +227,10 @@ class ChatService {
           if (lastReadMessageId != null) 'lastReadMessageId': lastReadMessageId,
         },
       );
-    } catch (_) {}
+      return const ChatRequestResult.success(true);
+    } catch (error) {
+      return ChatRequestResult.failure(_resolveRequestFailure(error));
+    }
   }
 
   Future<void> deleteThread(String threadId) async {
@@ -154,12 +243,14 @@ class ChatService {
   Future<void> recallMessage(String messageId) async {
     if (!hasSession) return;
     try {
-      await _apiClient.post<Map<String, dynamic>>('/messages/$messageId/recall');
+      await _apiClient
+          .post<Map<String, dynamic>>('/messages/$messageId/recall');
     } catch (_) {}
   }
 
   ChatThread mapThreadPayload(Map<String, dynamic> json) {
-    final user = (json['user'] as Map?)?.cast<String, dynamic>() ?? <String, dynamic>{};
+    final user =
+        (json['user'] as Map?)?.cast<String, dynamic>() ?? <String, dynamic>{};
     return ChatThread(
       id: (json['threadId'] ?? json['id']).toString(),
       otherUser: User(
@@ -172,8 +263,10 @@ class ChatService {
         isOnline: true,
       ),
       unreadCount: (json['unreadCount'] as num?)?.toInt() ?? 0,
-      createdAt: DateTime.tryParse(json['createdAt']?.toString() ?? '') ?? DateTime.now(),
-      expiresAt: DateTime.tryParse(json['expiresAt']?.toString() ?? '') ?? DateTime.now().add(const Duration(hours: 24)),
+      createdAt: DateTime.tryParse(json['createdAt']?.toString() ?? '') ??
+          DateTime.now(),
+      expiresAt: DateTime.tryParse(json['expiresAt']?.toString() ?? '') ??
+          DateTime.now().add(const Duration(hours: 24)),
       intimacyPoints: 0,
       isFriend: json['isFriend'] == true,
     );
@@ -184,9 +277,11 @@ class ChatService {
     final imageKey = json['imageKey']?.toString();
     return Message(
       id: (json['messageId'] ?? json['id']).toString(),
-      content: (json['content'] ?? (typeRaw == 'image' ? '[图片]' : '')).toString(),
+      content:
+          (json['content'] ?? (typeRaw == 'image' ? '[图片]' : '')).toString(),
       isMe: json['isMe'] == true,
-      timestamp: DateTime.tryParse(json['createdAt']?.toString() ?? '') ?? DateTime.now(),
+      timestamp: DateTime.tryParse(json['createdAt']?.toString() ?? '') ??
+          DateTime.now(),
       status: _mapStatus(json['status']?.toString()),
       type: typeRaw == 'image' ? MessageType.image : MessageType.text,
       imagePath: typeRaw == 'image' && imageKey != null
@@ -219,5 +314,31 @@ class ChatService {
 
   String getMockReply() {
     return _mockReplies[DateTime.now().second % _mockReplies.length];
+  }
+
+  ChatRequestFailure _resolveRequestFailure(Object error) {
+    if (error is ApiException) {
+      return ChatRequestFailure(
+        code: error.code,
+        message: error.message,
+        statusCode: error.statusCode,
+        detail: error.detail,
+      );
+    }
+    if (error is DioException && error.error is ApiException) {
+      final apiError = error.error as ApiException;
+      return ChatRequestFailure(
+        code: apiError.code,
+        message: apiError.message,
+        statusCode: apiError.statusCode ?? error.response?.statusCode,
+        detail: apiError.detail,
+      );
+    }
+    return ChatRequestFailure(
+      code: 'NETWORK_ERROR',
+      message: '网络连接失败',
+      statusCode: error is DioException ? error.response?.statusCode : null,
+      detail: error.toString(),
+    );
   }
 }

@@ -28,16 +28,18 @@ class LegalDocumentScreen extends StatelessWidget {
         title: Text(
           title,
           style: const TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.w300,
-            letterSpacing: 1,
+            fontSize: 20,
+            fontWeight: FontWeight.w400,
+            letterSpacing: 0,
           ),
         ),
-        centerTitle: true,
+        centerTitle: false,
       ),
       body: SingleChildScrollView(
+        key: const Key('legal-document-scroll-view'),
         padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
         child: Container(
+          key: const Key('legal-document-card'),
           width: double.infinity,
           padding: const EdgeInsets.all(20),
           decoration: BoxDecoration(

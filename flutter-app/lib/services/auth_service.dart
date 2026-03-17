@@ -149,6 +149,16 @@ class AuthService {
     await _repository.savePhone(phone, uid: uid);
   }
 
+  Future<void> deleteAccount() async {
+    final token = StorageService.getToken();
+    if (token != null && token.isNotEmpty) {
+      try {
+        await _apiClient.delete<Map<String, dynamic>>('/auth/account');
+      } catch (_) {}
+    }
+    await _repository.clearSessionState();
+  }
+
   Future<void> clearLoginState() async {
     final token = StorageService.getToken();
     final deviceId = StorageService.getDeviceId() ?? await _getOrCreateDeviceId();

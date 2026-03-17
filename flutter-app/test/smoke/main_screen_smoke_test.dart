@@ -64,9 +64,20 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
 
-    expect(find.byType(IndexedStack), findsOneWidget);
+    expect(find.byKey(const Key('main-tab-stack')), findsOneWidget);
+    expect(find.byKey(const Key('messages-tab-title')), findsOneWidget);
+    expect(find.byKey(const Key('match-guide-card')), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('main screen should show messages tab from route query',
+      (tester) async {
+    await tester.pumpWidget(buildApp(initialLocation: '/main?tab=1'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(find.byKey(const Key('messages-tab-title')), findsNothing);
     expect(find.byKey(const Key('match-guide-card')), findsOneWidget);
-    expect(find.byIcon(Icons.person_outline), findsOneWidget);
   });
 
   testWidgets(
@@ -83,6 +94,9 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
 
+    expect(
+        find.byKey(const Key('profile-compact-identity-card')), findsOneWidget);
+    expect(find.byKey(const Key('profile-stats-card')), findsOneWidget);
     expect(find.byKey(const Key('profile-quick-actions-card')), findsOneWidget);
     expect(find.byKey(const Key('profile-readiness-chip')), findsOneWidget);
     expect(
@@ -96,6 +110,10 @@ void main() {
       findsOneWidget,
     );
     expect(find.byKey(const Key('profile-quick-settings')), findsOneWidget);
+    final quickActionsRect =
+        tester.getRect(find.byKey(const Key('profile-quick-actions-card')));
+    expect(quickActionsRect.bottom, lessThanOrEqualTo(640));
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('profile tab should open premium-style editor sheets',

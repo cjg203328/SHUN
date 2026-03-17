@@ -186,7 +186,6 @@ class ChatThread {
   final bool isFriend; // 是否已成为好友
   final bool isUnfollowed; // 是否被取关
   final int messagesSinceUnfollow; // 取关后发送的消息数
-
   ChatThread({
     required this.id,
     required this.otherUser,

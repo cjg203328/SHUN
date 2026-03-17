@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../config/theme.dart';
 import '../models/models.dart';
+import '../utils/chat_delivery_state.dart';
 
 enum ChatDeliveryAction {
   retry,
@@ -21,6 +22,7 @@ class ChatDeliveryStatusSpec {
     this.cardIcon,
     this.actionLabel,
     this.actionType,
+    this.guideFailureState,
   });
 
   final String? previewText;
@@ -34,6 +36,7 @@ class ChatDeliveryStatusSpec {
   final IconData? cardIcon;
   final String? actionLabel;
   final ChatDeliveryAction? actionType;
+  final ChatDeliveryFailureState? guideFailureState;
 
   bool get hasBadge =>
       badgeLabel != null && badgeColor != null && badgeIcon != null;
@@ -51,10 +54,14 @@ class ChatDeliveryStatusSpec {
         badgeLabel,
         cardLabel,
         actionLabel,
+        guideFailureState?.name,
       ].whereType<String>().join('|');
 }
 
-ChatDeliveryStatusSpec? resolveChatDeliveryStatus(Message message) {
+ChatDeliveryStatusSpec? resolveChatDeliveryStatus(
+  Message message, {
+  ChatDeliveryFailureState failureState = ChatDeliveryFailureState.retryable,
+}) {
   if (!message.isMe) {
     return null;
   }
@@ -75,8 +82,157 @@ ChatDeliveryStatusSpec? resolveChatDeliveryStatus(Message message) {
   }
 
   if (message.status == MessageStatus.failed) {
+    if (failureState == ChatDeliveryFailureState.threadExpired) {
+      return ChatDeliveryStatusSpec(
+        previewText: '会话已过期，当前不能重试',
+        previewColor: AppColors.warning.withValues(alpha: 0.92),
+        badgeLabel: '会话已过期',
+        badgeColor: AppColors.warning,
+        badgeIcon: Icons.hourglass_disabled_outlined,
+        cardLabel: '会话已过期',
+        cardDetail:
+            isImage ? '这条图片消息所在的会话已经到期，当前不能继续重试。' : '这条消息所在的会话已经到期，当前不能继续重试。',
+        cardColor: AppColors.warning,
+        cardIcon: Icons.hourglass_disabled_outlined,
+      );
+    }
+
+    if (failureState == ChatDeliveryFailureState.blockedRelation) {
+      return ChatDeliveryStatusSpec(
+        previewText: '关系受限，当前不能继续发送',
+        previewColor: AppColors.warning.withValues(alpha: 0.92),
+        badgeLabel: '关系受限',
+        badgeColor: AppColors.warning,
+        badgeIcon: Icons.block_outlined,
+        cardLabel: '关系受限',
+        cardDetail:
+            isImage ? '你和对方当前处于拉黑关系，图片暂时不能继续发送。' : '你和对方当前处于拉黑关系，消息暂时不能继续发送。',
+        cardColor: AppColors.warning,
+        cardIcon: Icons.block_outlined,
+      );
+    }
+
+    if (failureState == ChatDeliveryFailureState.imageUploadPreparationFailed) {
+      return ChatDeliveryStatusSpec(
+        previewText: '上传准备失败，图片可稍后重试',
+        previewColor: AppColors.warning.withValues(alpha: 0.92),
+        badgeLabel: '上传准备失败',
+        badgeColor: AppColors.warning,
+        badgeIcon: Icons.cloud_off_rounded,
+        cardLabel: '上传准备失败',
+        cardDetail: '服务端暂时无法完成图片上传准备，建议稍后重新发送这张图片。',
+        cardColor: AppColors.warning,
+        cardIcon: Icons.cloud_off_rounded,
+        actionLabel: '立即重试',
+        actionType: ChatDeliveryAction.retry,
+      );
+    }
+
+    if (failureState == ChatDeliveryFailureState.imageUploadInterrupted) {
+      return ChatDeliveryStatusSpec(
+        previewText: '上传中断，图片可重新发送',
+        previewColor: AppColors.warning.withValues(alpha: 0.92),
+        badgeLabel: '上传中断',
+        badgeColor: AppColors.warning,
+        badgeIcon: Icons.upload_file_rounded,
+        cardLabel: '上传中断',
+        cardDetail: '图片上传过程中已中断，建议检查网络后重新投递这张图片。',
+        cardColor: AppColors.warning,
+        cardIcon: Icons.upload_file_rounded,
+        actionLabel: '立即重试',
+        actionType: ChatDeliveryAction.retry,
+      );
+    }
+
+    if (failureState == ChatDeliveryFailureState.imageUploadTokenInvalid) {
+      return ChatDeliveryStatusSpec(
+        previewText: '上传凭证已失效，可立即重试',
+        previewColor: AppColors.warning.withValues(alpha: 0.92),
+        badgeLabel: '上传凭证失效',
+        badgeColor: AppColors.warning,
+        badgeIcon: Icons.vpn_key_off_rounded,
+        cardLabel: '上传凭证失效',
+        cardDetail: '这次图片上传使用的凭证已经失效，再试一次会刷新上传凭证后重新提交。',
+        cardColor: AppColors.warning,
+        cardIcon: Icons.vpn_key_off_rounded,
+        actionLabel: '立即重试',
+        actionType: ChatDeliveryAction.retry,
+      );
+    }
+
+    if (failureState == ChatDeliveryFailureState.imageUploadFileTooLarge) {
+      return const ChatDeliveryStatusSpec(
+        previewText: '图片过大，请重新选图',
+        previewColor: AppColors.warning,
+        badgeLabel: '图片过大',
+        badgeColor: AppColors.warning,
+        badgeIcon: Icons.photo_size_select_large_rounded,
+        cardLabel: '图片过大',
+        cardDetail: '当前图片已超过上传大小限制，建议更换更小的图片或使用压缩图后再发送。',
+        cardColor: AppColors.warning,
+        cardIcon: Icons.photo_size_select_large_rounded,
+        actionLabel: '查看说明',
+        actionType: ChatDeliveryAction.showGuide,
+        guideFailureState: ChatDeliveryFailureState.imageUploadFileTooLarge,
+      );
+    }
+
+    if (failureState == ChatDeliveryFailureState.imageUploadUnsupportedFormat) {
+      return const ChatDeliveryStatusSpec(
+        previewText: '图片格式异常，请重新选图',
+        previewColor: AppColors.warning,
+        badgeLabel: '格式异常',
+        badgeColor: AppColors.warning,
+        badgeIcon: Icons.broken_image_outlined,
+        cardLabel: '格式异常',
+        cardDetail: '当前文件没有通过图片校验，请重新选择常见图片格式后再发送。',
+        cardColor: AppColors.warning,
+        cardIcon: Icons.broken_image_outlined,
+        actionLabel: '查看说明',
+        actionType: ChatDeliveryAction.showGuide,
+        guideFailureState:
+            ChatDeliveryFailureState.imageUploadUnsupportedFormat,
+      );
+    }
+
+    if (failureState == ChatDeliveryFailureState.networkIssue) {
+      return ChatDeliveryStatusSpec(
+        previewText: isImage ? '网络波动，图片可稍后重试' : '网络波动，消息可稍后重试',
+        previewColor: AppColors.warning.withValues(alpha: 0.92),
+        badgeLabel: '网络波动',
+        badgeColor: AppColors.warning,
+        badgeIcon: Icons.wifi_off_rounded,
+        cardLabel: '网络波动',
+        cardDetail:
+            isImage ? '当前连接不稳定，建议检查网络后重新投递这张图片。' : '当前连接不稳定，建议检查网络后重新发送这条消息。',
+        cardColor: AppColors.warning,
+        cardIcon: Icons.wifi_off_rounded,
+        actionLabel: '立即重试',
+        actionType: ChatDeliveryAction.retry,
+      );
+    }
+
+    if (failureState == ChatDeliveryFailureState.retryUnavailable) {
+      return ChatDeliveryStatusSpec(
+        previewText: '当前不可重试，请稍后确认会话状态',
+        previewColor: AppColors.warning.withValues(alpha: 0.92),
+        badgeLabel: '暂不可重试',
+        badgeColor: AppColors.warning,
+        badgeIcon: Icons.block_outlined,
+        cardLabel: '暂不可重试',
+        cardDetail: isImage
+            ? '这条图片消息当前不满足重试条件，建议先确认会话状态后再处理。'
+            : '这条消息当前不满足重试条件，建议先确认会话状态后再处理。',
+        cardColor: AppColors.warning,
+        cardIcon: Icons.block_outlined,
+      );
+    }
+
     final needsReselect =
-        isImage && message.imageQuality == ImageQuality.original;
+        failureState == ChatDeliveryFailureState.imageReselectRequired ||
+            (failureState == ChatDeliveryFailureState.retryable &&
+                isImage &&
+                failedImageNeedsReselect(message));
     return ChatDeliveryStatusSpec(
       previewText: needsReselect
           ? '原图失效，请重选图片'
@@ -97,6 +253,8 @@ ChatDeliveryStatusSpec? resolveChatDeliveryStatus(Message message) {
       actionType: needsReselect
           ? ChatDeliveryAction.showGuide
           : ChatDeliveryAction.retry,
+      guideFailureState:
+          needsReselect ? ChatDeliveryFailureState.imageReselectRequired : null,
     );
   }
 

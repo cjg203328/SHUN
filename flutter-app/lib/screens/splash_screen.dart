@@ -52,6 +52,9 @@ class _SplashScreenState extends State<SplashScreen>
       if (!mounted) return;
     }
 
+    // Fade out before navigating to avoid hard cut
+    await _controller.reverse();
+    if (!mounted) return;
     context.go(authProvider.isLoggedIn ? '/main' : '/login');
   }
 

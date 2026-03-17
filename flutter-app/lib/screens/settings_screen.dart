@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -5,17 +7,19 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
 import '../config/theme.dart';
+import '../models/app_notification.dart';
 import '../providers/auth_provider.dart';
 import '../providers/friend_provider.dart';
 import '../providers/chat_provider.dart';
+import '../providers/notification_center_provider.dart';
 import '../providers/settings_provider.dart';
 import '../services/image_upload_service.dart';
 import '../services/storage_service.dart';
+import '../utils/notification_permission_guidance.dart';
 import '../utils/permission_manager.dart';
 import '../widgets/app_toast.dart';
 import '../widgets/chat_delivery_debug_sheet.dart';
 import '../core/feedback/app_feedback.dart';
-import '../core/ui/ui_tokens.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -24,8 +28,117 @@ class SettingsScreen extends StatefulWidget {
   State<SettingsScreen> createState() => _SettingsScreenState();
 }
 
-class _SettingsScreenState extends State<SettingsScreen> {
+class _SettingsLayoutSpec {
+  const _SettingsLayoutSpec({
+    required this.isCompact,
+    required this.pageHorizontalPadding,
+    required this.topPadding,
+    required this.bottomPadding,
+    required this.sectionSpacing,
+    required this.sectionTitleInset,
+    required this.sectionTitleBottomSpacing,
+    required this.overviewPadding,
+    required this.overviewGap,
+    required this.sectionCardRadius,
+    required this.itemHorizontalPadding,
+    required this.itemVerticalPadding,
+    required this.leadingBoxSize,
+    required this.leadingIconSize,
+    required this.trailingGap,
+  });
+
+  final bool isCompact;
+  final double pageHorizontalPadding;
+  final double topPadding;
+  final double bottomPadding;
+  final double sectionSpacing;
+  final double sectionTitleInset;
+  final double sectionTitleBottomSpacing;
+  final double overviewPadding;
+  final double overviewGap;
+  final double sectionCardRadius;
+  final double itemHorizontalPadding;
+  final double itemVerticalPadding;
+  final double leadingBoxSize;
+  final double leadingIconSize;
+  final double trailingGap;
+
+  static _SettingsLayoutSpec fromSize(Size size) {
+    final isCompact = size.width <= 390 || size.height <= 720;
+    if (isCompact) {
+      return const _SettingsLayoutSpec(
+        isCompact: true,
+        pageHorizontalPadding: 16,
+        topPadding: 16,
+        bottomPadding: 28,
+        sectionSpacing: 20,
+        sectionTitleInset: 4,
+        sectionTitleBottomSpacing: 10,
+        overviewPadding: 14,
+        overviewGap: 12,
+        sectionCardRadius: 14,
+        itemHorizontalPadding: 14,
+        itemVerticalPadding: 12,
+        leadingBoxSize: 32,
+        leadingIconSize: 17,
+        trailingGap: 8,
+      );
+    }
+
+    return const _SettingsLayoutSpec(
+      isCompact: false,
+      pageHorizontalPadding: 20,
+      topPadding: 20,
+      bottomPadding: 40,
+      sectionSpacing: 28,
+      sectionTitleInset: 8,
+      sectionTitleBottomSpacing: 12,
+      overviewPadding: 18,
+      overviewGap: 14,
+      sectionCardRadius: 16,
+      itemHorizontalPadding: 16,
+      itemVerticalPadding: 16,
+      leadingBoxSize: 34,
+      leadingIconSize: 18,
+      trailingGap: 12,
+    );
+  }
+}
+
+class _SettingsScreenState extends State<SettingsScreen>
+    with WidgetsBindingObserver {
   _SettingsInlineFeedbackState? _inlineFeedback;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed) {
+      return;
+    }
+    unawaited(_refreshNotificationPermissionAfterSystemSettingsReturn());
+  }
+
+  Future<void> _refreshNotificationPermissionAfterSystemSettingsReturn() async {
+    if (!mounted) return;
+    final settingsProvider = context.read<SettingsProvider>();
+    final didRefresh = await settingsProvider
+        .refreshPushRuntimeStateAfterSystemSettingsReturn();
+    if (!mounted || !didRefresh) return;
+    _showInlineFeedback(
+      _buildNotificationResumeInlineFeedback(settingsProvider),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -40,15 +153,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
         title: const Text(
           '设置',
           style: TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.w300,
-            letterSpacing: 1,
+            fontSize: 20,
+            fontWeight: FontWeight.w400,
+            letterSpacing: 0,
           ),
         ),
-        centerTitle: true,
+        centerTitle: false,
       ),
       body: Consumer<SettingsProvider>(
         builder: (context, settingsProvider, child) {
+          final layout = _SettingsLayoutSpec.fromSize(
+            MediaQuery.of(context).size,
+          );
           final invisibleSettingHint = _resolveInvisibleSettingHint(
             settingsProvider,
           );
@@ -60,10 +176,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
           );
 
           return ListView(
-            padding: const EdgeInsets.only(top: 20, bottom: 40),
+            padding: EdgeInsets.fromLTRB(
+              layout.pageHorizontalPadding,
+              layout.topPadding,
+              layout.pageHorizontalPadding,
+              layout.bottomPadding,
+            ),
             children: [
               _buildSettingsOverviewCard(context, settingsProvider),
-              const SizedBox(height: 28),
+              SizedBox(height: layout.sectionSpacing),
               _buildSectionTitle('账号与安全', subtitle: '登录、身份标识与账号找回'),
               _buildSectionCard(
                 children: [
@@ -112,7 +233,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                 ],
               ),
-              const SizedBox(height: 28),
+              SizedBox(height: layout.sectionSpacing),
               _buildSectionTitle('隐私与展示', subtitle: '优先保留影响曝光和关系边界的核心设置'),
               _buildSectionCard(
                 children: [
@@ -135,7 +256,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                 ],
               ),
-              const SizedBox(height: 28),
+              SizedBox(height: layout.sectionSpacing),
               _buildSectionTitle('通知与提醒', subtitle: '建议保持消息通知开启，避免错过新回复'),
               _buildSectionCard(
                 children: [
@@ -158,7 +279,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                 ],
               ),
-              const SizedBox(height: 28),
+              SizedBox(height: layout.sectionSpacing),
               _buildSectionTitle('资料与展示', subtitle: '优先维护头像，背景等低频内容可按需调整'),
               _buildSectionCard(
                 children: [
@@ -172,7 +293,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                 ],
               ),
-              const SizedBox(height: 28),
+              SizedBox(height: layout.sectionSpacing),
               _buildSectionTitle('更多设置（低频）', subtitle: '这些内容通常不用频繁修改，需要时再进入即可'),
               _buildSectionCard(
                 children: [
@@ -213,7 +334,31 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                 ],
               ),
-              const SizedBox(height: 28),
+              SizedBox(height: layout.sectionSpacing),
+              _buildSectionTitle('安全与举报', subtitle: '保护自己和他人的使用体验'),
+              _buildSectionCard(
+                children: [
+                  _buildSettingItem(
+                    context,
+                    icon: Icons.flag_outlined,
+                    title: '举报违规用户',
+                    subtitle: '在聊天页面点击右上角菜单，选择「举报」进行投诉',
+                    onTap: () => AppToast.show(
+                      context,
+                      '请在聊天页面通过右上角菜单举报对方',
+                    ),
+                  ),
+                  _buildDivider(),
+                  _buildSettingItem(
+                    context,
+                    icon: Icons.security_outlined,
+                    title: '账号安全提示',
+                    subtitle: '不要轻信陌生人的转账、链接等请求',
+                    onTap: () => context.push('/legal/safety-tips'),
+                  ),
+                ],
+              ),
+              SizedBox(height: layout.sectionSpacing),
               _buildSectionTitle('关于与协议', subtitle: '查看产品说明、协议与隐私内容'),
               _buildSectionCard(
                 children: [
@@ -242,13 +387,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                 ],
               ),
-              const SizedBox(height: 32),
+              SizedBox(height: layout.sectionSpacing + 4),
               Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 20),
+                padding: EdgeInsets.symmetric(
+                  horizontal: layout.sectionTitleInset,
+                ),
                 child: OutlinedButton(
                   onPressed: () => _showLogoutDialog(context),
                   style: OutlinedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    padding: EdgeInsets.symmetric(
+                      vertical: layout.isCompact ? 14 : 16,
+                    ),
                     side: const BorderSide(color: AppColors.error, width: 1),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12),
@@ -265,7 +414,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                 ),
               ),
-              const SizedBox(height: 18),
+              SizedBox(height: layout.isCompact ? 10 : 12),
+              Center(
+                child: TextButton(
+                  onPressed: () => _showDeleteAccountDialog(context),
+                  child: const Text(
+                    '注销账号',
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: AppColors.textDisabled,
+                      fontWeight: FontWeight.w300,
+                    ),
+                  ),
+                ),
+              ),
+              SizedBox(height: layout.isCompact ? 4 : 6),
               Center(
                 child: GestureDetector(
                   key: const ValueKey<String>('settings-debug-version-trigger'),
@@ -506,8 +669,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  static Future<void> _presentAvatarManagementSheet(
-      BuildContext context) async {
+  Future<void> _presentAvatarManagementSheet(BuildContext context) async {
     final hasAvatar = await ImageUploadService.avatarExists();
     if (!context.mounted) return;
 
@@ -529,6 +691,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
             Navigator.pop(sheetContext);
             final imageFile = await ImageUploadService.pickAvatar(context);
             if (imageFile != null && context.mounted) {
+              _showInlineFeedback(
+                const _SettingsInlineFeedbackState(
+                  icon: Icons.photo_camera_outlined,
+                  title: '头像已经更新',
+                  badgeLabel: '资料已刷新',
+                  description: '新的头像会同步出现在消息列表和个人页里，别人更容易认出你。',
+                  isHealthy: true,
+                ),
+              );
               AppFeedback.showToast(
                 context,
                 AppToastCode.saved,
@@ -554,6 +725,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   if (confirm == true) {
                     await ImageUploadService.clearAvatar();
                     if (context.mounted) {
+                      _showInlineFeedback(
+                        const _SettingsInlineFeedbackState(
+                          icon: Icons.delete_outline,
+                          title: '头像已恢复默认',
+                          badgeLabel: '已清空',
+                          description: '当前资料会回到默认头像，如果之后要恢复识别度，可以再重新上传。',
+                        ),
+                      );
                       AppFeedback.showToast(
                         context,
                         AppToastCode.deleted,
@@ -568,7 +747,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  static Future<void> _presentBackgroundManagementSheet(
+  Future<void> _presentBackgroundManagementSheet(
     BuildContext context,
   ) async {
     final hasBackground = await ImageUploadService.backgroundExists();
@@ -592,6 +771,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
             Navigator.pop(sheetContext);
             final imageFile = await ImageUploadService.pickBackground(context);
             if (imageFile != null && context.mounted) {
+              _showInlineFeedback(
+                const _SettingsInlineFeedbackState(
+                  icon: Icons.wallpaper_outlined,
+                  title: '背景已经更新',
+                  badgeLabel: '氛围已刷新',
+                  description: '新的背景会影响别人进入你主页时的第一眼感受，现在已经同步生效。',
+                  isHealthy: true,
+                ),
+              );
               AppFeedback.showToast(
                 context,
                 AppToastCode.saved,
@@ -617,6 +805,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   if (confirm == true) {
                     await ImageUploadService.clearBackground();
                     if (context.mounted) {
+                      _showInlineFeedback(
+                        const _SettingsInlineFeedbackState(
+                          icon: Icons.delete_outline,
+                          title: '背景已恢复默认',
+                          badgeLabel: '已清空',
+                          description: '主页氛围已经回到默认状态，后续如果想重新做区分度，可以再上传新的背景。',
+                        ),
+                      );
                       AppFeedback.showToast(
                         context,
                         AppToastCode.deleted,
@@ -828,6 +1024,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
     BuildContext context,
     SettingsProvider settingsProvider,
   ) {
+    final layout = _SettingsLayoutSpec.fromSize(
+      MediaQuery.of(context).size,
+    );
     final auth = context.watch<AuthProvider>();
     final focusState = _resolveOverviewFocusState(
       auth: auth,
@@ -836,46 +1035,51 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final notificationRuntimeState = _resolveNotificationRuntimeState(
       settingsProvider,
     );
+    final overviewDescription = layout.isCompact
+        ? '把高频设置集中在首屏，先处理通知、账号和隐私即可。'
+        : '把高频功能集中放在前面，方便你快速调整账号、安全、隐私和通知。';
 
     return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 20),
-      padding: const EdgeInsets.all(18),
+      padding: EdgeInsets.all(layout.overviewPadding),
       decoration: BoxDecoration(
         color: AppColors.white05,
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(layout.sectionCardRadius + 2),
         border: Border.all(color: AppColors.white08),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
+          Text(
             '设置总览',
             style: TextStyle(
-              fontSize: 18,
+              fontSize: layout.isCompact ? 17 : 18,
               fontWeight: FontWeight.w400,
               color: AppColors.textPrimary,
             ),
           ),
-          const SizedBox(height: 6),
+          SizedBox(height: layout.isCompact ? 4 : 6),
           Text(
-            '把高频功能集中放在前面，方便你快速调整账号、安全、隐私和通知。',
+            overviewDescription,
             style: TextStyle(
-              fontSize: 13,
+              fontSize: layout.isCompact ? 12 : 13,
               fontWeight: FontWeight.w300,
               color: AppColors.textTertiary.withValues(alpha: 0.9),
-              height: 1.45,
+              height: layout.isCompact ? 1.35 : 1.45,
             ),
+            maxLines: layout.isCompact ? 2 : null,
+            overflow:
+                layout.isCompact ? TextOverflow.ellipsis : TextOverflow.visible,
           ),
-          const SizedBox(height: 14),
+          SizedBox(height: layout.overviewGap),
           _buildOverviewFocusCard(focusState),
-          const SizedBox(height: 14),
+          SizedBox(height: layout.overviewGap),
           _buildDeviceStatusCard(settingsProvider),
-          const SizedBox(height: 14),
+          SizedBox(height: layout.overviewGap),
           _buildExperiencePresetCard(context, settingsProvider),
-          const SizedBox(height: 14),
+          SizedBox(height: layout.overviewGap),
           Wrap(
-            spacing: 8,
-            runSpacing: 8,
+            spacing: layout.isCompact ? 6 : 8,
+            runSpacing: layout.isCompact ? 6 : 8,
             children: [
               _buildStatusChip(
                 icon: Icons.phone_iphone_outlined,
@@ -895,10 +1099,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
             ],
           ),
-          const SizedBox(height: 14),
+          SizedBox(height: layout.overviewGap),
           Wrap(
-            spacing: 10,
-            runSpacing: 10,
+            spacing: layout.isCompact ? 8 : 10,
+            runSpacing: layout.isCompact ? 8 : 10,
             children: [
               _buildOverviewAction(
                 key: const Key('settings-overview-phone-action'),
@@ -923,7 +1127,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ],
           ),
           if (_inlineFeedback != null) ...[
-            const SizedBox(height: 14),
+            SizedBox(height: layout.overviewGap),
             AnimatedSwitcher(
               duration: const Duration(milliseconds: 220),
               switchInCurve: Curves.easeOutCubic,
@@ -937,9 +1141,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Widget _buildOverviewFocusCard(_SettingsOverviewFocusState state) {
+    final layout = _SettingsLayoutSpec.fromSize(
+      MediaQuery.of(context).size,
+    );
     return Container(
       key: const Key('settings-overview-focus-card'),
-      padding: const EdgeInsets.all(14),
+      padding: EdgeInsets.all(layout.isCompact ? 12 : 14),
       decoration: BoxDecoration(
         color: AppColors.white08,
         borderRadius: BorderRadius.circular(16),
@@ -949,21 +1156,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Container(
-            width: 34,
-            height: 34,
+            width: layout.leadingBoxSize,
+            height: layout.leadingBoxSize,
             decoration: BoxDecoration(
               color: AppColors.white12,
               borderRadius: BorderRadius.circular(12),
             ),
             child: Icon(
               state.icon,
-              size: 18,
+              size: layout.leadingIconSize,
               color: state.isHealthy
                   ? AppColors.textSecondary
                   : AppColors.brandBlue,
             ),
           ),
-          const SizedBox(width: 12),
+          SizedBox(width: layout.isCompact ? 10 : 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -1015,6 +1222,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     color: AppColors.textTertiary.withValues(alpha: 0.92),
                     height: 1.4,
                   ),
+                  maxLines: layout.isCompact ? 2 : null,
+                  overflow: layout.isCompact
+                      ? TextOverflow.ellipsis
+                      : TextOverflow.visible,
                 ),
               ],
             ),
@@ -1030,12 +1241,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
     required String label,
     required VoidCallback onTap,
   }) {
+    final layout = _SettingsLayoutSpec.fromSize(
+      MediaQuery.of(context).size,
+    );
     return InkWell(
       key: key,
       onTap: onTap,
       borderRadius: BorderRadius.circular(14),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        padding: EdgeInsets.symmetric(
+          horizontal: layout.isCompact ? 9 : 12,
+          vertical: layout.isCompact ? 8 : 10,
+        ),
         decoration: BoxDecoration(
           color: AppColors.white08,
           borderRadius: BorderRadius.circular(14),
@@ -1044,12 +1261,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 16, color: AppColors.textSecondary),
-            const SizedBox(width: 8),
+            Icon(
+              icon,
+              size: layout.isCompact ? 15 : 16,
+              color: AppColors.textSecondary,
+            ),
+            SizedBox(width: layout.isCompact ? 6 : 8),
             Text(
               label,
-              style: const TextStyle(
-                fontSize: 12,
+              style: TextStyle(
+                fontSize: layout.isCompact ? 11 : 12,
                 fontWeight: FontWeight.w300,
                 color: AppColors.textPrimary,
               ),
@@ -1061,8 +1282,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Widget _buildDeviceStatusCard(SettingsProvider settingsProvider) {
+    final layout = _SettingsLayoutSpec.fromSize(
+      MediaQuery.of(context).size,
+    );
     final notificationRuntimeState = _resolveNotificationRuntimeState(
       settingsProvider,
+    );
+    final notificationCenterDigest = _resolveNotificationCenterDigest(
+      Provider.of<NotificationCenterProvider?>(context),
     );
     final statusItems = <_SettingsDeviceStatusItem>[
       _SettingsDeviceStatusItem(
@@ -1101,7 +1328,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
     return Container(
       key: const Key('settings-device-status-card'),
-      padding: const EdgeInsets.all(14),
+      padding: EdgeInsets.all(layout.isCompact ? 12 : 14),
       decoration: BoxDecoration(
         color: AppColors.white08,
         borderRadius: BorderRadius.circular(16),
@@ -1120,25 +1347,44 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
           const SizedBox(height: 6),
           Text(
-            '不用逐项扫开关，也能先判断这台设备现在更偏及时触达、安静使用还是隐私优先。',
+            layout.isCompact
+                ? '先判断这台设备现在偏及时触达、安静使用还是隐私优先。'
+                : '不用逐项扫开关，也能先判断这台设备现在更偏及时触达、安静使用还是隐私优先。',
             style: TextStyle(
               fontSize: 12,
               fontWeight: FontWeight.w300,
               color: AppColors.textTertiary.withValues(alpha: 0.92),
               height: 1.4,
             ),
+            maxLines: layout.isCompact ? 2 : null,
+            overflow:
+                layout.isCompact ? TextOverflow.ellipsis : TextOverflow.visible,
           ),
-          const SizedBox(height: 12),
-          ...statusItems.asMap().entries.map(
-                (entry) => Padding(
-                  padding: EdgeInsets.only(
-                      bottom: entry.key == statusItems.length - 1 ? 0 : 10),
-                  child: _buildDeviceStatusRow(entry.value),
+          SizedBox(height: layout.isCompact ? 10 : 12),
+          if (layout.isCompact)
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: statusItems
+                  .map((item) => _buildCompactDeviceStatusChip(item))
+                  .toList(),
+            )
+          else
+            ...statusItems.asMap().entries.map(
+                  (entry) => Padding(
+                    padding: EdgeInsets.only(
+                      bottom: entry.key == statusItems.length - 1 ? 0 : 10,
+                    ),
+                    child: _buildDeviceStatusRow(entry.value),
+                  ),
                 ),
-              ),
           if (notificationRuntimeState.followUpDescription != null) ...[
-            const SizedBox(height: 12),
-            _buildNotificationRuntimeCard(notificationRuntimeState),
+            SizedBox(height: layout.isCompact ? 10 : 12),
+            _buildNotificationRuntimeCard(
+              context,
+              notificationRuntimeState,
+              digest: notificationCenterDigest,
+            ),
           ],
         ],
       ),
@@ -1231,12 +1477,67 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
+  Widget _buildCompactDeviceStatusChip(_SettingsDeviceStatusItem item) {
+    return Container(
+      key: item.key,
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: AppColors.white05,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.white08),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            item.icon,
+            size: 14,
+            color:
+                item.isHealthy ? AppColors.textSecondary : AppColors.brandBlue,
+          ),
+          const SizedBox(width: 6),
+          Text(
+            item.title,
+            style: const TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w400,
+              color: AppColors.textPrimary,
+            ),
+          ),
+          const SizedBox(width: 6),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+            decoration: BoxDecoration(
+              color: item.isHealthy
+                  ? AppColors.white12
+                  : AppColors.brandBlue.withValues(alpha: 0.16),
+              borderRadius: BorderRadius.circular(999),
+            ),
+            child: Text(
+              item.badgeLabel,
+              style: TextStyle(
+                fontSize: 10.5,
+                fontWeight: FontWeight.w300,
+                color: item.isHealthy
+                    ? AppColors.textSecondary
+                    : AppColors.brandBlue,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildNotificationRuntimeCard(
-    _SettingsNotificationRuntimeState state,
-  ) {
+      BuildContext context, _SettingsNotificationRuntimeState state,
+      {_SettingsNotificationCenterDigestState? digest}) {
+    final layout = _SettingsLayoutSpec.fromSize(
+      MediaQuery.of(context).size,
+    );
     return Container(
       key: const Key('settings-notification-runtime-card'),
-      padding: const EdgeInsets.all(12),
+      padding: EdgeInsets.all(layout.isCompact ? 10 : 12),
       decoration: BoxDecoration(
         color: state.isHealthy
             ? AppColors.white05
@@ -1252,8 +1553,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Container(
-            width: 30,
-            height: 30,
+            width: layout.isCompact ? 28 : 30,
+            height: layout.isCompact ? 28 : 30,
             decoration: BoxDecoration(
               color: state.isHealthy
                   ? AppColors.white08
@@ -1262,13 +1563,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
             child: Icon(
               state.icon,
-              size: 16,
+              size: layout.isCompact ? 15 : 16,
               color: state.isHealthy
                   ? AppColors.textSecondary
                   : AppColors.brandBlue,
             ),
           ),
-          const SizedBox(width: 10),
+          SizedBox(width: layout.isCompact ? 8 : 10),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -1320,39 +1621,199 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     color: AppColors.textTertiary.withValues(alpha: 0.92),
                     height: 1.35,
                   ),
+                  maxLines: layout.isCompact ? 2 : null,
+                  overflow: layout.isCompact
+                      ? TextOverflow.ellipsis
+                      : TextOverflow.visible,
                 ),
-                const SizedBox(height: 10),
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: TextButton(
-                    key: const Key('settings-notification-runtime-action'),
-                    onPressed: () =>
-                        _handleNotificationAction(state.actionType),
-                    style: TextButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 10,
+                if (digest != null) ...[
+                  SizedBox(height: layout.isCompact ? 8 : 10),
+                  _buildNotificationCenterDigestCard(digest),
+                ],
+                SizedBox(height: layout.isCompact ? 8 : 10),
+                Wrap(
+                  spacing: layout.isCompact ? 6 : 8,
+                  runSpacing: layout.isCompact ? 6 : 8,
+                  children: [
+                    TextButton(
+                      key: const Key('settings-notification-runtime-action'),
+                      onPressed: () =>
+                          _handleNotificationAction(state.actionType),
+                      style: TextButton.styleFrom(
+                        padding: EdgeInsets.symmetric(
+                          horizontal: layout.isCompact ? 9 : 12,
+                          vertical: layout.isCompact ? 7 : 10,
+                        ),
+                        foregroundColor: AppColors.brandBlue,
+                        backgroundColor:
+                            AppColors.brandBlue.withValues(alpha: 0.12),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
                       ),
-                      foregroundColor: AppColors.brandBlue,
-                      backgroundColor:
-                          AppColors.brandBlue.withValues(alpha: 0.12),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
+                      child: Text(
+                        state.actionLabel,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w300,
+                        ),
                       ),
                     ),
-                    child: Text(
-                      state.actionLabel,
-                      style: const TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w300,
+                    TextButton.icon(
+                      key: const Key('settings-notification-center-action'),
+                      onPressed: () => context.push('/notifications'),
+                      style: TextButton.styleFrom(
+                        padding: EdgeInsets.symmetric(
+                          horizontal: layout.isCompact ? 9 : 12,
+                          vertical: layout.isCompact ? 7 : 10,
+                        ),
+                        foregroundColor: AppColors.textSecondary,
+                        backgroundColor: AppColors.white08,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          side: const BorderSide(color: AppColors.white12),
+                        ),
+                      ),
+                      icon: const Icon(
+                        Icons.notifications_none_outlined,
+                        size: 16,
+                      ),
+                      label: const Text(
+                        NotificationPermissionGuidance
+                            .openNotificationCenterAction,
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w300,
+                        ),
                       ),
                     ),
-                  ),
+                  ],
                 ),
               ],
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildNotificationCenterDigestCard(
+    _SettingsNotificationCenterDigestState state,
+  ) {
+    final layout = _SettingsLayoutSpec.fromSize(
+      MediaQuery.of(context).size,
+    );
+    return Container(
+      key: const Key('settings-notification-center-summary-card'),
+      padding: EdgeInsets.all(layout.isCompact ? 9 : 10),
+      decoration: BoxDecoration(
+        color: AppColors.white05,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.white08),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Text(
+                  state.title,
+                  key: const Key('settings-notification-center-summary-title'),
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w400,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+              ),
+              Container(
+                key: const Key('settings-notification-center-summary-badge'),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: state.hasUnread
+                      ? AppColors.brandBlue.withValues(alpha: 0.16)
+                      : AppColors.white08,
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  state.badgeLabel,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w300,
+                    color: state.hasUnread
+                        ? AppColors.brandBlue
+                        : AppColors.textSecondary,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            state.description,
+            key: const Key('settings-notification-center-summary-description'),
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w300,
+              color: AppColors.textTertiary.withValues(alpha: 0.92),
+              height: 1.35,
+            ),
+            maxLines: layout.isCompact ? 2 : null,
+            overflow:
+                layout.isCompact ? TextOverflow.ellipsis : TextOverflow.visible,
+          ),
+          if (state.sourceItems.isNotEmpty) ...[
+            SizedBox(height: layout.isCompact ? 6 : 8),
+            Wrap(
+              key: const Key('settings-notification-center-source-overview'),
+              spacing: 6,
+              runSpacing: 6,
+              children: state.sourceItems
+                  .map(_buildNotificationCenterSourceChip)
+                  .toList(),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildNotificationCenterSourceChip(
+    _SettingsNotificationCenterSourceDigestItem item,
+  ) {
+    return InkWell(
+      key: item.key,
+      onTap: () =>
+          context.push('/notifications?source=${item.sourceType.name}'),
+      borderRadius: BorderRadius.circular(999),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+        decoration: BoxDecoration(
+          color: item.color.withValues(alpha: 0.1),
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: item.color.withValues(alpha: 0.18)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              item.icon,
+              size: 12,
+              color: item.color.withValues(alpha: 0.94),
+            ),
+            const SizedBox(width: 5),
+            Text(
+              '${item.label} ${item.count}',
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w300,
+                color: item.color.withValues(alpha: 0.95),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1424,6 +1885,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         borderRadius: BorderRadius.circular(999),
                       ),
                       child: Text(
+                        key: const Key('settings-inline-feedback-badge'),
                         state.badgeLabel,
                         style: TextStyle(
                           fontSize: 11,
@@ -1439,6 +1901,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 const SizedBox(height: 5),
                 Text(
                   state.description,
+                  key: const Key('settings-inline-feedback-description'),
                   style: TextStyle(
                     fontSize: 11,
                     fontWeight: FontWeight.w300,
@@ -1458,13 +1921,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
     BuildContext context,
     SettingsProvider settingsProvider,
   ) {
+    final layout = _SettingsLayoutSpec.fromSize(
+      MediaQuery.of(context).size,
+    );
     final currentPresetState = _resolveExperiencePresetState(settingsProvider);
     final activePreset = settingsProvider.activeExperiencePreset;
     final presetOptions = _experiencePresetOptions;
+    final compactSummary = layout.isCompact
+        ? '按设备情况快速切到更及时、均衡或安静的体验。'
+        : currentPresetState.description;
 
     return Container(
       key: const Key('settings-experience-preset-card'),
-      padding: const EdgeInsets.all(14),
+      padding: EdgeInsets.all(layout.isCompact ? 12 : 14),
       decoration: BoxDecoration(
         color: AppColors.white08,
         borderRadius: BorderRadius.circular(16),
@@ -1514,7 +1983,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
           const SizedBox(height: 6),
           Text(
-            currentPresetState.description,
+            compactSummary,
             key: const Key('settings-experience-preset-summary'),
             style: TextStyle(
               fontSize: 12,
@@ -1522,22 +1991,38 @@ class _SettingsScreenState extends State<SettingsScreen> {
               color: AppColors.textTertiary.withValues(alpha: 0.92),
               height: 1.4,
             ),
+            maxLines: layout.isCompact ? 2 : null,
+            overflow:
+                layout.isCompact ? TextOverflow.ellipsis : TextOverflow.visible,
           ),
-          const SizedBox(height: 12),
-          ...presetOptions.asMap().entries.map((entry) {
-            final option = entry.value;
-            final isActive = activePreset == option.preset;
-            return Padding(
-              padding: EdgeInsets.only(
-                bottom: entry.key == presetOptions.length - 1 ? 0 : 10,
-              ),
-              child: _buildExperiencePresetOption(
-                context,
-                option: option,
-                isActive: isActive,
-              ),
-            );
-          }),
+          SizedBox(height: layout.isCompact ? 10 : 12),
+          if (layout.isCompact)
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: presetOptions.map((option) {
+                return _buildExperiencePresetOption(
+                  context,
+                  option: option,
+                  isActive: activePreset == option.preset,
+                );
+              }).toList(),
+            )
+          else
+            ...presetOptions.asMap().entries.map((entry) {
+              final option = entry.value;
+              final isActive = activePreset == option.preset;
+              return Padding(
+                padding: EdgeInsets.only(
+                  bottom: entry.key == presetOptions.length - 1 ? 0 : 10,
+                ),
+                child: _buildExperiencePresetOption(
+                  context,
+                  option: option,
+                  isActive: isActive,
+                ),
+              );
+            }),
         ],
       ),
     );
@@ -1548,12 +2033,26 @@ class _SettingsScreenState extends State<SettingsScreen> {
     required _SettingsExperiencePresetOption option,
     required bool isActive,
   }) {
+    final layout = _SettingsLayoutSpec.fromSize(
+      MediaQuery.of(context).size,
+    );
+    final compactOptionWidth = ((MediaQuery.of(context).size.width -
+                (layout.pageHorizontalPadding * 2) -
+                (layout.overviewPadding * 2) -
+                12) /
+            2)
+        .clamp(132.0, 144.0)
+        .toDouble();
     return InkWell(
       key: option.key,
       onTap: () => _applyExperiencePreset(option.preset),
       borderRadius: BorderRadius.circular(14),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+        width: layout.isCompact ? compactOptionWidth : null,
+        padding: EdgeInsets.symmetric(
+          horizontal: layout.isCompact ? 9 : 12,
+          vertical: layout.isCompact ? 9 : 12,
+        ),
         decoration: BoxDecoration(
           color: isActive
               ? AppColors.brandBlue.withValues(alpha: 0.12)
@@ -1628,11 +2127,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   Text(
                     option.description,
                     style: TextStyle(
-                      fontSize: 11,
+                      fontSize: layout.isCompact ? 10.5 : 11,
                       fontWeight: FontWeight.w300,
                       color: AppColors.textTertiary.withValues(alpha: 0.9),
                       height: 1.35,
                     ),
+                    maxLines: layout.isCompact ? 2 : null,
+                    overflow: layout.isCompact
+                        ? TextOverflow.ellipsis
+                        : TextOverflow.visible,
                   ),
                 ],
               ),
@@ -1647,8 +2150,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
     required IconData icon,
     required String label,
   }) {
+    final layout = _SettingsLayoutSpec.fromSize(
+      MediaQuery.of(context).size,
+    );
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      padding: EdgeInsets.symmetric(
+        horizontal: layout.isCompact ? 9 : 10,
+        vertical: layout.isCompact ? 6 : 7,
+      ),
       decoration: BoxDecoration(
         color: AppColors.white08,
         borderRadius: BorderRadius.circular(999),
@@ -1656,12 +2165,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 14, color: AppColors.textSecondary),
-          const SizedBox(width: 6),
+          Icon(
+            icon,
+            size: layout.isCompact ? 13 : 14,
+            color: AppColors.textSecondary,
+          ),
+          SizedBox(width: layout.isCompact ? 5 : 6),
           Text(
             label,
-            style: const TextStyle(
-              fontSize: 12,
+            style: TextStyle(
+              fontSize: layout.isCompact ? 11 : 12,
               fontWeight: FontWeight.w300,
               color: AppColors.textSecondary,
             ),
@@ -1811,8 +2324,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
       return const _SettingsOverviewFocusState(
         icon: Icons.notifications_paused_outlined,
         title: '建议开启系统通知权限',
-        subtitle: '应用内通知已经打开，但系统层还没有授权，这台设备依然可能漏掉锁屏和后台提醒。',
-        badgeLabel: '待授权',
+        subtitle: NotificationPermissionGuidance.settingsDescription,
+        badgeLabel: NotificationPermissionGuidance.badgeLabel,
       );
     }
 
@@ -1863,11 +2376,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
     if (!pushState.permissionGranted) {
       return const _SettingsNotificationRuntimeState(
         icon: Icons.notifications_paused_outlined,
-        badgeLabel: '待授权',
-        description: '应用内通知已打开，但系统层还没授权，这台设备仍可能漏掉锁屏和后台提醒。',
-        followUpDescription: '去系统设置打开通知权限后，再回来点一次刷新状态，这台设备才会真正进入可触达状态。',
+        badgeLabel: NotificationPermissionGuidance.badgeLabel,
+        description: NotificationPermissionGuidance.settingsDescription,
+        followUpDescription:
+            NotificationPermissionGuidance.settingsFollowUpDescription,
         statusChipLabel: '通知待授权',
-        actionLabel: '去系统设置',
+        actionLabel: NotificationPermissionGuidance.openSystemSettingsAction,
         actionIcon: Icons.settings_outlined,
         actionType: _SettingsNotificationAction.openSystemSettings,
       );
@@ -1899,8 +2413,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Widget _buildSectionTitle(String title, {String? subtitle}) {
+    final layout = _SettingsLayoutSpec.fromSize(
+      MediaQuery.of(context).size,
+    );
     return Padding(
-      padding: const EdgeInsets.fromLTRB(28, 0, 20, 12),
+      padding: EdgeInsets.fromLTRB(
+        layout.sectionTitleInset,
+        0,
+        layout.sectionTitleInset,
+        layout.sectionTitleBottomSpacing,
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1923,6 +2445,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 color: AppColors.textDisabled.withValues(alpha: 0.9),
                 height: 1.35,
               ),
+              maxLines: layout.isCompact ? 1 : null,
+              overflow: layout.isCompact
+                  ? TextOverflow.ellipsis
+                  : TextOverflow.visible,
             ),
           ],
         ],
@@ -1931,11 +2457,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Widget _buildSectionCard({required List<Widget> children}) {
+    final layout = _SettingsLayoutSpec.fromSize(
+      MediaQuery.of(context).size,
+    );
     return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 20),
       decoration: BoxDecoration(
         color: AppColors.white05,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(layout.sectionCardRadius),
         border: Border.all(color: AppColors.white05),
       ),
       child: Column(children: children),
@@ -1955,25 +2483,37 @@ class _SettingsScreenState extends State<SettingsScreen> {
     Widget? trailing,
     VoidCallback? onTap,
   }) {
+    final layout = _SettingsLayoutSpec.fromSize(
+      MediaQuery.of(context).size,
+    );
     return InkWell(
       key: key,
       onTap: onTap,
       borderRadius: BorderRadius.circular(16),
       child: Container(
-        padding: UiTokens.cardPadding,
+        padding: EdgeInsets.symmetric(
+          horizontal: layout.itemHorizontalPadding,
+          vertical: layout.itemVerticalPadding,
+        ),
         child: Row(
-          crossAxisAlignment: CrossAxisAlignment.center,
+          crossAxisAlignment: layout.isCompact
+              ? CrossAxisAlignment.start
+              : CrossAxisAlignment.center,
           children: [
             Container(
-              width: 34,
-              height: 34,
+              width: layout.leadingBoxSize,
+              height: layout.leadingBoxSize,
               decoration: BoxDecoration(
                 color: AppColors.white05,
                 borderRadius: BorderRadius.circular(10),
               ),
-              child: Icon(icon, color: AppColors.textSecondary, size: 18),
+              child: Icon(
+                icon,
+                color: AppColors.textSecondary,
+                size: layout.leadingIconSize,
+              ),
             ),
-            const SizedBox(width: 14),
+            SizedBox(width: layout.isCompact ? 12 : 14),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -1984,8 +2524,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       Expanded(
                         child: Text(
                           title,
-                          style: const TextStyle(
-                            fontSize: 15,
+                          style: TextStyle(
+                            fontSize: layout.isCompact ? 14 : 15,
                             fontWeight: FontWeight.w300,
                             color: AppColors.textPrimary,
                             letterSpacing: 0.3,
@@ -2030,17 +2570,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     Text(
                       helperText ?? subtitle!,
                       style: TextStyle(
-                        fontSize: 12,
+                        fontSize: layout.isCompact ? 11.5 : 12,
                         fontWeight: FontWeight.w300,
                         color: AppColors.textTertiary.withValues(alpha: 0.9),
                         height: 1.35,
                       ),
+                      maxLines: layout.isCompact ? 2 : null,
+                      overflow: layout.isCompact
+                          ? TextOverflow.ellipsis
+                          : TextOverflow.visible,
                     ),
                   ],
                 ],
               ),
             ),
-            const SizedBox(width: 12),
+            SizedBox(width: layout.trailingGap),
             if (trailing != null)
               trailing
             else if (onTap != null)
@@ -2056,8 +2600,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Widget _buildDivider() {
+    final layout = _SettingsLayoutSpec.fromSize(
+      MediaQuery.of(context).size,
+    );
     return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 20),
+      margin: EdgeInsets.symmetric(
+        horizontal: layout.itemHorizontalPadding,
+      ),
       height: 1,
       color: AppColors.white05,
     );
@@ -2460,7 +3009,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Widget _buildBlockedUserRow(
-    BuildContext context, {
+    BuildContext sheetContext, {
     required FriendProvider friendProvider,
     required String userId,
     required String displayName,
@@ -2530,11 +3079,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
             key: ValueKey<String>('settings-blocked-restore-$userId'),
             onPressed: () async {
               await friendProvider.unblockUser(userId);
-              if (!context.mounted) return;
-              context
+              if (!sheetContext.mounted) return;
+              sheetContext
                   .read<ChatProvider>()
                   .restoreConversationAfterUnblock(userId);
-              if (!context.mounted) return;
+              if (sheetContext.mounted) {
+                Navigator.of(sheetContext).pop();
+              }
+              if (!mounted) return;
+              _showInlineFeedback(
+                const _SettingsInlineFeedbackState(
+                  icon: Icons.person_add_alt_1_outlined,
+                  title: '已解除拉黑',
+                  badgeLabel: '关系已恢复',
+                  description: '历史关系和会话入口已经恢复，但是否重新联系仍然由你来决定。',
+                  isHealthy: true,
+                ),
+              );
               AppFeedback.showToast(
                 context,
                 AppToastCode.disabled,
@@ -2706,19 +3267,37 @@ class _SettingsScreenState extends State<SettingsScreen> {
     switch (action) {
       case _SettingsNotificationAction.enableNotifications:
         await _updateNotificationEnabled(true);
+        return;
       case _SettingsNotificationAction.disableNotifications:
         await _updateNotificationEnabled(false);
+        return;
       case _SettingsNotificationAction.openSystemSettings:
-        await openAppSettings();
-        if (!mounted) return;
-        _showInlineFeedback(
-          const _SettingsInlineFeedbackState(
-            icon: Icons.settings_outlined,
-            title: '已打开系统设置',
-            badgeLabel: '去授权',
-            description: '打开系统通知权限后，回到设置页点一下“刷新状态”，就能确认这台设备是否真正就绪。',
-          ),
-        );
+        {
+          final settingsProvider = context.read<SettingsProvider>();
+          final opened = await openAppSettings();
+          if (!mounted) return;
+          if (!opened) {
+            _showInlineFeedback(
+              const _SettingsInlineFeedbackState(
+                icon: Icons.settings_outlined,
+                title: '未能打开系统设置',
+                badgeLabel: '请手动处理',
+                description: '如果这次没有成功跳到系统设置，请稍后手动打开系统通知权限，再回到应用确认状态。',
+              ),
+            );
+            return;
+          }
+          settingsProvider.markNotificationPermissionRecoveryPending();
+          _showInlineFeedback(
+            const _SettingsInlineFeedbackState(
+              icon: Icons.settings_outlined,
+              title: '已打开系统设置',
+              badgeLabel: '等待返回',
+              description: '处理完系统通知权限后直接回到应用，我们会自动检查这台设备是否已经恢复可触达状态。',
+            ),
+          );
+          return;
+        }
       case _SettingsNotificationAction.refreshRuntimeState:
         final settingsProvider = context.read<SettingsProvider>();
         await settingsProvider.refreshPushRuntimeState();
@@ -2727,6 +3306,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           _buildNotificationInlineFeedback(settingsProvider),
         );
         AppFeedback.showToast(context, AppToastCode.saved, subject: '通知状态');
+        return;
     }
   }
 
@@ -2738,9 +3318,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _SettingsNotificationAction.openSystemSettings =>
         const _SettingsInlineFeedbackState(
           icon: Icons.notifications_paused_outlined,
-          title: '通知仍待系统授权',
-          badgeLabel: '待授权',
-          description: '应用内开关已经打开，但系统权限还没放行，锁屏和后台提醒依然可能缺失。',
+          title: NotificationPermissionGuidance.title,
+          badgeLabel: NotificationPermissionGuidance.badgeLabel,
+          description: NotificationPermissionGuidance.settingsDescription,
         ),
       _SettingsNotificationAction.refreshRuntimeState =>
         const _SettingsInlineFeedbackState(
@@ -2767,6 +3347,147 @@ class _SettingsScreenState extends State<SettingsScreen> {
     };
   }
 
+  _SettingsInlineFeedbackState _buildNotificationResumeInlineFeedback(
+    SettingsProvider settingsProvider,
+  ) {
+    final runtimeState = _resolveNotificationRuntimeState(settingsProvider);
+    return switch (runtimeState.actionType) {
+      _SettingsNotificationAction.openSystemSettings =>
+        const _SettingsInlineFeedbackState(
+          icon: Icons.notifications_paused_outlined,
+          title: '通知权限仍待授权',
+          badgeLabel: NotificationPermissionGuidance.badgeLabel,
+          description: '这次返回后仍未检测到系统通知权限，锁屏和后台提醒暂时还不会生效。',
+        ),
+      _SettingsNotificationAction.refreshRuntimeState =>
+        const _SettingsInlineFeedbackState(
+          icon: Icons.sync_outlined,
+          title: '通知通道正在恢复',
+          badgeLabel: '同步中',
+          description: '系统通知权限已经打开，当前正在等待这台设备的通知通道重新就绪。',
+        ),
+      _SettingsNotificationAction.disableNotifications =>
+        const _SettingsInlineFeedbackState(
+          icon: Icons.notifications_active_outlined,
+          title: '通知已经恢复在线',
+          badgeLabel: '已就绪',
+          description: '检测到系统通知权限已恢复，这台设备现在更适合作为主聊天入口。',
+          isHealthy: true,
+        ),
+      _SettingsNotificationAction.enableNotifications =>
+        const _SettingsInlineFeedbackState(
+          icon: Icons.notifications_off_outlined,
+          title: '通知仍处于静默',
+          badgeLabel: '已关闭',
+          description: '系统通知权限虽然可能已恢复，但应用内通知开关当前仍是关闭状态，新的提醒会继续留在通知中心。',
+        ),
+    };
+  }
+
+  _SettingsNotificationCenterDigestState? _resolveNotificationCenterDigest(
+    NotificationCenterProvider? provider,
+  ) {
+    if (provider == null || provider.items.isEmpty) {
+      return null;
+    }
+
+    final unreadCount = provider.unreadCount;
+    final latestItem = unreadCount > 0
+        ? provider.items.firstWhere(
+            (item) => !item.isRead,
+            orElse: () => provider.items.first,
+          )
+        : provider.items.first;
+    return _SettingsNotificationCenterDigestState(
+      title: unreadCount > 0 ? '通知中心还有 $unreadCount 条待查看提醒' : '通知中心保留了最近一条提醒',
+      badgeLabel: unreadCount > 0 ? '未读 $unreadCount' : '最近提醒',
+      description: unreadCount > 0
+          ? '最新待查看：${_buildNotificationCenterPreview(latestItem)}'
+          : '最近一条：${_buildNotificationCenterPreview(latestItem)}',
+      hasUnread: unreadCount > 0,
+      sourceItems: _buildNotificationCenterSourceDigestItems(provider.items),
+    );
+  }
+
+  List<_SettingsNotificationCenterSourceDigestItem>
+      _buildNotificationCenterSourceDigestItems(
+    List<AppNotification> items,
+  ) {
+    const recentWindow = 6;
+    if (items.isEmpty) {
+      return const <_SettingsNotificationCenterSourceDigestItem>[];
+    }
+
+    final sourceCounts = <_SettingsNotificationCenterSourceType, int>{};
+    for (final item in items.take(recentWindow)) {
+      final sourceType = _notificationCenterSourceTypeFor(item);
+      sourceCounts.update(sourceType, (value) => value + 1, ifAbsent: () => 1);
+    }
+
+    final orderedTypes = <_SettingsNotificationCenterSourceType>[
+      _SettingsNotificationCenterSourceType.message,
+      _SettingsNotificationCenterSourceType.friend,
+      _SettingsNotificationCenterSourceType.system,
+    ];
+
+    return orderedTypes
+        .where(sourceCounts.containsKey)
+        .map(
+          (type) => _SettingsNotificationCenterSourceDigestItem(
+            key: Key(
+              'settings-notification-center-source-${type.name}',
+            ),
+            sourceType: type,
+            label: switch (type) {
+              _SettingsNotificationCenterSourceType.message => '消息',
+              _SettingsNotificationCenterSourceType.friend => '好友',
+              _SettingsNotificationCenterSourceType.system => '系统',
+            },
+            count: sourceCounts[type]!,
+            icon: switch (type) {
+              _SettingsNotificationCenterSourceType.message =>
+                Icons.chat_bubble_outline,
+              _SettingsNotificationCenterSourceType.friend =>
+                Icons.person_add_alt_1_outlined,
+              _SettingsNotificationCenterSourceType.system =>
+                Icons.info_outline,
+            },
+            color: switch (type) {
+              _SettingsNotificationCenterSourceType.message =>
+                AppColors.brandBlue,
+              _SettingsNotificationCenterSourceType.friend => AppColors.success,
+              _SettingsNotificationCenterSourceType.system =>
+                AppColors.textSecondary,
+            },
+          ),
+        )
+        .toList();
+  }
+
+  _SettingsNotificationCenterSourceType _notificationCenterSourceTypeFor(
+    AppNotification item,
+  ) {
+    return switch (item.type) {
+      AppNotificationType.message =>
+        _SettingsNotificationCenterSourceType.message,
+      AppNotificationType.friendRequest ||
+      AppNotificationType.friendAccepted =>
+        _SettingsNotificationCenterSourceType.friend,
+      AppNotificationType.system =>
+        _SettingsNotificationCenterSourceType.system,
+    };
+  }
+
+  String _buildNotificationCenterPreview(AppNotification item) {
+    final title = item.title.trim();
+    final body = item.body.replaceAll(RegExp(r'\s+'), ' ').trim();
+    final preview = body.isEmpty ? title : '$title · $body';
+    if (preview.length <= 36) {
+      return preview;
+    }
+    return '${preview.substring(0, 35)}…';
+  }
+
   void _showInlineFeedback(_SettingsInlineFeedbackState state) {
     if (!mounted) return;
     setState(() {
@@ -2777,6 +3498,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Future<void> _copyUid(BuildContext context) async {
     final uid = context.read<AuthProvider>().uid;
     if (uid == null || uid.isEmpty) {
+      _showInlineFeedback(
+        const _SettingsInlineFeedbackState(
+          icon: Icons.badge_outlined,
+          title: 'UID 还未就绪',
+          badgeLabel: '稍后再试',
+          description: '当前账号标识还在准备中，等生成完成后再复制，会更适合联调和排查问题。',
+        ),
+      );
       AppFeedback.showError(
         context,
         AppErrorCode.invalidInput,
@@ -2786,6 +3515,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
     await Clipboard.setData(ClipboardData(text: uid));
     if (!context.mounted) return;
+    _showInlineFeedback(
+      const _SettingsInlineFeedbackState(
+        icon: Icons.badge_outlined,
+        title: 'UID 已复制',
+        badgeLabel: '可用于联调',
+        description: '现在可以把 UID 发给开发、测试或其他账号，用来加好友、排查问题或做联调确认。',
+        isHealthy: true,
+      ),
+    );
     AppFeedback.showToast(context, AppToastCode.copied);
   }
 
@@ -2957,7 +3695,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         Expanded(
                           child: TextButton(
                             key: const Key('settings-phone-cancel'),
-                            onPressed: () => Navigator.pop(sheetContext, false),
+                            onPressed: () {
+                              FocusScope.of(sheetContext).unfocus();
+                              Navigator.pop(sheetContext, false);
+                            },
                             style: TextButton.styleFrom(
                               padding: const EdgeInsets.symmetric(vertical: 14),
                               backgroundColor: AppColors.white05,
@@ -2979,7 +3720,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         Expanded(
                           child: TextButton(
                             key: const Key('settings-phone-save'),
-                            onPressed: () => Navigator.pop(sheetContext, true),
+                            onPressed: () {
+                              FocusScope.of(sheetContext).unfocus();
+                              Navigator.pop(sheetContext, true);
+                            },
                             style: TextButton.styleFrom(
                               padding: const EdgeInsets.symmetric(vertical: 14),
                               backgroundColor: AppColors.white12,
@@ -3012,6 +3756,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
       final phone = controller.text.trim();
       final valid = RegExp(r'^\d{11}$').hasMatch(phone);
       if (!valid) {
+        _showInlineFeedback(
+          const _SettingsInlineFeedbackState(
+            icon: Icons.phone_outlined,
+            title: '手机号格式有误',
+            badgeLabel: '未保存',
+            description: '请输入 11 位手机号后再保存，本次不会覆盖当前绑定号码。',
+          ),
+        );
         AppFeedback.showError(
           context,
           AppErrorCode.invalidInput,
@@ -3020,11 +3772,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
       } else {
         await authProvider.updatePhone(phone);
         if (!context.mounted) return;
+        _showInlineFeedback(
+          const _SettingsInlineFeedbackState(
+            icon: Icons.phone_outlined,
+            title: '手机号已经更新',
+            badgeLabel: '登录与找回',
+            description: '后续登录、验证码接收和账号找回都会以新的手机号为准。',
+            isHealthy: true,
+          ),
+        );
         AppFeedback.showToast(context, AppToastCode.saved, subject: '手机号');
       }
     }
-
-    controller.dispose();
   }
 
   Future<void> _presentPasswordEditorSheet(BuildContext context) async {
@@ -3093,7 +3852,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         Expanded(
                           child: TextButton(
                             key: const Key('settings-password-cancel'),
-                            onPressed: () => Navigator.pop(sheetContext, false),
+                            onPressed: () {
+                              FocusScope.of(sheetContext).unfocus();
+                              Navigator.pop(sheetContext, false);
+                            },
                             style: TextButton.styleFrom(
                               padding: const EdgeInsets.symmetric(vertical: 14),
                               backgroundColor: AppColors.white05,
@@ -3115,7 +3877,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         Expanded(
                           child: TextButton(
                             key: const Key('settings-password-save'),
-                            onPressed: () => Navigator.pop(sheetContext, true),
+                            onPressed: () {
+                              FocusScope.of(sheetContext).unfocus();
+                              Navigator.pop(sheetContext, true);
+                            },
                             style: TextButton.styleFrom(
                               padding: const EdgeInsets.symmetric(vertical: 14),
                               backgroundColor: AppColors.white12,
@@ -3151,18 +3916,42 @@ class _SettingsScreenState extends State<SettingsScreen> {
       final currentPassword = StorageService.getLocalPassword();
 
       if (oldPassword != currentPassword) {
+        _showInlineFeedback(
+          const _SettingsInlineFeedbackState(
+            icon: Icons.lock_outline,
+            title: '旧密码不正确',
+            badgeLabel: '未保存',
+            description: '请先确认当前密码，再继续保存新密码，本次修改还没有生效。',
+          ),
+        );
         AppFeedback.showError(
           context,
           AppErrorCode.invalidInput,
           detail: '旧密码不正确，请重新输入',
         );
       } else if (newPassword.length < 6) {
+        _showInlineFeedback(
+          const _SettingsInlineFeedbackState(
+            icon: Icons.lock_outline,
+            title: '新密码长度不够',
+            badgeLabel: '未保存',
+            description: '新的密码至少需要 6 位，建议重新设置后再保存。',
+          ),
+        );
         AppFeedback.showError(
           context,
           AppErrorCode.invalidInput,
           detail: '新密码至少 6 位，请重新设置',
         );
       } else if (newPassword != confirmPassword) {
+        _showInlineFeedback(
+          const _SettingsInlineFeedbackState(
+            icon: Icons.lock_outline,
+            title: '两次输入不一致',
+            badgeLabel: '待确认',
+            description: '请重新确认两次输入的新密码一致后再保存，本次修改不会生效。',
+          ),
+        );
         AppFeedback.showError(
           context,
           AppErrorCode.invalidInput,
@@ -3171,13 +3960,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
       } else {
         await StorageService.saveLocalPassword(newPassword);
         if (!context.mounted) return;
+        _showInlineFeedback(
+          const _SettingsInlineFeedbackState(
+            icon: Icons.lock_outlined,
+            title: '密码已经更新',
+            badgeLabel: '安全已加强',
+            description: '新的本地密码已经生效，后续请优先使用新密码，避免和其他环境复用。',
+            isHealthy: true,
+          ),
+        );
         AppFeedback.showToast(context, AppToastCode.saved, subject: '密码');
       }
     }
-
-    oldController.dispose();
-    newController.dispose();
-    confirmController.dispose();
   }
 
   // ignore: unused_element
@@ -3441,6 +4235,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
       context.go('/login');
     }
   }
+
+  void _showDeleteAccountDialog(BuildContext context) async {
+    final confirm = await AppDialog.showConfirm(
+      context,
+      title: '注销账号',
+      content: '注销后账号数据将被清除且无法恢复，确定继续吗？',
+      confirmText: '注销',
+      isDanger: true,
+    );
+
+    if (confirm == true && context.mounted) {
+      await context.read<AuthProvider>().deleteAccount();
+      if (context.mounted) context.go('/login');
+    }
+  }
 }
 
 class _SettingsOverviewFocusState {
@@ -3564,4 +4373,44 @@ class _SettingsNotificationRuntimeState {
   final _SettingsNotificationAction actionType;
   final String? followUpDescription;
   final bool isHealthy;
+}
+
+class _SettingsNotificationCenterDigestState {
+  const _SettingsNotificationCenterDigestState({
+    required this.title,
+    required this.badgeLabel,
+    required this.description,
+    required this.hasUnread,
+    required this.sourceItems,
+  });
+
+  final String title;
+  final String badgeLabel;
+  final String description;
+  final bool hasUnread;
+  final List<_SettingsNotificationCenterSourceDigestItem> sourceItems;
+}
+
+enum _SettingsNotificationCenterSourceType {
+  message,
+  friend,
+  system,
+}
+
+class _SettingsNotificationCenterSourceDigestItem {
+  const _SettingsNotificationCenterSourceDigestItem({
+    required this.key,
+    required this.sourceType,
+    required this.label,
+    required this.count,
+    required this.icon,
+    required this.color,
+  });
+
+  final Key key;
+  final _SettingsNotificationCenterSourceType sourceType;
+  final String label;
+  final int count;
+  final IconData icon;
+  final Color color;
 }

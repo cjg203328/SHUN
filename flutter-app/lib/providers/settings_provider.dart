@@ -31,6 +31,8 @@ class SettingsProvider extends ChangeNotifier {
   bool _notificationEnabled = true;
   bool _vibrationEnabled = true;
   PushRuntimeState _pushRuntimeState;
+  bool _pendingNotificationPermissionRecovery = false;
+  bool _notificationPermissionRecoveryInFlight = false;
 
   bool get invisibleMode => _invisibleMode;
   bool get notificationEnabled => _notificationEnabled;
@@ -164,6 +166,25 @@ class SettingsProvider extends ChangeNotifier {
     await _pushNotificationService.refreshPermissionState();
     _syncPushRuntimeState();
     notifyListeners();
+  }
+
+  void markNotificationPermissionRecoveryPending() {
+    _pendingNotificationPermissionRecovery = true;
+  }
+
+  Future<bool> refreshPushRuntimeStateAfterSystemSettingsReturn() async {
+    if (!_pendingNotificationPermissionRecovery ||
+        _notificationPermissionRecoveryInFlight) {
+      return false;
+    }
+    _pendingNotificationPermissionRecovery = false;
+    _notificationPermissionRecoveryInFlight = true;
+    try {
+      await refreshPushRuntimeState();
+      return true;
+    } finally {
+      _notificationPermissionRecoveryInFlight = false;
+    }
   }
 
   void _syncPushRuntimeState() {

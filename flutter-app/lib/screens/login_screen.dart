@@ -25,6 +25,7 @@ class _LoginScreenState extends State<LoginScreen> {
   int _countdown = 0;
   bool _sendingCode = false;
   bool _loggingIn = false;
+  bool _agreedToTerms = false;
 
   @override
   void dispose() {
@@ -34,6 +35,9 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _sendCode() async {
+    // Prevent multiple simultaneous OTP requests
+    if (_sendingCode) return;
+
     if (_phoneController.text.length != 11) {
       AppFeedback.showError(
         context,
@@ -57,11 +61,14 @@ class _LoginScreenState extends State<LoginScreen> {
     });
 
     if (!success) {
-      AppFeedback.showError(
-        context,
-        AppErrorCode.sendFailed,
-        detail: authProvider.lastError,
-      );
+      final errorMessage = authProvider.lastError;
+      if (errorMessage != null && errorMessage.isNotEmpty) {
+        AppFeedback.showError(
+          context,
+          AppErrorCode.sendFailed,
+          detail: errorMessage,
+        );
+      }
       return;
     }
 
@@ -85,6 +92,9 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _login() async {
+    // Prevent multiple simultaneous login attempts
+    if (_loggingIn) return;
+
     final authProvider = context.read<AuthProvider>();
     final profileProvider = context.read<ProfileProvider>();
     final settingsProvider = context.read<SettingsProvider>();
@@ -119,11 +129,15 @@ class _LoginScreenState extends State<LoginScreen> {
       if (!mounted) return;
       context.go('/main');
     } else {
-      AppFeedback.showError(
-        context,
-        AppErrorCode.invalidInput,
-        detail: authProvider.lastError,
-      );
+      // Only show error if we have a specific error message
+      final errorMessage = authProvider.lastError;
+      if (errorMessage != null && errorMessage.isNotEmpty) {
+        AppFeedback.showError(
+          context,
+          AppErrorCode.invalidInput,
+          detail: errorMessage,
+        );
+      }
     }
   }
 
@@ -309,61 +323,106 @@ class _LoginScreenState extends State<LoginScreen> {
 
                     const SizedBox(height: 30),
 
-                    SizedBox(
-                      width: double.infinity,
-                      child: ElevatedButton(
-                        onPressed: !_loggingIn &&
-                                _phoneController.text.length == 11 &&
-                                _codeController.text.length == 6
-                            ? _login
-                            : null,
-                        child: Text(_loggingIn ? '登录中...' : '登录'),
+                    // 协议同意复选框
+                    GestureDetector(
+                      onTap: () =>
+                          setState(() => _agreedToTerms = !_agreedToTerms),
+                      behavior: HitTestBehavior.opaque,
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          AnimatedContainer(
+                            duration: const Duration(milliseconds: 180),
+                            curve: Curves.easeOutCubic,
+                            width: 20,
+                            height: 20,
+                            margin: const EdgeInsets.only(top: 1),
+                            decoration: BoxDecoration(
+                              color: _agreedToTerms
+                                  ? AppColors.brandBlue
+                                  : Colors.transparent,
+                              borderRadius: BorderRadius.circular(5),
+                              border: Border.all(
+                                color: _agreedToTerms
+                                    ? AppColors.brandBlue
+                                    : AppColors.white20,
+                                width: 1.5,
+                              ),
+                            ),
+                            child: _agreedToTerms
+                                ? const Icon(
+                                    Icons.check,
+                                    size: 13,
+                                    color: Colors.white,
+                                  )
+                                : null,
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Wrap(
+                              crossAxisAlignment: WrapCrossAlignment.center,
+                              children: [
+                                Text(
+                                  '我已阅读并同意',
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .bodySmall
+                                      ?.copyWith(height: 1.6),
+                                ),
+                                GestureDetector(
+                                  onTap: () =>
+                                      _showAgreement(context, '用户协议'),
+                                  child: Text(
+                                    '《用户协议》',
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .bodySmall
+                                        ?.copyWith(
+                                          color: AppColors.brandBlue,
+                                          height: 1.6,
+                                        ),
+                                  ),
+                                ),
+                                Text(
+                                  '与',
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .bodySmall
+                                      ?.copyWith(height: 1.6),
+                                ),
+                                GestureDetector(
+                                  onTap: () =>
+                                      _showAgreement(context, '隐私政策'),
+                                  child: Text(
+                                    '《隐私政策》',
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .bodySmall
+                                        ?.copyWith(
+                                          color: AppColors.brandBlue,
+                                          height: 1.6,
+                                        ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
                       ),
                     ),
 
                     const SizedBox(height: 20),
 
-                    // 用户协议和隐私政策
-                    Center(
-                      child: Wrap(
-                        alignment: WrapAlignment.center,
-                        crossAxisAlignment: WrapCrossAlignment.center,
-                        children: [
-                          Text(
-                            '登录即表示同意',
-                            style: Theme.of(context).textTheme.bodySmall,
-                          ),
-                          GestureDetector(
-                            onTap: () => _showAgreement(context, '用户协议'),
-                            child: Text(
-                              '《用户协议》',
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .bodySmall
-                                  ?.copyWith(
-                                    color: AppColors.brandBlue,
-                                    decoration: TextDecoration.underline,
-                                  ),
-                            ),
-                          ),
-                          Text(
-                            '和',
-                            style: Theme.of(context).textTheme.bodySmall,
-                          ),
-                          GestureDetector(
-                            onTap: () => _showAgreement(context, '隐私政策'),
-                            child: Text(
-                              '《隐私政策》',
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .bodySmall
-                                  ?.copyWith(
-                                    color: AppColors.brandBlue,
-                                    decoration: TextDecoration.underline,
-                                  ),
-                            ),
-                          ),
-                        ],
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton(
+                        onPressed: !_loggingIn &&
+                                _agreedToTerms &&
+                                _phoneController.text.length == 11 &&
+                                _codeController.text.length == 6
+                            ? _login
+                            : null,
+                        child: Text(_loggingIn ? '登录中...' : '登录'),
                       ),
                     ),
                   ],

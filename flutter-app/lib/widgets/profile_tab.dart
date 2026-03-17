@@ -5,6 +5,8 @@ import 'package:go_router/go_router.dart';
 import '../config/theme.dart';
 import '../core/feedback/app_feedback.dart';
 import '../core/ui/ui_tokens.dart';
+import '../providers/chat_provider.dart';
+import '../providers/friend_provider.dart';
 import '../providers/profile_provider.dart';
 import '../services/image_upload_service.dart';
 import '../services/media_upload_service.dart';
@@ -52,9 +54,7 @@ class _ProfileTabState extends State<ProfileTab> {
   Widget build(BuildContext context) {
     final mediaQuery = MediaQuery.of(context);
     final screenSize = mediaQuery.size;
-    final compactNav = screenSize.height < 760 || screenSize.width < 390;
-    final bottomNavOverlayInset =
-        mediaQuery.padding.bottom + (compactNav ? 94 : 104);
+    final isCompactScreen = screenSize.height < 760 || screenSize.width < 390;
 
     return Scaffold(
       backgroundColor: AppColors.pureBlack,
@@ -64,23 +64,56 @@ class _ProfileTabState extends State<ProfileTab> {
           final hasBackground = _backgroundPath != null;
           final isPortraitFullscreen =
               hasBackground && profileProvider.portraitFullscreenBackground;
+          final usesCompactIdentityPanel =
+              isCompactScreen && !isPortraitFullscreen;
           final isTransparentBackground =
               isPortraitFullscreen && profileProvider.transparentHomepage;
-          final normalHeight = (screenHeight * 0.52).clamp(320.0, 520.0);
+          final normalHeight = (screenHeight *
+                  (usesCompactIdentityPanel
+                      ? 0.30
+                      : (isCompactScreen ? 0.34 : 0.52)))
+              .clamp(
+            usesCompactIdentityPanel
+                ? 184.0
+                : (isCompactScreen ? 192.0 : 320.0),
+            usesCompactIdentityPanel
+                ? 252.0
+                : (isCompactScreen ? 280.0 : 520.0),
+          );
           final fullHeight = screenHeight - mediaQuery.padding.top;
           final backgroundHeight =
               isPortraitFullscreen ? fullHeight : normalHeight;
           final profileTopOffset = isPortraitFullscreen
-              ? backgroundHeight * 0.5
-              : backgroundHeight - 62;
+              ? backgroundHeight * (isCompactScreen ? 0.4 : 0.5)
+              : backgroundHeight -
+                  (usesCompactIdentityPanel
+                      ? 48.0
+                      : (isCompactScreen ? 34 : 62));
+          final pageHorizontalPadding = isCompactScreen ? 16.0 : 20.0;
+          final identityMaxWidth = usesCompactIdentityPanel
+              ? double.infinity
+              : (isCompactScreen ? 240.0 : 300.0);
+          final avatarSize = usesCompactIdentityPanel
+              ? 64.0
+              : (isCompactScreen ? 68.0 : 100.0);
+          final headerBottomPadding =
+              usesCompactIdentityPanel ? 12.0 : (isCompactScreen ? 16.0 : 40.0);
+          final identityGap =
+              usesCompactIdentityPanel ? 8.0 : (isCompactScreen ? 10.0 : 20.0);
+          final statusGap =
+              usesCompactIdentityPanel ? 10.0 : (isCompactScreen ? 12.0 : 24.0);
+          final listBottomInset = mediaQuery.padding.bottom +
+              (isPortraitFullscreen ? 28.0 : (isCompactScreen ? 34.0 : 40.0));
           final signatureText = profileProvider.signature.trim().isEmpty
               ? '这个人很神秘，什么都没留下'
               : profileProvider.signature.trim();
-          return CustomScrollView(
-            slivers: [
-              // 顶部背景和个人信息区域
-              SliverToBoxAdapter(
-                child: Stack(
+          return SingleChildScrollView(
+            padding: EdgeInsets.only(bottom: listBottomInset),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // 顶部背景和个人信息区域
+                Stack(
                   children: [
                     // 背景图片
                     GestureDetector(
@@ -164,195 +197,187 @@ class _ProfileTabState extends State<ProfileTab> {
                     // 个人信息
                     Container(
                       margin: EdgeInsets.only(top: profileTopOffset),
-                      padding: const EdgeInsets.fromLTRB(20, 0, 20, 40),
-                      child: Column(
-                        children: [
-                          // 头像
-                          GestureDetector(
-                            onTap: () => _changeAvatar(),
-                            child: Stack(
+                      padding: EdgeInsets.fromLTRB(
+                        pageHorizontalPadding,
+                        0,
+                        pageHorizontalPadding,
+                        headerBottomPadding,
+                      ),
+                      child: usesCompactIdentityPanel
+                          ? _buildCompactIdentityCard(
+                              context,
+                              profileProvider: profileProvider,
+                              signatureText: signatureText,
+                              avatarSize: avatarSize,
+                            )
+                          : Column(
                               children: [
-                                Container(
-                                  width: 100,
-                                  height: 100,
-                                  decoration: BoxDecoration(
-                                    shape: BoxShape.circle,
-                                    color: AppColors.white08,
-                                    border: Border.all(
-                                      color: AppColors.white20,
-                                      width: 1.2,
-                                    ),
-                                    boxShadow: [
-                                      BoxShadow(
-                                        color: AppColors.pureBlack
-                                            .withValues(alpha: 0.16),
-                                        blurRadius: 12,
-                                        offset: const Offset(0, 4),
+                                // 头像
+                                _buildAvatarTrigger(
+                                  profileProvider: profileProvider,
+                                  avatarSize: avatarSize,
+                                  isCompact: isCompactScreen,
+                                ),
+
+                                SizedBox(height: identityGap),
+
+                                // 昵称
+                                Center(
+                                  child: GestureDetector(
+                                    key: const Key('profile-nickname-trigger'),
+                                    onTap: () =>
+                                        _presentNicknameEditor(context),
+                                    behavior: HitTestBehavior.opaque,
+                                    child: ConstrainedBox(
+                                      constraints: BoxConstraints(
+                                        maxWidth: identityMaxWidth,
                                       ),
-                                    ],
-                                  ),
-                                  child: ClipOval(
-                                    child: _avatarPath != null
-                                        ? _buildProfileImage(
-                                            _avatarPath!,
-                                            profileProvider.avatar,
-                                          )
-                                        : Center(
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.center,
+                                        children: [
+                                          Flexible(
                                             child: Text(
-                                              profileProvider.avatar,
-                                              style:
-                                                  const TextStyle(fontSize: 48),
+                                              profileProvider.nickname,
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: const TextStyle(
+                                                fontSize: 22,
+                                                fontWeight: FontWeight.w300,
+                                                color: AppColors.textPrimary,
+                                                letterSpacing: 1,
+                                              ),
                                             ),
                                           ),
+                                          const SizedBox(width: 8),
+                                          const Icon(
+                                            Icons.edit,
+                                            size: 18,
+                                            color: AppColors.textTertiary,
+                                          ),
+                                        ],
+                                      ),
+                                    ),
                                   ),
                                 ),
-                                Positioned(
-                                  right: 0,
-                                  bottom: 0,
+
+                                const SizedBox(height: 8),
+
+                                // 个性签名
+                                Center(
+                                  child: TextButton(
+                                    key: const Key('profile-signature-trigger'),
+                                    onPressed: () =>
+                                        _presentSignatureEditor(context),
+                                    style: TextButton.styleFrom(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 10,
+                                        vertical: 4,
+                                      ),
+                                      minimumSize: Size.zero,
+                                      tapTargetSize:
+                                          MaterialTapTargetSize.shrinkWrap,
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(12),
+                                      ),
+                                      foregroundColor: AppColors.textTertiary,
+                                    ),
+                                    child: ConstrainedBox(
+                                      constraints: BoxConstraints(
+                                        maxWidth: identityMaxWidth,
+                                      ),
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Flexible(
+                                            child: Text(
+                                              signatureText,
+                                              maxLines: 2,
+                                              overflow: TextOverflow.ellipsis,
+                                              textAlign: TextAlign.center,
+                                              style: const TextStyle(
+                                                fontSize: 14,
+                                                fontWeight: FontWeight.w300,
+                                                color: AppColors.textTertiary,
+                                                height: 1.35,
+                                              ),
+                                            ),
+                                          ),
+                                          const SizedBox(width: 6),
+                                          const Padding(
+                                            padding: EdgeInsets.only(top: 2),
+                                            child: Icon(
+                                              Icons.edit,
+                                              size: 14,
+                                              color: AppColors.textTertiary,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                ),
+
+                                SizedBox(height: statusGap),
+
+                                // 状态
+                                GestureDetector(
+                                  key: const Key('profile-status-trigger'),
+                                  onTap: () => _presentStatusEditor(context),
+                                  behavior: HitTestBehavior.opaque,
                                   child: Container(
-                                    padding: const EdgeInsets.all(8),
+                                    padding: EdgeInsets.symmetric(
+                                      horizontal: isCompactScreen ? 16 : 20,
+                                      vertical: isCompactScreen ? 10 : 12,
+                                    ),
                                     decoration: BoxDecoration(
-                                      color: AppColors.white20,
-                                      shape: BoxShape.circle,
+                                      color: isTransparentBackground
+                                          ? AppColors.white15
+                                          : AppColors.white05,
+                                      borderRadius: BorderRadius.circular(20),
                                       border: Border.all(
-                                        color: AppColors.white20,
-                                        width: 1,
+                                        color: isTransparentBackground
+                                            ? AppColors.white15
+                                            : AppColors.white08,
                                       ),
                                     ),
-                                    child: const Icon(
-                                      Icons.camera_alt,
-                                      size: 16,
-                                      color: AppColors.textPrimary,
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.max,
+                                      children: [
+                                        const Text(
+                                          '状态：',
+                                          style: TextStyle(
+                                            fontSize: 13,
+                                            color: AppColors.textTertiary,
+                                          ),
+                                        ),
+                                        const SizedBox(width: 4),
+                                        Expanded(
+                                          child: Text(
+                                            profileProvider.status,
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: const TextStyle(
+                                              fontSize: 13,
+                                              color: AppColors.textSecondary,
+                                            ),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 6),
+                                        const Icon(
+                                          Icons.edit,
+                                          size: 14,
+                                          color: AppColors.textTertiary,
+                                        ),
+                                      ],
                                     ),
                                   ),
                                 ),
                               ],
                             ),
-                          ),
-
-                          const SizedBox(height: 20),
-
-                          // 昵称
-                          GestureDetector(
-                            key: const Key('profile-nickname-trigger'),
-                            onTap: () => _presentNicknameEditor(context),
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Text(
-                                  profileProvider.nickname,
-                                  style: const TextStyle(
-                                    fontSize: 22,
-                                    fontWeight: FontWeight.w300,
-                                    color: AppColors.textPrimary,
-                                    letterSpacing: 1,
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
-                                const Icon(
-                                  Icons.edit,
-                                  size: 18,
-                                  color: AppColors.textTertiary,
-                                ),
-                              ],
-                            ),
-                          ),
-
-                          const SizedBox(height: 8),
-
-                          // 个性签名
-                          GestureDetector(
-                            key: const Key('profile-signature-trigger'),
-                            onTap: () => _presentSignatureEditor(context),
-                            child: Container(
-                              constraints: const BoxConstraints(maxWidth: 290),
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 10,
-                                vertical: 4,
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Flexible(
-                                    child: Text(
-                                      signatureText,
-                                      maxLines: 2,
-                                      overflow: TextOverflow.ellipsis,
-                                      textAlign: TextAlign.center,
-                                      style: const TextStyle(
-                                        fontSize: 14,
-                                        fontWeight: FontWeight.w300,
-                                        color: AppColors.textTertiary,
-                                        height: 1.35,
-                                      ),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 6),
-                                  const Padding(
-                                    padding: EdgeInsets.only(top: 2),
-                                    child: Icon(
-                                      Icons.edit,
-                                      size: 14,
-                                      color: AppColors.textTertiary,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-
-                          const SizedBox(height: 24),
-
-                          // 状态
-                          GestureDetector(
-                            key: const Key('profile-status-trigger'),
-                            onTap: () => _presentStatusEditor(context),
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 20,
-                                vertical: 12,
-                              ),
-                              decoration: BoxDecoration(
-                                color: isTransparentBackground
-                                    ? AppColors.white15
-                                    : AppColors.white05,
-                                borderRadius: BorderRadius.circular(20),
-                                border: Border.all(
-                                  color: isTransparentBackground
-                                      ? AppColors.white15
-                                      : AppColors.white08,
-                                ),
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  const Text(
-                                    '状态：',
-                                    style: TextStyle(
-                                      fontSize: 13,
-                                      color: AppColors.textTertiary,
-                                    ),
-                                  ),
-                                  Text(
-                                    profileProvider.status,
-                                    style: const TextStyle(
-                                      fontSize: 13,
-                                      color: AppColors.textSecondary,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 6),
-                                  const Icon(
-                                    Icons.edit,
-                                    size: 14,
-                                    color: AppColors.textTertiary,
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
                     ),
                     if (isPortraitFullscreen)
                       Positioned(
@@ -379,66 +404,60 @@ class _ProfileTabState extends State<ProfileTab> {
                       ),
                   ],
                 ),
-              ),
 
-              // 功能列表
-              if (!isPortraitFullscreen)
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
+                // 统计数据行
+                if (!isPortraitFullscreen)
+                  Padding(
+                    padding: EdgeInsets.fromLTRB(
+                      pageHorizontalPadding,
+                      usesCompactIdentityPanel ? 10 : 12,
+                      pageHorizontalPadding,
+                      0,
+                    ),
+                    child: Consumer2<FriendProvider, ChatProvider>(
+                      builder: (context, friendProv, chatProv, _) {
+                        if (usesCompactIdentityPanel) {
+                          return _buildCompactStatsCard(
+                            friendCount: friendProv.friends.length,
+                            threadCount: chatProv.threads.length,
+                          );
+                        }
+                        return Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                          children: [
+                            _buildStatItem(
+                                '好友', '${friendProv.friends.length}'),
+                            _buildStatDivider(),
+                            _buildStatItem('会话', '${chatProv.threads.length}'),
+                          ],
+                        );
+                      },
+                    ),
+                  ),
+
+                SizedBox(height: usesCompactIdentityPanel ? 12 : 16),
+
+                // 功能列表
+                if (!isPortraitFullscreen)
+                  Padding(
+                    padding: EdgeInsets.fromLTRB(
+                      pageHorizontalPadding,
+                      0,
+                      pageHorizontalPadding,
+                      16,
+                    ),
                     child: _buildQuickActionsCard(
                       context,
                       hasBackground: hasBackground,
                       profileProvider: profileProvider,
                     ),
                   ),
-                ),
 
-              if (!isPortraitFullscreen)
-                SliverToBoxAdapter(
-                  child: Container(
-                    margin: const EdgeInsets.symmetric(horizontal: 20),
-                    decoration: BoxDecoration(
-                      color: isTransparentBackground
-                          ? AppColors.white12
-                          : AppColors.white05,
-                      borderRadius: BorderRadius.circular(UiTokens.radiusMd),
-                      border: Border.all(
-                        color: isTransparentBackground
-                            ? AppColors.white15
-                            : AppColors.white08,
-                      ),
-                    ),
-                    child: Column(
-                      children: [
-                        _buildMenuItem(
-                          context,
-                          icon: Icons.layers_outlined,
-                          title: '背景显示模式',
-                          onTap: () => _showBackgroundModeSheet(
-                            context,
-                            hasBackground: hasBackground,
-                          ),
-                        ),
-                        _buildMenuItem(
-                          context,
-                          icon: Icons.settings_outlined,
-                          title: '设置',
-                          onTap: () => context
-                              .push('/settings')
-                              .then((_) => _loadImages()),
-                        ),
-                      ],
-                    ),
-                  ),
+                SizedBox(
+                  height: isPortraitFullscreen ? 0 : 8,
                 ),
-
-              SliverToBoxAdapter(
-                child: SizedBox(
-                  height: isPortraitFullscreen ? 18 : bottomNavOverlayInset,
-                ),
-              ),
-            ],
+              ],
+            ),
           );
         },
       ),
@@ -450,14 +469,22 @@ class _ProfileTabState extends State<ProfileTab> {
     required bool hasBackground,
     required ProfileProvider profileProvider,
   }) {
+    final screenSize = MediaQuery.of(context).size;
+    final isCompactScreen = screenSize.height < 760 || screenSize.width < 390;
     final readinessState = _resolveReadinessState(
       hasBackground: hasBackground,
       profileProvider: profileProvider,
+      isCompactScreen: isCompactScreen,
     );
+    final description = isCompactScreen
+        ? (hasBackground ? '把常用整理入口统一收在这里。' : '先补背景和签名，再收口常用入口。')
+        : (hasBackground
+            ? '签名、背景显示和设置入口都集中在这里，发起聊天前可以顺手收拾一下。'
+            : '先补背景和签名，再统一检查设置入口，个人页第一眼会更完整。');
 
     return Container(
       key: const Key('profile-quick-actions-card'),
-      padding: const EdgeInsets.all(16),
+      padding: EdgeInsets.all(isCompactScreen ? 12 : 16),
       decoration: BoxDecoration(
         color: AppColors.white05,
         borderRadius: BorderRadius.circular(UiTokens.radiusMd),
@@ -467,7 +494,7 @@ class _ProfileTabState extends State<ProfileTab> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Text(
-            '今天先调整这些',
+            '个人页快速整理',
             style: TextStyle(
               fontSize: 15,
               fontWeight: FontWeight.w400,
@@ -476,9 +503,7 @@ class _ProfileTabState extends State<ProfileTab> {
           ),
           const SizedBox(height: 4),
           Text(
-            hasBackground
-                ? '优先把签名、背景展示和设置入口收拾好，别人会更容易记住你。'
-                : '先补背景和签名，会让个人页第一眼更完整。',
+            description,
             style: TextStyle(
               fontSize: 12,
               fontWeight: FontWeight.w300,
@@ -486,10 +511,13 @@ class _ProfileTabState extends State<ProfileTab> {
               height: 1.45,
             ),
           ),
-          const SizedBox(height: 14),
+          SizedBox(height: isCompactScreen ? 10 : 14),
           Container(
             key: const Key('profile-readiness-chip'),
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            padding: EdgeInsets.symmetric(
+              horizontal: isCompactScreen ? 10 : 12,
+              vertical: isCompactScreen ? 8 : 10,
+            ),
             decoration: BoxDecoration(
               color: AppColors.white08,
               borderRadius: BorderRadius.circular(14),
@@ -518,31 +546,34 @@ class _ProfileTabState extends State<ProfileTab> {
                           color: AppColors.textPrimary,
                         ),
                       ),
-                      const SizedBox(height: 4),
-                      Text(
-                        readinessState.subtitle,
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w300,
-                          color: AppColors.textTertiary.withValues(alpha: 0.92),
-                          height: 1.4,
+                      if (!isCompactScreen) ...[
+                        const SizedBox(height: 4),
+                        Text(
+                          readinessState.subtitle,
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w300,
+                            color:
+                                AppColors.textTertiary.withValues(alpha: 0.92),
+                            height: 1.4,
+                          ),
                         ),
-                      ),
+                      ],
                     ],
                   ),
                 ),
               ],
             ),
           ),
-          const SizedBox(height: 12),
+          SizedBox(height: isCompactScreen ? 8 : 12),
           _buildProfileCompletionChecklist(
             hasBackground: hasBackground,
             profileProvider: profileProvider,
           ),
-          const SizedBox(height: 12),
+          SizedBox(height: isCompactScreen ? 8 : 12),
           Wrap(
-            spacing: 10,
-            runSpacing: 10,
+            spacing: isCompactScreen ? 8 : 10,
+            runSpacing: isCompactScreen ? 8 : 10,
             children: [
               _buildQuickActionButton(
                 key: const Key('profile-quick-signature'),
@@ -577,6 +608,8 @@ class _ProfileTabState extends State<ProfileTab> {
     required bool hasBackground,
     required ProfileProvider profileProvider,
   }) {
+    final screenSize = MediaQuery.of(context).size;
+    final isCompactScreen = screenSize.height < 760 || screenSize.width < 390;
     final hasCustomSignature = profileProvider.signature.trim().isNotEmpty &&
         profileProvider.signature.trim() != ProfileService.defaultSignature;
     final hasCustomStatus = profileProvider.status.trim().isNotEmpty &&
@@ -601,7 +634,7 @@ class _ProfileTabState extends State<ProfileTab> {
 
     return Container(
       key: const Key('profile-completion-checklist'),
-      padding: const EdgeInsets.all(12),
+      padding: EdgeInsets.all(isCompactScreen ? 9 : 12),
       decoration: BoxDecoration(
         color: AppColors.white08,
         borderRadius: BorderRadius.circular(14),
@@ -618,17 +651,19 @@ class _ProfileTabState extends State<ProfileTab> {
               color: AppColors.textPrimary,
             ),
           ),
-          const SizedBox(height: 4),
-          Text(
-            '补齐这三项后，别人从匹配页或消息列表点进来时，会更容易建立第一印象。',
-            style: TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.w300,
-              color: AppColors.textTertiary.withValues(alpha: 0.92),
-              height: 1.4,
+          if (!isCompactScreen) ...[
+            const SizedBox(height: 4),
+            Text(
+              '补齐这三项后，别人从匹配页或消息列表点进来时，会更容易建立第一印象。',
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w300,
+                color: AppColors.textTertiary.withValues(alpha: 0.92),
+                height: 1.4,
+              ),
             ),
-          ),
-          const SizedBox(height: 10),
+          ],
+          SizedBox(height: isCompactScreen ? 8 : 10),
           Wrap(
             spacing: 8,
             runSpacing: 8,
@@ -640,9 +675,14 @@ class _ProfileTabState extends State<ProfileTab> {
   }
 
   Widget _buildChecklistChip(_ProfileChecklistItem item) {
+    final screenSize = MediaQuery.of(context).size;
+    final isCompactScreen = screenSize.height < 760 || screenSize.width < 390;
     return Container(
       key: item.key,
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      padding: EdgeInsets.symmetric(
+        horizontal: isCompactScreen ? 9 : 10,
+        vertical: isCompactScreen ? 7 : 8,
+      ),
       decoration: BoxDecoration(
         color: item.isReady
             ? AppColors.white12
@@ -668,7 +708,7 @@ class _ProfileTabState extends State<ProfileTab> {
           Text(
             item.label,
             style: TextStyle(
-              fontSize: 11,
+              fontSize: isCompactScreen ? 10.5 : 11,
               fontWeight: FontWeight.w300,
               color:
                   item.isReady ? AppColors.textSecondary : AppColors.brandBlue,
@@ -682,6 +722,7 @@ class _ProfileTabState extends State<ProfileTab> {
   _ProfileReadinessState _resolveReadinessState({
     required bool hasBackground,
     required ProfileProvider profileProvider,
+    required bool isCompactScreen,
   }) {
     final hasCustomSignature = profileProvider.signature.trim().isNotEmpty &&
         profileProvider.signature.trim() != ProfileService.defaultSignature;
@@ -692,10 +733,12 @@ class _ProfileTabState extends State<ProfileTab> {
         (hasCustomStatus ? 1 : 0);
 
     if (completedCount >= 3) {
-      return const _ProfileReadinessState(
+      return _ProfileReadinessState(
         icon: Icons.verified_outlined,
         title: '个人页已整理完成 3/3',
-        subtitle: '背景、签名和状态都已经就绪，当前观感已经接近正式上线版本。',
+        subtitle: isCompactScreen
+            ? '背景、签名和状态都已就绪，当前首屏已经足够完整。'
+            : '背景、签名和状态都已经就绪，当前观感已经接近正式上线版本。',
         isReady: true,
       );
     }
@@ -709,7 +752,9 @@ class _ProfileTabState extends State<ProfileTab> {
     return _ProfileReadinessState(
       icon: Icons.auto_awesome_outlined,
       title: '个人页还差 ${3 - completedCount} 项细节',
-      subtitle: '建议优先补齐${missingLabels.join('、')}，这样第一眼信息会更完整，也更像真实可互动的人。',
+      subtitle: isCompactScreen
+          ? '优先补齐${missingLabels.join('、')}，首屏会更像真实可聊天的人。'
+          : '建议优先补齐${missingLabels.join('、')}，这样第一眼信息会更完整，也更像真实可互动的人。',
     );
   }
 
@@ -719,12 +764,17 @@ class _ProfileTabState extends State<ProfileTab> {
     required String label,
     required VoidCallback onTap,
   }) {
+    final screenSize = MediaQuery.of(context).size;
+    final isCompactScreen = screenSize.height < 760 || screenSize.width < 390;
     return InkWell(
       key: key,
       onTap: onTap,
       borderRadius: BorderRadius.circular(14),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        padding: EdgeInsets.symmetric(
+          horizontal: isCompactScreen ? 10 : 12,
+          vertical: isCompactScreen ? 8 : 10,
+        ),
         decoration: BoxDecoration(
           color: AppColors.white08,
           borderRadius: BorderRadius.circular(14),
@@ -733,12 +783,16 @@ class _ProfileTabState extends State<ProfileTab> {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 16, color: AppColors.textSecondary),
-            const SizedBox(width: 8),
+            Icon(
+              icon,
+              size: isCompactScreen ? 15 : 16,
+              color: AppColors.textSecondary,
+            ),
+            SizedBox(width: isCompactScreen ? 6 : 8),
             Text(
               label,
-              style: const TextStyle(
-                fontSize: 12,
+              style: TextStyle(
+                fontSize: isCompactScreen ? 11.5 : 12,
                 fontWeight: FontWeight.w300,
                 color: AppColors.textPrimary,
               ),
@@ -769,6 +823,305 @@ class _ProfileTabState extends State<ProfileTab> {
           color: AppColors.textSecondary,
         ),
       ),
+    );
+  }
+
+  Widget _buildCompactIdentityCard(
+    BuildContext context, {
+    required ProfileProvider profileProvider,
+    required String signatureText,
+    required double avatarSize,
+  }) {
+    return Container(
+      key: const Key('profile-compact-identity-card'),
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+      decoration: BoxDecoration(
+        color: AppColors.pureBlack.withValues(alpha: 0.34),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: AppColors.white12),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.pureBlack.withValues(alpha: 0.18),
+            blurRadius: 16,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildAvatarTrigger(
+            profileProvider: profileProvider,
+            avatarSize: avatarSize,
+            isCompact: true,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                GestureDetector(
+                  key: const Key('profile-nickname-trigger'),
+                  onTap: () => _presentNicknameEditor(context),
+                  behavior: HitTestBehavior.opaque,
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          profileProvider.nickname,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.w400,
+                            color: AppColors.textPrimary,
+                            letterSpacing: 0.2,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      const Icon(
+                        Icons.edit,
+                        size: 16,
+                        color: AppColors.textTertiary,
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 6),
+                GestureDetector(
+                  key: const Key('profile-signature-trigger'),
+                  onTap: () => _presentSignatureEditor(context),
+                  behavior: HitTestBehavior.opaque,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 2),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: Text(
+                            signatureText,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w300,
+                              color: AppColors.textTertiary,
+                              height: 1.35,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        const Padding(
+                          padding: EdgeInsets.only(top: 2),
+                          child: Icon(
+                            Icons.edit_outlined,
+                            size: 14,
+                            color: AppColors.textTertiary,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                GestureDetector(
+                  key: const Key('profile-status-trigger'),
+                  onTap: () => _presentStatusEditor(context),
+                  behavior: HitTestBehavior.opaque,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 8,
+                    ),
+                    decoration: BoxDecoration(
+                      color: AppColors.white08,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: AppColors.white12),
+                    ),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 8,
+                          height: 8,
+                          decoration: BoxDecoration(
+                            color: AppColors.brandBlue,
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            profileProvider.status,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w300,
+                              color: AppColors.textSecondary,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        const Icon(
+                          Icons.chevron_right,
+                          size: 16,
+                          color: AppColors.textTertiary,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAvatarTrigger({
+    required ProfileProvider profileProvider,
+    required double avatarSize,
+    required bool isCompact,
+  }) {
+    final badgePadding = isCompact ? 6.0 : 8.0;
+    final badgeIconSize = isCompact ? 14.0 : 16.0;
+    final fallbackFontSize = avatarSize * 0.46;
+
+    return GestureDetector(
+      onTap: () => _changeAvatar(),
+      child: Stack(
+        children: [
+          Container(
+            width: avatarSize,
+            height: avatarSize,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: AppColors.white08,
+              border: Border.all(
+                color: AppColors.white20,
+                width: 1.2,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: AppColors.pureBlack.withValues(alpha: 0.16),
+                  blurRadius: 12,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: ClipOval(
+              child: _avatarPath != null
+                  ? _buildProfileImage(
+                      _avatarPath!,
+                      profileProvider.avatar,
+                    )
+                  : Center(
+                      child: Text(
+                        profileProvider.avatar,
+                        style: TextStyle(fontSize: fallbackFontSize),
+                      ),
+                    ),
+            ),
+          ),
+          Positioned(
+            right: 0,
+            bottom: 0,
+            child: Container(
+              padding: EdgeInsets.all(badgePadding),
+              decoration: BoxDecoration(
+                color: AppColors.white20,
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: AppColors.white20,
+                  width: 1,
+                ),
+              ),
+              child: Icon(
+                Icons.camera_alt,
+                size: badgeIconSize,
+                color: AppColors.textPrimary,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCompactStatsCard({
+    required int friendCount,
+    required int threadCount,
+  }) {
+    return Container(
+      key: const Key('profile-stats-card'),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: AppColors.white05,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: AppColors.white08),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: _buildStatItem('好友', '$friendCount', isCompact: true),
+          ),
+          _buildStatDivider(),
+          Expanded(
+            child: _buildStatItem('会话', '$threadCount', isCompact: true),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStatItem(
+    String label,
+    String value, {
+    bool isCompact = false,
+  }) {
+    return TweenAnimationBuilder<double>(
+      tween: Tween(begin: 0, end: double.tryParse(value) ?? 0),
+      duration: const Duration(milliseconds: 600),
+      curve: Curves.easeOutCubic,
+      builder: (context, animVal, _) {
+        final displayValue = double.tryParse(value) != null
+            ? animVal.round().toString()
+            : value;
+        return Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              displayValue,
+              style: TextStyle(
+                fontSize: isCompact ? 17 : 18,
+                fontWeight: FontWeight.w500,
+                color: AppColors.textPrimary,
+                letterSpacing: -0.3,
+              ),
+            ),
+            SizedBox(height: isCompact ? 1.5 : 2),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: isCompact ? 10.5 : 11,
+                fontWeight: FontWeight.w300,
+                color: AppColors.textTertiary,
+                letterSpacing: 0.4,
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildStatDivider() {
+    return Container(
+      width: 1,
+      height: 28,
+      color: AppColors.white08,
     );
   }
 
@@ -969,43 +1322,6 @@ class _ProfileTabState extends State<ProfileTab> {
       context,
       value ? AppToastCode.enabled : AppToastCode.disabled,
       subject: '竖屏全屏背景',
-    );
-  }
-
-  Widget _buildMenuItem(
-    BuildContext context, {
-    required IconData icon,
-    required String title,
-    required VoidCallback onTap,
-  }) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(16),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
-        child: Row(
-          children: [
-            Icon(icon, color: AppColors.textSecondary, size: 22),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Text(
-                title,
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w300,
-                  color: AppColors.textPrimary,
-                  letterSpacing: 0.5,
-                ),
-              ),
-            ),
-            Icon(
-              Icons.chevron_right,
-              color: AppColors.textTertiary,
-              size: 20,
-            ),
-          ],
-        ),
-      ),
     );
   }
 
@@ -1286,289 +1602,6 @@ class _ProfileTabState extends State<ProfileTab> {
         ),
         const SizedBox(height: 18),
       ],
-    );
-  }
-
-  // ignore: unused_element
-  void _showEditNickname(BuildContext context) async {
-    final profileProvider = context.read<ProfileProvider>();
-    final controller = TextEditingController(text: profileProvider.nickname);
-
-    final result = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) {
-        return Dialog(
-          backgroundColor: AppColors.cardBg,
-          shape: RoundedRectangleBorder(
-            borderRadius: AppOverlay.dialogBorderRadius,
-          ),
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  '修改昵称',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w400,
-                    color: AppColors.textPrimary,
-                  ),
-                ),
-                const SizedBox(height: 20),
-                TextField(
-                  controller: controller,
-                  maxLength: 12,
-                  autofocus: true,
-                  decoration: const InputDecoration(
-                    hintText: '输入昵称',
-                    counterText: '',
-                  ),
-                ),
-                const SizedBox(height: 24),
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextButton(
-                        onPressed: () => Navigator.pop(dialogContext, false),
-                        style: TextButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(vertical: 16),
-                          backgroundColor: AppColors.white05,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                        ),
-                        child: const Text(
-                          '取消',
-                          style: TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w300,
-                            color: AppColors.textSecondary,
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: TextButton(
-                        onPressed: () => Navigator.pop(dialogContext, true),
-                        style: TextButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(vertical: 16),
-                          backgroundColor: AppColors.white12,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                        ),
-                        child: const Text(
-                          '保存',
-                          style: TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w300,
-                            color: AppColors.textPrimary,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-
-    if (result == true && context.mounted) {
-      final nickname = controller.text.trim();
-      if (nickname.isNotEmpty) {
-        await context.read<ProfileProvider>().updateNickname(nickname);
-        if (context.mounted) {
-          AppFeedback.showToast(context, AppToastCode.saved, subject: '昵称');
-        }
-      }
-    }
-
-    controller.dispose();
-  }
-
-  // ignore: unused_element
-  void _showEditSignature(BuildContext context) async {
-    final profileProvider = context.read<ProfileProvider>();
-    final controller = TextEditingController(text: profileProvider.signature);
-
-    final result = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) {
-        return Dialog(
-          backgroundColor: AppColors.cardBg,
-          shape: RoundedRectangleBorder(
-            borderRadius: AppOverlay.dialogBorderRadius,
-          ),
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  '个性签名',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w400,
-                    color: AppColors.textPrimary,
-                  ),
-                ),
-                const SizedBox(height: 20),
-                TextField(
-                  controller: controller,
-                  maxLength: 30,
-                  autofocus: true,
-                  decoration: const InputDecoration(
-                    hintText: '输入你的签名',
-                    counterText: '',
-                  ),
-                ),
-                const SizedBox(height: 24),
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextButton(
-                        onPressed: () => Navigator.pop(dialogContext, false),
-                        style: TextButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(vertical: 16),
-                          backgroundColor: AppColors.white05,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                        ),
-                        child: const Text(
-                          '取消',
-                          style: TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w300,
-                            color: AppColors.textSecondary,
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: TextButton(
-                        onPressed: () => Navigator.pop(dialogContext, true),
-                        style: TextButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(vertical: 16),
-                          backgroundColor: AppColors.white12,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                        ),
-                        child: const Text(
-                          '保存',
-                          style: TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w300,
-                            color: AppColors.textPrimary,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-
-    if (result == true && context.mounted) {
-      final signature = controller.text.trim();
-      await context.read<ProfileProvider>().updateSignature(
-            signature.isEmpty ? '这个人很神秘，什么都没留下' : signature,
-          );
-      if (context.mounted) {
-        AppFeedback.showToast(context, AppToastCode.saved, subject: '签名');
-      }
-    }
-
-    controller.dispose();
-  }
-
-  // ignore: unused_element
-  void _showEditStatus(BuildContext context) async {
-    final statuses = [
-      '想找人聊聊',
-      '有点失眠',
-      '心情不好',
-      '分享快乐',
-      '深夜emo',
-      '随便聊聊',
-    ];
-
-    await showDialog(
-      context: context,
-      builder: (context) => Dialog(
-        backgroundColor: AppColors.cardBg,
-        shape: RoundedRectangleBorder(
-          borderRadius: AppOverlay.dialogBorderRadius,
-        ),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 20),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Padding(
-                padding: EdgeInsets.symmetric(horizontal: 24, vertical: 8),
-                child: Text(
-                  '选择状态',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w400,
-                    color: AppColors.textPrimary,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 12),
-              ...statuses.map((status) => InkWell(
-                    onTap: () async {
-                      Navigator.pop(context);
-                      await context
-                          .read<ProfileProvider>()
-                          .updateStatus(status);
-                      if (context.mounted) {
-                        AppFeedback.showToast(
-                          context,
-                          AppToastCode.saved,
-                          subject: '状态',
-                        );
-                      }
-                    },
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 24,
-                        vertical: 16,
-                      ),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              status,
-                              style: const TextStyle(
-                                fontSize: 15,
-                                fontWeight: FontWeight.w300,
-                                color: AppColors.textPrimary,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  )),
-            ],
-          ),
-        ),
-      ),
     );
   }
 }
