@@ -337,7 +337,7 @@ void main() {
 
     expect(find.text('图片需要重新选择'), findsOneWidget);
     expect(find.text('回到输入区重新选图'), findsOneWidget);
-    expect(find.text('弱网场景优先压缩图'), findsOneWidget);
+    expect(find.byIcon(Icons.compress_outlined), findsOneWidget);
 
     await _disposeHost(tester, chatProvider, friendProvider);
   });
@@ -485,6 +485,51 @@ void main() {
     await tester.pump();
 
     expect(find.text('重试成功，已送达'), findsOneWidget);
+
+    await _disposeHost(tester, chatProvider, friendProvider);
+  });
+
+  testWidgets(
+      'chat screen should show retry failure feedback after retried message fails again',
+      (tester) async {
+    final chatProvider = ChatProvider();
+    final friendProvider = FriendProvider();
+
+    final thread = _buildThread('u_chat_screen_retry_failure_feedback');
+    chatProvider.addThread(thread);
+    chatProvider.getMessages(thread.id).add(
+          Message(
+            id: 'retry-failure-feedback-message',
+            content: '这条消息重试后仍然失败',
+            isMe: true,
+            timestamp: DateTime.now(),
+            status: MessageStatus.failed,
+          ),
+        );
+
+    await tester.pumpWidget(
+      _ChatScreenHost(
+        threadId: thread.id,
+        chatProvider: chatProvider,
+        friendProvider: friendProvider,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.ensureVisible(find.text('立即重试'));
+    await tester.tap(find.text('立即重试'), warnIfMissed: false);
+    await tester.pump();
+
+    final messages = chatProvider.getMessages(thread.id);
+    messages[0] = messages[0].copyWith(status: MessageStatus.sending);
+    chatProvider.notifyListeners();
+    await tester.pump();
+
+    messages[0] = messages[0].copyWith(status: MessageStatus.failed);
+    chatProvider.notifyListeners();
+    await tester.pump();
+
+    expect(find.text('重试未成功，请稍后再试'), findsOneWidget);
 
     await _disposeHost(tester, chatProvider, friendProvider);
   });

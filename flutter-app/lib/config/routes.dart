@@ -78,14 +78,17 @@ class AppRouter {
               state.pathParameters['docType'],
             );
             return LegalDocumentScreen(
-              documentType:
-                  documentType ?? LegalDocumentType.userAgreement,
+              documentType: documentType ?? LegalDocumentType.userAgreement,
             );
           },
         ),
         GoRoute(
           path: '/notifications',
-          builder: (context, state) => const NotificationCenterScreen(),
+          builder: (context, state) => NotificationCenterScreen(
+            initialFilter: NotificationCenterSourceFilter.fromQuery(
+              state.uri.queryParameters['source'],
+            ),
+          ),
         ),
       ],
     );

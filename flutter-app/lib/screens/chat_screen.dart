@@ -9,16 +9,21 @@ import 'package:go_router/go_router.dart';
 import '../config/theme.dart';
 import '../providers/chat_provider.dart';
 import '../providers/friend_provider.dart';
+import '../providers/settings_provider.dart';
 import '../models/models.dart';
 import '../widgets/app_toast.dart';
 import '../core/feedback/app_feedback.dart';
 import '../core/policy/feature_policy.dart';
 import '../core/ui/ui_tokens.dart';
+import '../utils/chat_delivery_state.dart';
+import '../utils/chat_outgoing_delivery_feedback.dart';
 import '../utils/intimacy_system.dart';
 import '../utils/image_helper.dart';
+import '../utils/notification_permission_guidance.dart';
 import '../utils/permission_manager.dart';
 import '../services/screenshot_guard.dart';
 import '../widgets/chat_delivery_status.dart';
+import '../widgets/notification_permission_notice_card.dart';
 
 class ChatScreen extends StatefulWidget {
   final String threadId;
@@ -98,8 +103,8 @@ class _ChatScreenState extends State<ChatScreen> {
   int _intimacyAnimationToken = 0;
   bool _showIntimacyChange = false;
   int _intimacyChange = 0;
-  final Map<String, _ObservedOutgoingDeliveryState> _deliveryStateSnapshot =
-      <String, _ObservedOutgoingDeliveryState>{};
+  final Map<String, OutgoingDeliveryObservation> _deliveryStateSnapshot =
+      <String, OutgoingDeliveryObservation>{};
   bool _hasText = false; // 添加状态追踪
   bool _isBurnAfterReadEnabled = false;
   bool _scrollToBottomQueued = false;
@@ -199,108 +204,25 @@ class _ChatScreenState extends State<ChatScreen> {
 
   void _captureDeliverySnapshot(String threadId) {
     final messages = _chatProvider?.getMessages(threadId) ?? const <Message>[];
-    final outgoingMessages = messages.where((message) => message.isMe).toList();
     _deliveryStateSnapshot
       ..clear()
-      ..addEntries(outgoingMessages.asMap().entries.map(
-            (entry) => MapEntry(
-              _deliveryTrackingKey(entry.key, entry.value),
-              _ObservedOutgoingDeliveryState.fromMessage(entry.value),
-            ),
-          ));
+      ..addAll(captureOutgoingDeliverySnapshot(messages));
   }
 
-  String _deliveryTrackingKey(int index, Message message) {
-    return [
-      index,
-      message.type.name,
-      message.content,
-      message.isBurnAfterReading,
-    ].join('|');
-  }
-
-  _OutgoingDeliveryFeedback? _resolveOutgoingDeliveryFeedback(
+  OutgoingDeliveryFeedback? _resolveOutgoingDeliveryFeedback(
     List<Message> messages,
   ) {
-    final feedbacks = <_OutgoingDeliveryFeedback>[];
-    final nextSnapshot = <String, _ObservedOutgoingDeliveryState>{};
-    final outgoingMessages = messages.where((item) => item.isMe).toList();
-
-    for (final entry in outgoingMessages.asMap().entries) {
-      final message = entry.value;
-      final trackingKey = _deliveryTrackingKey(entry.key, message);
-      final previous = _deliveryStateSnapshot[trackingKey];
-      var isRetryTransition = previous?.isRetryTransition ?? false;
-      if (previous?.status == MessageStatus.failed &&
-          message.status == MessageStatus.sending) {
-        isRetryTransition = true;
-      }
-
-      nextSnapshot[trackingKey] = _ObservedOutgoingDeliveryState.fromMessage(
-        message,
-        isRetryTransition: isRetryTransition,
-      );
-      if (previous == null || message.isBurnAfterReading) {
-        continue;
-      }
-
-      if (previous.status == MessageStatus.sending &&
-          message.status == MessageStatus.failed &&
-          previous.isRetryTransition) {
-        feedbacks.add(
-          _OutgoingDeliveryFeedback(
-            message: '重试未成功，请稍后再试',
-            isError: true,
-            priority: 4,
-            timestamp: message.timestamp,
-          ),
-        );
-        continue;
-      }
-
-      if (previous.status == MessageStatus.sending &&
-          message.status == MessageStatus.sent) {
-        feedbacks.add(
-          _OutgoingDeliveryFeedback(
-            message: previous.isRetryTransition ? '重试成功，已送达' : '消息已送达',
-            priority: previous.isRetryTransition ? 3 : 2,
-            timestamp: message.timestamp,
-          ),
-        );
-      }
-
-      if (!previous.isRead &&
-          message.isRead &&
-          message.status == MessageStatus.sent) {
-        feedbacks.add(
-          _OutgoingDeliveryFeedback(
-            message: previous.isRetryTransition ? '重试成功，对方已读' : '对方刚刚已读',
-            priority: previous.isRetryTransition ? 5 : 3,
-            timestamp: message.timestamp,
-          ),
-        );
-      }
-    }
-
+    final resolution = resolveOutgoingDeliveryFeedback(
+      messages: messages,
+      previousSnapshot: _deliveryStateSnapshot,
+    );
     _deliveryStateSnapshot
       ..clear()
-      ..addAll(nextSnapshot);
-
-    if (feedbacks.isEmpty) {
-      return null;
-    }
-
-    feedbacks.sort((left, right) {
-      final priorityCompare = right.priority.compareTo(left.priority);
-      if (priorityCompare != 0) {
-        return priorityCompare;
-      }
-      return right.timestamp.compareTo(left.timestamp);
-    });
-    return feedbacks.first;
+      ..addAll(resolution.snapshot);
+    return resolution.feedback;
   }
 
-  void _showOutgoingDeliveryFeedback(_OutgoingDeliveryFeedback feedback) {
+  void _showOutgoingDeliveryFeedback(OutgoingDeliveryFeedback feedback) {
     if (!mounted) {
       return;
     }
@@ -707,8 +629,32 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
+  Widget _buildNotificationPermissionBanner() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(14, 10, 14, 4),
+      child: NotificationPermissionNoticeCard(
+        key: const Key('chat-notification-permission-banner'),
+        description: NotificationPermissionGuidance.chatDescription,
+        actionLabel: NotificationPermissionGuidance.openSettingsPageAction,
+        actionKey: const Key('chat-notification-permission-action'),
+        onActionPressed: () => context.push('/settings'),
+        secondaryActionLabel:
+            NotificationPermissionGuidance.openNotificationCenterAction,
+        secondaryActionKey: const Key('chat-notification-center-action'),
+        onSecondaryActionPressed: () => context.push('/notifications'),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final settingsProvider = Provider.of<SettingsProvider?>(context);
+    final showNotificationPermissionBanner = settingsProvider != null &&
+        NotificationPermissionGuidance.needsSystemPermission(
+          notificationEnabled: settingsProvider.notificationEnabled,
+          permissionGranted:
+              settingsProvider.pushRuntimeState.permissionGranted,
+        );
     return Scaffold(
       appBar: AppBar(
         backgroundColor: AppColors.pureBlack,
@@ -928,6 +874,8 @@ class _ChatScreenState extends State<ChatScreen> {
       ),
       body: Column(
         children: [
+          if (showNotificationPermissionBanner)
+            _buildNotificationPermissionBanner(),
           // 取关提示横幅
           Consumer<ChatProvider>(
             builder: (context, chatProvider, child) {
@@ -2261,43 +2209,6 @@ class _VoiceCallSheetState extends State<_VoiceCallSheet> {
   }
 }
 
-class _ObservedOutgoingDeliveryState {
-  const _ObservedOutgoingDeliveryState({
-    required this.status,
-    required this.isRead,
-    this.isRetryTransition = false,
-  });
-
-  factory _ObservedOutgoingDeliveryState.fromMessage(
-    Message message, {
-    bool isRetryTransition = false,
-  }) {
-    return _ObservedOutgoingDeliveryState(
-      status: message.status,
-      isRead: message.isRead,
-      isRetryTransition: isRetryTransition,
-    );
-  }
-
-  final MessageStatus status;
-  final bool isRead;
-  final bool isRetryTransition;
-}
-
-class _OutgoingDeliveryFeedback {
-  const _OutgoingDeliveryFeedback({
-    required this.message,
-    required this.priority,
-    required this.timestamp,
-    this.isError = false,
-  });
-
-  final String message;
-  final bool isError;
-  final int priority;
-  final DateTime timestamp;
-}
-
 class _MessageBubble extends StatefulWidget {
   final Message message;
   final String threadId;
@@ -2333,9 +2244,15 @@ class _MessageBubbleState extends State<_MessageBubble> {
     final canRecall = context
         .read<ChatProvider>()
         .canRecallMessage(widget.threadId, message.id);
+    final deliveryFailureState = context
+        .read<ChatProvider>()
+        .deliveryFailureStateFor(widget.threadId, message.id);
     final isImage = message.type == MessageType.image;
     final isBurnImage = isImage && message.isBurnAfterReading;
-    final deliverySpec = resolveChatDeliveryStatus(message);
+    final deliverySpec = resolveChatDeliveryStatus(
+      message,
+      failureState: deliveryFailureState,
+    );
 
     return Align(
       alignment: message.isMe ? Alignment.centerRight : Alignment.centerLeft,
@@ -2647,7 +2564,7 @@ class _MessageBubbleState extends State<_MessageBubble> {
       spec: spec,
       onActionTap: spec.actionType == null
           ? null
-          : () => _handleInlineDeliveryAction(context, spec.actionType!),
+          : () => _handleInlineDeliveryAction(context, spec),
     );
   }
 
@@ -2665,8 +2582,7 @@ class _MessageBubbleState extends State<_MessageBubble> {
     }
 
     if (message.status == MessageStatus.failed) {
-      final needsReselect =
-          isImage && message.imageQuality == ImageQuality.original;
+      final needsReselect = isImage && failedImageNeedsReselect(message);
       return _MessageDeliveryCardDescriptor(
         title: needsReselect ? '重选图片' : '发送失败',
         detail: needsReselect
@@ -2695,8 +2611,12 @@ class _MessageBubbleState extends State<_MessageBubble> {
 
   Future<void> _handleInlineDeliveryAction(
     BuildContext context,
-    ChatDeliveryAction action,
+    ChatDeliveryStatusSpec spec,
   ) async {
+    final action = spec.actionType;
+    if (action == null) {
+      return;
+    }
     final isImage = message.type == MessageType.image;
     final chatProvider = context.read<ChatProvider>();
     switch (action) {
@@ -2707,17 +2627,135 @@ class _MessageBubbleState extends State<_MessageBubble> {
         if (!context.mounted || retried) {
           return;
         }
+        final failureState = chatProvider.deliveryFailureStateFor(
+          widget.threadId,
+          message.id,
+        );
         AppFeedback.showError(
           context,
-          isImage ? AppErrorCode.invalidInput : AppErrorCode.sendFailed,
-          detail: isImage ? '图片发送失败，原图失效后请重新选择图片再发送。' : '消息暂时无法重试，请稍后再发一条。',
+          switch (failureState) {
+            ChatDeliveryFailureState.threadExpired => AppErrorCode.unknown,
+            ChatDeliveryFailureState.blockedRelation => AppErrorCode.blocked,
+            ChatDeliveryFailureState.imageUploadPreparationFailed =>
+              AppErrorCode.sendFailed,
+            ChatDeliveryFailureState.imageUploadInterrupted =>
+              AppErrorCode.sendFailed,
+            ChatDeliveryFailureState.imageUploadTokenInvalid =>
+              AppErrorCode.sendFailed,
+            ChatDeliveryFailureState.imageUploadFileTooLarge =>
+              AppErrorCode.invalidInput,
+            ChatDeliveryFailureState.imageUploadUnsupportedFormat =>
+              AppErrorCode.invalidInput,
+            ChatDeliveryFailureState.networkIssue => AppErrorCode.sendFailed,
+            ChatDeliveryFailureState.imageReselectRequired =>
+              AppErrorCode.invalidInput,
+            ChatDeliveryFailureState.retryUnavailable => AppErrorCode.unknown,
+            ChatDeliveryFailureState.retryable => AppErrorCode.sendFailed,
+          },
+          detail: switch (failureState) {
+            ChatDeliveryFailureState.threadExpired =>
+              isImage ? '这条图片消息所在的会话已经到期，当前不能继续重试。' : '这条消息所在的会话已经到期，当前不能继续重试。',
+            ChatDeliveryFailureState.blockedRelation =>
+              isImage ? '你和对方当前处于拉黑关系，图片暂时不能继续发送。' : '你和对方当前处于拉黑关系，消息暂时不能继续发送。',
+            ChatDeliveryFailureState.imageUploadPreparationFailed =>
+              '图片上传准备失败，服务端暂时无法完成上传准备，请稍后重新发送。',
+            ChatDeliveryFailureState.imageUploadInterrupted =>
+              '图片上传过程中已中断，建议检查网络后重新投递。',
+            ChatDeliveryFailureState.imageUploadTokenInvalid =>
+              '图片上传凭证已失效，再试一次就会重新刷新凭证后再提交。',
+            ChatDeliveryFailureState.imageUploadFileTooLarge =>
+              '当前图片已超过上传大小限制，请更换更小的图片或使用压缩图后再发送。',
+            ChatDeliveryFailureState.imageUploadUnsupportedFormat =>
+              '当前文件没有通过图片校验，请重新选择常见图片格式后再发送。',
+            ChatDeliveryFailureState.networkIssue =>
+              isImage ? '网络连接不稳定，建议检查网络后重新投递图片。' : '网络连接不稳定，建议检查网络后重新发送消息。',
+            ChatDeliveryFailureState.imageReselectRequired =>
+              '图片发送失败，原图失效后请重新选择图片再发送。',
+            ChatDeliveryFailureState.retryUnavailable =>
+              isImage ? '图片当前暂不可重试，请先确认会话状态后再处理。' : '消息当前暂不可重试，请先确认会话状态后再处理。',
+            ChatDeliveryFailureState.retryable =>
+              isImage ? '图片发送失败，请检查网络后再试。' : '消息暂时无法重试，请稍后再发一条。',
+          },
         );
       case ChatDeliveryAction.showGuide:
-        _showImageReselectGuide(context);
+        _showImageFailureGuide(
+          context,
+          spec.guideFailureState ??
+              ChatDeliveryFailureState.imageReselectRequired,
+        );
     }
   }
 
-  void _showImageReselectGuide(BuildContext context) {
+  void _showImageFailureGuide(
+    BuildContext context,
+    ChatDeliveryFailureState failureState,
+  ) {
+    late final String title;
+    late final String description;
+    late final ({IconData icon, String title, String detail}) primaryTip;
+    late final ({IconData icon, String title, String detail}) secondaryTip;
+
+    switch (failureState) {
+      case ChatDeliveryFailureState.imageUploadFileTooLarge:
+        title = '图片体积过大';
+        description = '这张图片已经超过当前上传大小限制，继续重试通常不会成功，建议先压缩、裁剪或换一张更小的图片。';
+        primaryTip = (
+          icon: Icons.compress_outlined,
+          title: '先压缩后再发送',
+          detail: '优先选择压缩图，或者在系统相册里编辑后再发送，成功率会更高。',
+        );
+        secondaryTip = (
+          icon: Icons.crop_outlined,
+          title: '裁剪掉不必要区域',
+          detail: '减少分辨率和画面范围后，往往就能满足上传限制。',
+        );
+        break;
+      case ChatDeliveryFailureState.imageUploadUnsupportedFormat:
+        title = '图片格式暂不支持';
+        description = '当前文件没有通过图片格式校验，通常是文件格式异常、文件损坏，或并非标准图片文件。';
+        primaryTip = (
+          icon: Icons.photo_library_outlined,
+          title: '重新选择常见图片格式',
+          detail: '优先从系统相册中选择 JPG、JPEG 或 PNG 图片后再发送。',
+        );
+        secondaryTip = (
+          icon: Icons.auto_fix_high_outlined,
+          title: '先重新保存一遍图片',
+          detail: '重新编辑、导出或截图后再发送，能避开一部分格式兼容问题。',
+        );
+        break;
+      case ChatDeliveryFailureState.retryable:
+      case ChatDeliveryFailureState.imageReselectRequired:
+      case ChatDeliveryFailureState.imageUploadPreparationFailed:
+      case ChatDeliveryFailureState.imageUploadInterrupted:
+      case ChatDeliveryFailureState.imageUploadTokenInvalid:
+      case ChatDeliveryFailureState.threadExpired:
+      case ChatDeliveryFailureState.blockedRelation:
+      case ChatDeliveryFailureState.networkIssue:
+      case ChatDeliveryFailureState.retryUnavailable:
+        title = '图片需要重新选择';
+        description = '这次发送依赖的原图已经不可用，系统无法直接帮你重试。';
+        primaryTip = (
+          icon: Icons.photo_library_outlined,
+          title: '回到输入区重新选图',
+          detail: '重新选择图片后再发送，通常是最稳妥的处理方式。',
+        );
+        secondaryTip = (
+          icon: Icons.compress_outlined,
+          title: '弱网时优先发送压缩图',
+          detail: '压缩后的图片更容易上传成功，也更容易更快送达。',
+        );
+        break;
+    }
+
+    _showImageFailureGuideSheet(
+      context,
+      title: title,
+      description: description,
+      primaryTip: primaryTip,
+      secondaryTip: secondaryTip,
+    );
+    /*
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
@@ -2733,7 +2771,7 @@ class _MessageBubbleState extends State<_MessageBubble> {
             children: [
               Row(
                 children: [
-                  const Text(
+                  Text(
                     '图片需要重新选择',
                     style: TextStyle(
                       fontSize: 18,
@@ -2772,6 +2810,76 @@ class _MessageBubbleState extends State<_MessageBubble> {
                 icon: Icons.compress_outlined,
                 title: '弱网场景优先压缩图',
                 detail: '压缩图上传更稳，也更容易快速送达。',
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    */
+  }
+
+  void _showImageFailureGuideSheet(
+    BuildContext context, {
+    required String title,
+    required String description,
+    required ({IconData icon, String title, String detail}) primaryTip,
+    required ({IconData icon, String title, String detail}) secondaryTip,
+  }) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      sheetAnimationStyle: AppDialog.sheetAnimationStyle,
+      builder: (sheetContext) => Container(
+        decoration: AppDialog.sheetDecoration(),
+        padding: const EdgeInsets.fromLTRB(20, 20, 20, 24),
+        child: SafeArea(
+          top: false,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Text(
+                    title,
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w400,
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
+                  const Spacer(),
+                  IconButton(
+                    onPressed: () => Navigator.pop(sheetContext),
+                    icon: const Icon(
+                      Icons.close,
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              Text(
+                description,
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w300,
+                  color: AppColors.textTertiary.withValues(alpha: 0.92),
+                  height: 1.45,
+                ),
+              ),
+              const SizedBox(height: 16),
+              _buildGuideTip(
+                icon: primaryTip.icon,
+                title: primaryTip.title,
+                detail: primaryTip.detail,
+              ),
+              const SizedBox(height: 12),
+              _buildGuideTip(
+                icon: secondaryTip.icon,
+                title: secondaryTip.title,
+                detail: secondaryTip.detail,
               ),
             ],
           ),

@@ -10,6 +10,7 @@ import 'package:sunliao/repositories/app_data_repository.dart';
 import 'package:sunliao/services/chat_service.dart';
 import 'package:sunliao/services/chat_socket_service.dart';
 import 'package:sunliao/services/media_upload_service.dart';
+import 'package:sunliao/utils/chat_delivery_state.dart';
 
 import '../helpers/test_bootstrap.dart';
 
@@ -294,7 +295,8 @@ void main() {
     expect(provider.getMessages(remoteThread.id).first.type, MessageType.image);
   });
 
-  test('sendImageMessage should fail locally when remote upload prepare fails',
+  test(
+      'sendImageMessage should surface upload preparation failure when upload token request fails',
       () async {
     final remoteThread = _buildThread('th_chat_image_prepare_fail');
     final fakeChatService = _FakeChatService(
@@ -310,6 +312,15 @@ void main() {
           sendKey: imageFile.path,
           previewPath: imageFile.path,
           isRemotePrepared: false,
+        ),
+        preparedUploadResultBuilder: (threadId, imageFile) =>
+            const ChatImageUploadPreparationResult.failure(
+          stage: ChatImageUploadFailureStage.token,
+          error: ChatRequestFailure(
+            code: 'UPLOAD_TOKEN_FAILED',
+            message: '上传令牌生成失败',
+            statusCode: 500,
+          ),
         ),
       ),
     );
@@ -335,6 +346,218 @@ void main() {
     expect(
       provider.getMessages(remoteThread.id).first.imagePath,
       isNotEmpty,
+    );
+    expect(
+      provider.deliveryFailureStateFor(
+        remoteThread.id,
+        provider.getMessages(remoteThread.id).first.id,
+      ),
+      ChatDeliveryFailureState.imageUploadPreparationFailed,
+    );
+  });
+
+  test(
+      'sendImageMessage should surface upload interruption when binary upload fails',
+      () async {
+    final remoteThread = _buildThread('th_chat_image_upload_interrupted');
+    final fakeChatService = _FakeChatService(
+      threads: [remoteThread],
+      hasSessionOverride: true,
+    );
+    final fakeSocketService = _FakeChatSocketService();
+    final provider = ChatProvider(
+      chatService: fakeChatService,
+      chatSocketService: fakeSocketService,
+      mediaUploadService: _FakeMediaUploadService(
+        preparedUploadBuilder: (threadId, imageFile) => PreparedChatImageUpload(
+          sendKey: imageFile.path,
+          previewPath: imageFile.path,
+          isRemotePrepared: false,
+        ),
+        preparedUploadResultBuilder: (threadId, imageFile) =>
+            const ChatImageUploadPreparationResult.failure(
+          stage: ChatImageUploadFailureStage.upload,
+          error: ChatRequestFailure(
+            code: 'NETWORK_ERROR',
+            message: '上传过程中网络中断',
+          ),
+        ),
+      ),
+    );
+    addTearDown(provider.dispose);
+    provider.addThread(remoteThread);
+    final imageFile = await _createTestImageFile('image_upload_interrupted');
+
+    final queued = await provider.sendImageMessage(
+      remoteThread.id,
+      imageFile,
+      ImageQuality.compressed,
+      false,
+    );
+    await Future<void>.delayed(const Duration(milliseconds: 30));
+
+    expect(queued, isTrue);
+    expect(fakeSocketService.sendImageCalls[remoteThread.id], isNull);
+    expect(provider.getMessages(remoteThread.id), hasLength(1));
+    expect(
+      provider.getMessages(remoteThread.id).first.status,
+      MessageStatus.failed,
+    );
+    expect(
+      provider.deliveryFailureStateFor(
+        remoteThread.id,
+        provider.getMessages(remoteThread.id).first.id,
+      ),
+      ChatDeliveryFailureState.imageUploadInterrupted,
+    );
+  });
+
+  test(
+      'sendImageMessage should surface upload token invalid when upload credential is rejected',
+      () async {
+    final remoteThread = _buildThread('th_chat_image_upload_token_invalid');
+    final fakeChatService = _FakeChatService(
+      threads: [remoteThread],
+      hasSessionOverride: true,
+    );
+    final provider = ChatProvider(
+      chatService: fakeChatService,
+      chatSocketService: _FakeChatSocketService(),
+      mediaUploadService: _FakeMediaUploadService(
+        preparedUploadBuilder: (threadId, imageFile) => PreparedChatImageUpload(
+          sendKey: imageFile.path,
+          previewPath: imageFile.path,
+          isRemotePrepared: false,
+        ),
+        preparedUploadResultBuilder: (threadId, imageFile) =>
+            const ChatImageUploadPreparationResult.failure(
+          stage: ChatImageUploadFailureStage.upload,
+          error: ChatRequestFailure(
+            code: 'UPLOAD_TOKEN_INVALID',
+            message: 'Invalid upload token',
+            statusCode: 400,
+          ),
+        ),
+      ),
+    );
+    addTearDown(provider.dispose);
+    provider.addThread(remoteThread);
+    final imageFile = await _createTestImageFile('image_upload_token_invalid');
+
+    final queued = await provider.sendImageMessage(
+      remoteThread.id,
+      imageFile,
+      ImageQuality.compressed,
+      false,
+    );
+    await Future<void>.delayed(const Duration(milliseconds: 30));
+
+    expect(queued, isTrue);
+    expect(
+      provider.deliveryFailureStateFor(
+        remoteThread.id,
+        provider.getMessages(remoteThread.id).first.id,
+      ),
+      ChatDeliveryFailureState.imageUploadTokenInvalid,
+    );
+  });
+
+  test('sendImageMessage should surface file too large when upload rejects it',
+      () async {
+    final remoteThread = _buildThread('th_chat_image_upload_too_large');
+    final fakeChatService = _FakeChatService(
+      threads: [remoteThread],
+      hasSessionOverride: true,
+    );
+    final provider = ChatProvider(
+      chatService: fakeChatService,
+      chatSocketService: _FakeChatSocketService(),
+      mediaUploadService: _FakeMediaUploadService(
+        preparedUploadBuilder: (threadId, imageFile) => PreparedChatImageUpload(
+          sendKey: imageFile.path,
+          previewPath: imageFile.path,
+          isRemotePrepared: false,
+        ),
+        preparedUploadResultBuilder: (threadId, imageFile) =>
+            const ChatImageUploadPreparationResult.failure(
+          stage: ChatImageUploadFailureStage.upload,
+          error: ChatRequestFailure(
+            code: 'IMAGE_UPLOAD_TOO_LARGE',
+            message: 'Image file is too large',
+            statusCode: 400,
+          ),
+        ),
+      ),
+    );
+    addTearDown(provider.dispose);
+    provider.addThread(remoteThread);
+    final imageFile = await _createTestImageFile('image_upload_too_large');
+
+    final queued = await provider.sendImageMessage(
+      remoteThread.id,
+      imageFile,
+      ImageQuality.compressed,
+      false,
+    );
+    await Future<void>.delayed(const Duration(milliseconds: 30));
+
+    expect(queued, isTrue);
+    expect(
+      provider.deliveryFailureStateFor(
+        remoteThread.id,
+        provider.getMessages(remoteThread.id).first.id,
+      ),
+      ChatDeliveryFailureState.imageUploadFileTooLarge,
+    );
+  });
+
+  test(
+      'sendImageMessage should surface unsupported format when upload rejects non-image payload',
+      () async {
+    final remoteThread = _buildThread('th_chat_image_upload_unsupported');
+    final fakeChatService = _FakeChatService(
+      threads: [remoteThread],
+      hasSessionOverride: true,
+    );
+    final provider = ChatProvider(
+      chatService: fakeChatService,
+      chatSocketService: _FakeChatSocketService(),
+      mediaUploadService: _FakeMediaUploadService(
+        preparedUploadBuilder: (threadId, imageFile) => PreparedChatImageUpload(
+          sendKey: imageFile.path,
+          previewPath: imageFile.path,
+          isRemotePrepared: false,
+        ),
+        preparedUploadResultBuilder: (threadId, imageFile) =>
+            const ChatImageUploadPreparationResult.failure(
+          stage: ChatImageUploadFailureStage.upload,
+          error: ChatRequestFailure(
+            code: 'IMAGE_UPLOAD_UNSUPPORTED_FORMAT',
+            message: 'Only image upload is allowed',
+            statusCode: 400,
+          ),
+        ),
+      ),
+    );
+    addTearDown(provider.dispose);
+    provider.addThread(remoteThread);
+    final imageFile = await _createTestImageFile('image_upload_unsupported');
+
+    final queued = await provider.sendImageMessage(
+      remoteThread.id,
+      imageFile,
+      ImageQuality.compressed,
+      false,
+    );
+    await Future<void>.delayed(const Duration(milliseconds: 30));
+
+    expect(queued, isTrue);
+    expect(
+      provider.deliveryFailureStateFor(
+        remoteThread.id,
+        provider.getMessages(remoteThread.id).first.id,
+      ),
+      ChatDeliveryFailureState.imageUploadUnsupportedFormat,
     );
   });
 
@@ -578,6 +801,7 @@ void main() {
     final provider = ChatProvider(
       chatService: fakeChatService,
       chatSocketService: fakeSocketService,
+      enableRemoteHydration: false,
     );
     addTearDown(provider.dispose);
     provider.addThread(localThread);
@@ -801,6 +1025,7 @@ void main() {
     final provider = ChatProvider(
       chatService: fakeChatService,
       chatSocketService: fakeSocketService,
+      enableRemoteHydration: false,
     );
     addTearDown(() async {
       provider.dispose();
@@ -872,6 +1097,7 @@ void main() {
     final provider = ChatProvider(
       chatService: fakeChatService,
       chatSocketService: fakeSocketService,
+      enableRemoteHydration: false,
     );
     addTearDown(() async {
       provider.dispose();
@@ -1544,6 +1770,276 @@ void main() {
     expect(fakeChatService.markThreadReadCalls[thread.id], 2);
   });
 
+  test('markAsRead should not fallback to http when join thread is rejected',
+      () async {
+    final thread = _buildThread('th_chat_read_join_blocked');
+    final fakeChatService = _FakeChatService(
+      threads: [thread],
+      hasSessionOverride: true,
+    );
+    final fakeSocketService = _FakeChatSocketService(
+      joinThreadResultsByThread: {
+        thread.id: const ChatSocketAckResult.failure(
+          ChatRequestFailure(
+            code: 'BLOCKED_RELATION',
+            message: '加入会话失败，关系已受限',
+            statusCode: 403,
+          ),
+        ),
+      },
+    );
+    final provider = ChatProvider(
+      chatService: fakeChatService,
+      chatSocketService: fakeSocketService,
+      enableRemoteHydration: false,
+    );
+    addTearDown(provider.dispose);
+    provider.addThread(
+      ChatThread(
+        id: thread.id,
+        otherUser: thread.otherUser,
+        createdAt: thread.createdAt,
+        expiresAt: thread.expiresAt,
+        intimacyPoints: thread.intimacyPoints,
+        unreadCount: 1,
+      ),
+    );
+    provider.getMessages(thread.id).add(
+          Message(
+            id: 'read-join-blocked-1',
+            content: '这条消息会在 join 时被拦下',
+            isMe: false,
+            timestamp: DateTime.parse('2026-03-17T10:00:00.000'),
+            status: MessageStatus.sent,
+          ),
+        );
+
+    provider.markAsRead(thread.id);
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+
+    expect(
+        fakeSocketService.joinCalls[thread.id] ?? 0, greaterThanOrEqualTo(1));
+    expect(fakeSocketService.markReadCalls[thread.id], isNull);
+    expect(fakeChatService.markThreadReadCalls[thread.id], isNull);
+  });
+
+  test(
+      'markAsRead should retry same last message after realtime mark read business failure',
+      () async {
+    final thread = _buildThread('th_chat_read_mark_blocked');
+    final fakeChatService = _FakeChatService(
+      threads: [thread],
+      hasSessionOverride: true,
+    );
+    final fakeSocketService = _FakeChatSocketService(
+      markReadResultsByThread: {
+        thread.id: const ChatSocketAckResult.failure(
+          ChatRequestFailure(
+            code: 'THREAD_NOT_FOUND',
+            message: '会话不存在或当前不可见',
+            statusCode: 404,
+          ),
+        ),
+      },
+    );
+    final provider = ChatProvider(
+      chatService: fakeChatService,
+      chatSocketService: fakeSocketService,
+      enableRemoteHydration: false,
+    );
+    addTearDown(provider.dispose);
+    provider.addThread(
+      ChatThread(
+        id: thread.id,
+        otherUser: thread.otherUser,
+        createdAt: thread.createdAt,
+        expiresAt: thread.expiresAt,
+        intimacyPoints: thread.intimacyPoints,
+        unreadCount: 1,
+      ),
+    );
+    provider.getMessages(thread.id).add(
+          Message(
+            id: 'read-mark-blocked-1',
+            content: '这条消息会在 markRead 时被拒绝',
+            isMe: false,
+            timestamp: DateTime.parse('2026-03-17T10:05:00.000'),
+            status: MessageStatus.sent,
+          ),
+        );
+
+    provider.markAsRead(thread.id);
+    await Future<void>.delayed(const Duration(milliseconds: 60));
+    provider.markAsRead(thread.id);
+    await Future<void>.delayed(const Duration(milliseconds: 60));
+
+    expect(
+        fakeSocketService.joinCalls[thread.id] ?? 0, greaterThanOrEqualTo(1));
+    expect(fakeSocketService.markReadCalls[thread.id], 2);
+    expect(
+      fakeSocketService.markReadMessageIdsByThread[thread.id],
+      ['read-mark-blocked-1', 'read-mark-blocked-1'],
+    );
+    expect(fakeChatService.markThreadReadCalls[thread.id], isNull);
+  });
+
+  test('markAsRead should fallback to http when join thread transport fails',
+      () async {
+    final thread = _buildThread('th_chat_read_join_transport');
+    final fakeChatService = _FakeChatService(
+      threads: [thread],
+      hasSessionOverride: true,
+    );
+    final fakeSocketService = _FakeChatSocketService(
+      joinThreadResultsByThread: {
+        thread.id: const ChatSocketAckResult.transportFailure(),
+      },
+    );
+    final provider = ChatProvider(
+      chatService: fakeChatService,
+      chatSocketService: fakeSocketService,
+      enableRemoteHydration: false,
+    );
+    addTearDown(provider.dispose);
+    provider.addThread(
+      ChatThread(
+        id: thread.id,
+        otherUser: thread.otherUser,
+        createdAt: thread.createdAt,
+        expiresAt: thread.expiresAt,
+        intimacyPoints: thread.intimacyPoints,
+        unreadCount: 1,
+      ),
+    );
+    provider.getMessages(thread.id).add(
+          Message(
+            id: 'read-join-transport-1',
+            content: '这条消息会走 HTTP 已读兜底',
+            isMe: false,
+            timestamp: DateTime.parse('2026-03-17T10:10:00.000'),
+            status: MessageStatus.sent,
+          ),
+        );
+
+    provider.markAsRead(thread.id);
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+
+    expect(
+        fakeSocketService.joinCalls[thread.id] ?? 0, greaterThanOrEqualTo(1));
+    expect(fakeSocketService.markReadCalls[thread.id], isNull);
+    expect(fakeChatService.markThreadReadCalls[thread.id], 1);
+  });
+
+  test(
+      'markAsRead should fallback to http when realtime mark read transport fails',
+      () async {
+    final thread = _buildThread('th_chat_read_mark_transport');
+    final fakeChatService = _FakeChatService(
+      threads: [thread],
+      hasSessionOverride: true,
+    );
+    final fakeSocketService = _FakeChatSocketService(
+      markReadResultsByThread: {
+        thread.id: const ChatSocketAckResult.transportFailure(),
+      },
+    );
+    final provider = ChatProvider(
+      chatService: fakeChatService,
+      chatSocketService: fakeSocketService,
+      enableRemoteHydration: false,
+    );
+    addTearDown(provider.dispose);
+    provider.addThread(
+      ChatThread(
+        id: thread.id,
+        otherUser: thread.otherUser,
+        createdAt: thread.createdAt,
+        expiresAt: thread.expiresAt,
+        intimacyPoints: thread.intimacyPoints,
+        unreadCount: 1,
+      ),
+    );
+    provider.getMessages(thread.id).add(
+          Message(
+            id: 'read-mark-transport-1',
+            content: '这条消息会在 markRead 失败后回退 HTTP',
+            isMe: false,
+            timestamp: DateTime.parse('2026-03-17T10:15:00.000'),
+            status: MessageStatus.sent,
+          ),
+        );
+
+    provider.markAsRead(thread.id);
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+
+    expect(
+        fakeSocketService.joinCalls[thread.id] ?? 0, greaterThanOrEqualTo(1));
+    expect(fakeSocketService.markReadCalls[thread.id], 1);
+    expect(
+      fakeSocketService.markReadMessageIdsByThread[thread.id],
+      ['read-mark-transport-1'],
+    );
+    expect(fakeChatService.markThreadReadCalls[thread.id], 1);
+  });
+
+  test(
+      'markAsRead should retry same last message after http fallback also fails',
+      () async {
+    final thread = _buildThread('th_chat_read_http_retry');
+    final fakeChatService = _FakeChatService(
+      threads: [thread],
+      hasSessionOverride: true,
+      markThreadReadResultsByThread: {
+        thread.id: const ChatRequestResult.failure(
+          ChatRequestFailure(
+            code: 'NETWORK_ERROR',
+            message: 'HTTP 已读同步失败',
+          ),
+        ),
+      },
+    );
+    final fakeSocketService = _FakeChatSocketService(
+      joinThreadResultsByThread: {
+        thread.id: const ChatSocketAckResult.transportFailure(),
+      },
+    );
+    final provider = ChatProvider(
+      chatService: fakeChatService,
+      chatSocketService: fakeSocketService,
+      enableRemoteHydration: false,
+    );
+    addTearDown(provider.dispose);
+    provider.addThread(
+      ChatThread(
+        id: thread.id,
+        otherUser: thread.otherUser,
+        createdAt: thread.createdAt,
+        expiresAt: thread.expiresAt,
+        intimacyPoints: thread.intimacyPoints,
+        unreadCount: 1,
+      ),
+    );
+    provider.getMessages(thread.id).add(
+          Message(
+            id: 'read-http-retry-1',
+            content: 'HTTP 兜底也失败后应该还能重试',
+            isMe: false,
+            timestamp: DateTime.parse('2026-03-17T10:20:00.000'),
+            status: MessageStatus.sent,
+          ),
+        );
+
+    provider.markAsRead(thread.id);
+    await Future<void>.delayed(const Duration(milliseconds: 60));
+    provider.markAsRead(thread.id);
+    await Future<void>.delayed(const Duration(milliseconds: 60));
+
+    expect(
+        fakeSocketService.joinCalls[thread.id] ?? 0, greaterThanOrEqualTo(2));
+    expect(fakeSocketService.markReadCalls[thread.id], isNull);
+    expect(fakeChatService.markThreadReadCalls[thread.id], 2);
+  });
+
   test('reconnect should rejoin active thread only once', () async {
     final thread = _buildThread('u_chat_rejoin');
     final fakeSocket = _FakeChatSocketService();
@@ -1947,13 +2443,255 @@ void main() {
     );
   });
 
+  test('deliveryFailureStateFor should mark failed message in expired thread',
+      () {
+    final provider = ChatProvider();
+    addTearDown(provider.dispose);
+    final expiredThread = _buildThread(
+      'u_chat_retry_expired_state',
+      expiresAt: DateTime.now().subtract(const Duration(minutes: 1)),
+    );
+    provider.addThread(expiredThread);
+    provider.getMessages(expiredThread.id).add(
+          Message(
+            id: 'retry-expired-1',
+            content: '这条消息所在会话已经过期',
+            isMe: true,
+            timestamp: DateTime.now(),
+            status: MessageStatus.failed,
+          ),
+        );
+
+    expect(
+      provider.deliveryFailureStateFor(expiredThread.id, 'retry-expired-1'),
+      ChatDeliveryFailureState.threadExpired,
+    );
+  });
+
+  test('sendMessage should surface blocked relation after local thread upgrade',
+      () async {
+    final localThread = _buildThread('u_chat_retry_blocked_local');
+    final remoteThread = ChatThread(
+      id: 'th_chat_retry_blocked_remote',
+      otherUser: localThread.otherUser,
+      createdAt: localThread.createdAt,
+      expiresAt: localThread.expiresAt,
+      intimacyPoints: localThread.intimacyPoints,
+    );
+    final fakeChatService = _FakeChatService(
+      directThreadsByUserId: {localThread.otherUser.id: remoteThread},
+      hasSessionOverride: true,
+    );
+    final fakeSocketService = _FakeChatSocketService(
+      sendTextResultsByThread: {
+        remoteThread.id: const ChatSocketAckResult.failure(
+          ChatRequestFailure(
+            code: 'BLOCKED_RELATION',
+            message: '关系已被拉黑',
+            statusCode: 403,
+          ),
+        ),
+      },
+    );
+    final provider = ChatProvider(
+      chatService: fakeChatService,
+      chatSocketService: fakeSocketService,
+    );
+    addTearDown(provider.dispose);
+    provider.addThread(localThread);
+
+    final sent = provider.sendMessage(localThread.id, '这条消息会被关系限制拦下');
+    await Future<void>.delayed(const Duration(milliseconds: 40));
+
+    expect(sent, isTrue);
+    expect(provider.getThread(localThread.id)?.id, remoteThread.id);
+    expect(provider.getMessages(remoteThread.id), hasLength(1));
+
+    final message = provider.getMessages(remoteThread.id).single;
+    expect(message.status, MessageStatus.failed);
+    expect(
+      provider.deliveryFailureStateFor(remoteThread.id, message.id),
+      ChatDeliveryFailureState.blockedRelation,
+    );
+    expect(fakeSocketService.sendTextCalls[remoteThread.id], 1);
+    expect(fakeChatService.sendTextMessageResultCalls[remoteThread.id], isNull);
+  });
+
+  test('sendMessage should surface network issue after realtime fallback',
+      () async {
+    final remoteThread = _buildThread('th_chat_retry_network_issue');
+    final fakeChatService = _FakeChatService(
+      threads: [remoteThread],
+      hasSessionOverride: true,
+      sendTextResultsByThread: {
+        remoteThread.id: const ChatRequestResult.failure(
+          ChatRequestFailure(
+            code: 'NETWORK_ERROR',
+            message: '网络连接失败',
+          ),
+        ),
+      },
+    );
+    final fakeSocketService = _FakeChatSocketService(
+      sendTextResultsByThread: {
+        remoteThread.id: const ChatSocketAckResult.transportFailure(),
+      },
+    );
+    final provider = ChatProvider(
+      chatService: fakeChatService,
+      chatSocketService: fakeSocketService,
+    );
+    addTearDown(provider.dispose);
+    provider.addThread(remoteThread);
+
+    final sent = provider.sendMessage(remoteThread.id, '这条消息会走网络失败兜底');
+    await Future<void>.delayed(const Duration(milliseconds: 40));
+
+    expect(sent, isTrue);
+    expect(provider.getMessages(remoteThread.id), hasLength(1));
+
+    final message = provider.getMessages(remoteThread.id).single;
+    expect(message.status, MessageStatus.failed);
+    expect(
+      provider.deliveryFailureStateFor(remoteThread.id, message.id),
+      ChatDeliveryFailureState.networkIssue,
+    );
+    expect(fakeSocketService.sendTextCalls[remoteThread.id], 1);
+    expect(fakeChatService.sendTextMessageResultCalls[remoteThread.id], 1);
+  });
+
+  test('sendMessage should surface retry unavailable on business rejection',
+      () async {
+    final remoteThread = _buildThread('th_chat_retry_unavailable');
+    final fakeChatService = _FakeChatService(
+      threads: [remoteThread],
+      hasSessionOverride: true,
+    );
+    final fakeSocketService = _FakeChatSocketService(
+      sendTextResultsByThread: {
+        remoteThread.id: const ChatSocketAckResult.failure(
+          ChatRequestFailure(
+            code: 'THREAD_NOT_FOUND',
+            message: '会话不存在或当前不可见',
+            statusCode: 404,
+          ),
+        ),
+      },
+    );
+    final provider = ChatProvider(
+      chatService: fakeChatService,
+      chatSocketService: fakeSocketService,
+    );
+    addTearDown(provider.dispose);
+    provider.addThread(remoteThread);
+
+    final sent = provider.sendMessage(remoteThread.id, '这条消息会被标记为暂不可重试');
+    await Future<void>.delayed(const Duration(milliseconds: 40));
+
+    expect(sent, isTrue);
+    expect(provider.getMessages(remoteThread.id), hasLength(1));
+
+    final message = provider.getMessages(remoteThread.id).single;
+    expect(message.status, MessageStatus.failed);
+    expect(
+      provider.deliveryFailureStateFor(remoteThread.id, message.id),
+      ChatDeliveryFailureState.retryUnavailable,
+    );
+    expect(fakeSocketService.sendTextCalls[remoteThread.id], 1);
+    expect(fakeChatService.sendTextMessageResultCalls[remoteThread.id], isNull);
+  });
+
+  test(
+      'sendMessage should surface blocked relation when join thread is rejected',
+      () async {
+    final remoteThread = _buildThread('th_chat_retry_join_blocked');
+    final fakeChatService = _FakeChatService(
+      threads: [remoteThread],
+      hasSessionOverride: true,
+    );
+    final fakeSocketService = _FakeChatSocketService(
+      joinThreadResultsByThread: {
+        remoteThread.id: const ChatSocketAckResult.failure(
+          ChatRequestFailure(
+            code: 'BLOCKED_RELATION',
+            message: '加入会话失败，关系已受限',
+            statusCode: 403,
+          ),
+        ),
+      },
+    );
+    final provider = ChatProvider(
+      chatService: fakeChatService,
+      chatSocketService: fakeSocketService,
+    );
+    addTearDown(provider.dispose);
+    provider.addThread(remoteThread);
+
+    final sent = provider.sendMessage(remoteThread.id, '这条消息会在 join 时被拦下');
+    await Future<void>.delayed(const Duration(milliseconds: 40));
+
+    expect(sent, isTrue);
+    expect(provider.getMessages(remoteThread.id), hasLength(1));
+
+    final message = provider.getMessages(remoteThread.id).single;
+    expect(message.status, MessageStatus.failed);
+    expect(
+      provider.deliveryFailureStateFor(remoteThread.id, message.id),
+      ChatDeliveryFailureState.blockedRelation,
+    );
+    expect(
+      fakeSocketService.joinCalls[remoteThread.id] ?? 0,
+      greaterThanOrEqualTo(1),
+    );
+    expect(fakeSocketService.sendTextCalls[remoteThread.id], isNull);
+    expect(fakeChatService.sendTextMessageResultCalls[remoteThread.id], isNull);
+  });
+
+  test('sendMessage should fallback to http when join thread transport fails',
+      () async {
+    final remoteThread = _buildThread('th_chat_retry_join_transport');
+    final fakeChatService = _FakeChatService(
+      threads: [remoteThread],
+      hasSessionOverride: true,
+    );
+    final fakeSocketService = _FakeChatSocketService(
+      joinThreadResultsByThread: {
+        remoteThread.id: const ChatSocketAckResult.transportFailure(),
+      },
+    );
+    final provider = ChatProvider(
+      chatService: fakeChatService,
+      chatSocketService: fakeSocketService,
+    );
+    addTearDown(provider.dispose);
+    provider.addThread(remoteThread);
+
+    final sent = provider.sendMessage(remoteThread.id, '这条消息会在 join 失败后走 http');
+    await Future<void>.delayed(const Duration(milliseconds: 40));
+
+    expect(sent, isTrue);
+    expect(provider.getMessages(remoteThread.id), hasLength(1));
+
+    final message = provider.getMessages(remoteThread.id).single;
+    expect(message.status, MessageStatus.sent);
+    expect(
+      fakeSocketService.joinCalls[remoteThread.id] ?? 0,
+      greaterThanOrEqualTo(1),
+    );
+    expect(fakeSocketService.sendTextCalls[remoteThread.id], isNull);
+    expect(fakeChatService.sendTextMessageResultCalls[remoteThread.id], 1);
+  });
+
   test('resendImageMessage should retry failed image message', () async {
     final remoteThread = _buildThread('th_chat_retry_image');
-    final fakeSocketService = _FakeChatSocketService();
+    final fakeSocketService = _FakeChatSocketService(
+      sendImageResultsByThread: const <String, ChatSocketAckResult>{},
+    );
     final provider = ChatProvider(
       chatService: _FakeChatService(
         threads: [remoteThread],
         hasSessionOverride: true,
+        sendImageResultsByThread: const <String, ChatRequestResult<Message>>{},
       ),
       chatSocketService: fakeSocketService,
       mediaUploadService: _FakeMediaUploadService(
@@ -1984,6 +2722,57 @@ void main() {
     final resent = await provider.resendImageMessage(
       remoteThread.id,
       'retry-image-ok-1',
+    );
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+
+    expect(resent, isTrue);
+    expect(fakeSocketService.sendImageCalls[remoteThread.id], 1);
+    expect(
+      provider.getMessages(remoteThread.id).first.status,
+      MessageStatus.sending,
+    );
+  });
+
+  test(
+      'resendImageMessage should retry failed original image when preview still exists',
+      () async {
+    final remoteThread = _buildThread('th_chat_retry_original_image');
+    final fakeSocketService = _FakeChatSocketService();
+    final provider = ChatProvider(
+      chatService: _FakeChatService(
+        threads: [remoteThread],
+        hasSessionOverride: true,
+      ),
+      chatSocketService: fakeSocketService,
+      mediaUploadService: _FakeMediaUploadService(
+        preparedUploadBuilder: (threadId, imageFile) =>
+            const PreparedChatImageUpload(
+          sendKey: 'chat/object-key-retry-original-image',
+          previewPath: 'preview-path',
+          isRemotePrepared: true,
+        ),
+      ),
+    );
+    addTearDown(provider.dispose);
+    provider.addThread(remoteThread);
+    final imageFile =
+        await _createTestImageFile('retry_original_image_message');
+    provider.getMessages(remoteThread.id).add(
+          Message(
+            id: 'retry-original-image-ok-1',
+            content: '[图片]',
+            isMe: true,
+            timestamp: DateTime.now(),
+            status: MessageStatus.failed,
+            type: MessageType.image,
+            imagePath: imageFile.path,
+            imageQuality: ImageQuality.original,
+          ),
+        );
+
+    final resent = await provider.resendImageMessage(
+      remoteThread.id,
+      'retry-original-image-ok-1',
     );
     await Future<void>.delayed(const Duration(milliseconds: 20));
 
@@ -2821,6 +3610,11 @@ class _FakeChatService extends ChatService {
     this.threads = const <ChatThread>[],
     this.messagesByThread = const <String, List<Message>>{},
     this.directThreadsByUserId = const <String, ChatThread>{},
+    this.sendTextResultsByThread = const <String, ChatRequestResult<Message>>{},
+    this.sendImageResultsByThread =
+        const <String, ChatRequestResult<Message>>{},
+    this.markThreadReadResultsByThread =
+        const <String, ChatRequestResult<bool>>{},
     this.createDirectThreadDelay = Duration.zero,
     this.loadMessagesDelay = Duration.zero,
     this.hasSessionOverride = false,
@@ -2832,9 +3626,14 @@ class _FakeChatService extends ChatService {
   ChatThreadHydrationSnapshot? threadSnapshot;
   final Map<String, List<Message>> messagesByThread;
   final Map<String, ChatThread> directThreadsByUserId;
+  final Map<String, ChatRequestResult<Message>> sendTextResultsByThread;
+  final Map<String, ChatRequestResult<Message>> sendImageResultsByThread;
+  final Map<String, ChatRequestResult<bool>> markThreadReadResultsByThread;
   final Duration createDirectThreadDelay;
   final Map<String, int> loadMessagesCalls = <String, int>{};
   final Map<String, int> markThreadReadCalls = <String, int>{};
+  final Map<String, int> sendTextMessageResultCalls = <String, int>{};
+  final Map<String, int> sendImageMessageResultCalls = <String, int>{};
   final Duration loadMessagesDelay;
   final bool hasSessionOverride;
   final bool failThreadHydration;
@@ -2871,15 +3670,90 @@ class _FakeChatService extends ChatService {
   }
 
   @override
+  Future<ChatRequestResult<Message>> sendTextMessageResult(
+    String threadId,
+    String content,
+    String clientMsgId,
+  ) async {
+    sendTextMessageResultCalls[threadId] =
+        (sendTextMessageResultCalls[threadId] ?? 0) + 1;
+    final configuredResult = sendTextResultsByThread[threadId];
+    if (configuredResult != null) {
+      return configuredResult;
+    }
+    return ChatRequestResult.success(
+      Message(
+        id: 'remote-$clientMsgId',
+        content: content,
+        isMe: true,
+        timestamp: DateTime.now(),
+        status: MessageStatus.sent,
+        type: MessageType.text,
+      ),
+    );
+  }
+
+  @override
+  Future<ChatRequestResult<Message>> sendImageMessageResult(
+    String threadId,
+    String imageKey,
+    bool burnAfterReading,
+    String clientMsgId,
+  ) async {
+    sendImageMessageResultCalls[threadId] =
+        (sendImageMessageResultCalls[threadId] ?? 0) + 1;
+    final configuredResult = sendImageResultsByThread[threadId];
+    if (configuredResult != null) {
+      return configuredResult;
+    }
+    return ChatRequestResult.success(
+      Message(
+        id: 'remote-$clientMsgId',
+        content: '[图片]',
+        isMe: true,
+        timestamp: DateTime.now(),
+        status: MessageStatus.sent,
+        type: MessageType.image,
+        imagePath: imageKey,
+        isBurnAfterReading: burnAfterReading,
+        imageQuality: ImageQuality.compressed,
+      ),
+    );
+  }
+
+  @override
   Future<void> markThreadRead(
     String threadId, {
     String? lastReadMessageId,
   }) async {
+    await markThreadReadResult(
+      threadId,
+      lastReadMessageId: lastReadMessageId,
+    );
+  }
+
+  @override
+  Future<ChatRequestResult<bool>> markThreadReadResult(
+    String threadId, {
+    String? lastReadMessageId,
+  }) async {
     markThreadReadCalls[threadId] = (markThreadReadCalls[threadId] ?? 0) + 1;
+    final configuredResult = markThreadReadResultsByThread[threadId];
+    if (configuredResult != null) {
+      return configuredResult;
+    }
+    return const ChatRequestResult.success(true);
   }
 }
 
 class _FakeChatSocketService implements ChatSocketService {
+  _FakeChatSocketService({
+    this.joinThreadResultsByThread = const <String, ChatSocketAckResult>{},
+    this.markReadResultsByThread = const <String, ChatSocketAckResult>{},
+    this.sendTextResultsByThread = const <String, ChatSocketAckResult>{},
+    this.sendImageResultsByThread = const <String, ChatSocketAckResult>{},
+  });
+
   @override
   ValueChanged<String>? onConnected;
 
@@ -2904,6 +3778,10 @@ class _FakeChatSocketService implements ChatSocketService {
       <String, List<String?>>{};
   final Map<String, int> sendImageCalls = <String, int>{};
   final Map<String, int> sendTextCalls = <String, int>{};
+  final Map<String, ChatSocketAckResult> joinThreadResultsByThread;
+  final Map<String, ChatSocketAckResult> markReadResultsByThread;
+  final Map<String, ChatSocketAckResult> sendTextResultsByThread;
+  final Map<String, ChatSocketAckResult> sendImageResultsByThread;
 
   @override
   bool get isConnected => true;
@@ -2916,17 +3794,37 @@ class _FakeChatSocketService implements ChatSocketService {
 
   @override
   Future<bool> joinThread(String threadId) async {
+    final result = await joinThreadResult(threadId);
+    return result.isSuccess;
+  }
+
+  @override
+  Future<ChatSocketAckResult> joinThreadResult(String threadId) async {
     joinCalls[threadId] = (joinCalls[threadId] ?? 0) + 1;
-    return true;
+    return joinThreadResultsByThread[threadId] ??
+        const ChatSocketAckResult.success();
   }
 
   @override
   Future<bool> markRead(String threadId, {String? lastReadMessageId}) async {
+    final result = await markReadResult(
+      threadId,
+      lastReadMessageId: lastReadMessageId,
+    );
+    return result.isSuccess;
+  }
+
+  @override
+  Future<ChatSocketAckResult> markReadResult(
+    String threadId, {
+    String? lastReadMessageId,
+  }) async {
     markReadCalls[threadId] = (markReadCalls[threadId] ?? 0) + 1;
     markReadMessageIdsByThread.putIfAbsent(threadId, () => <String?>[]).add(
           lastReadMessageId,
         );
-    return true;
+    return markReadResultsByThread[threadId] ??
+        const ChatSocketAckResult.success();
   }
 
   @override
@@ -2936,8 +3834,25 @@ class _FakeChatSocketService implements ChatSocketService {
     required bool burnAfterReading,
     required String clientMsgId,
   }) async {
+    final result = await sendImageResult(
+      threadId: threadId,
+      imageKey: imageKey,
+      burnAfterReading: burnAfterReading,
+      clientMsgId: clientMsgId,
+    );
+    return result.isSuccess;
+  }
+
+  @override
+  Future<ChatSocketAckResult> sendImageResult({
+    required String threadId,
+    required String imageKey,
+    required bool burnAfterReading,
+    required String clientMsgId,
+  }) async {
     sendImageCalls[threadId] = (sendImageCalls[threadId] ?? 0) + 1;
-    return true;
+    return sendImageResultsByThread[threadId] ??
+        const ChatSocketAckResult.success();
   }
 
   @override
@@ -2946,8 +3861,23 @@ class _FakeChatSocketService implements ChatSocketService {
     required String content,
     required String clientMsgId,
   }) async {
+    final result = await sendTextResult(
+      threadId: threadId,
+      content: content,
+      clientMsgId: clientMsgId,
+    );
+    return result.isSuccess;
+  }
+
+  @override
+  Future<ChatSocketAckResult> sendTextResult({
+    required String threadId,
+    required String content,
+    required String clientMsgId,
+  }) async {
     sendTextCalls[threadId] = (sendTextCalls[threadId] ?? 0) + 1;
-    return true;
+    return sendTextResultsByThread[threadId] ??
+        const ChatSocketAckResult.success();
   }
 
   void emitConnected(String userId) {
@@ -2958,10 +3888,15 @@ class _FakeChatSocketService implements ChatSocketService {
 class _FakeMediaUploadService extends MediaUploadService {
   _FakeMediaUploadService({
     required this.preparedUploadBuilder,
+    this.preparedUploadResultBuilder,
   });
 
   final PreparedChatImageUpload Function(String threadId, File imageFile)
       preparedUploadBuilder;
+  final ChatImageUploadPreparationResult Function(
+    String threadId,
+    File imageFile,
+  )? preparedUploadResultBuilder;
 
   @override
   Future<PreparedChatImageUpload> prepareChatImageUpload(
@@ -2969,5 +3904,16 @@ class _FakeMediaUploadService extends MediaUploadService {
     File imageFile,
   ) async {
     return preparedUploadBuilder(threadId, imageFile);
+  }
+
+  @override
+  Future<ChatImageUploadPreparationResult> prepareChatImageUploadResult(
+    String threadId,
+    File imageFile,
+  ) async {
+    return preparedUploadResultBuilder?.call(threadId, imageFile) ??
+        ChatImageUploadPreparationResult.success(
+          preparedUploadBuilder(threadId, imageFile),
+        );
   }
 }

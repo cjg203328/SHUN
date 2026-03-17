@@ -6,9 +6,54 @@ import '../config/theme.dart';
 import '../models/app_notification.dart';
 import '../providers/chat_provider.dart';
 import '../providers/notification_center_provider.dart';
+import '../providers/settings_provider.dart';
+import '../utils/notification_permission_guidance.dart';
+import '../widgets/notification_permission_notice_card.dart';
 
-class NotificationCenterScreen extends StatelessWidget {
-  const NotificationCenterScreen({super.key});
+enum NotificationCenterSourceFilter {
+  all,
+  message,
+  friend,
+  system,
+  ;
+
+  static NotificationCenterSourceFilter fromQuery(String? value) {
+    return NotificationCenterSourceFilter.values.firstWhere(
+      (filter) => filter.name == value,
+      orElse: () => NotificationCenterSourceFilter.all,
+    );
+  }
+}
+
+class NotificationCenterScreen extends StatefulWidget {
+  const NotificationCenterScreen({
+    super.key,
+    this.initialFilter = NotificationCenterSourceFilter.all,
+  });
+
+  final NotificationCenterSourceFilter initialFilter;
+
+  @override
+  State<NotificationCenterScreen> createState() =>
+      _NotificationCenterScreenState();
+}
+
+class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
+  late NotificationCenterSourceFilter _selectedFilter;
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedFilter = widget.initialFilter;
+  }
+
+  @override
+  void didUpdateWidget(covariant NotificationCenterScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.initialFilter != widget.initialFilter) {
+      _selectedFilter = widget.initialFilter;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -56,86 +101,236 @@ class NotificationCenterScreen extends StatelessWidget {
       body: Consumer<NotificationCenterProvider>(
         builder: (context, provider, child) {
           final items = provider.items;
-          if (items.isEmpty) {
-            return Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text(
-                    '🔔',
-                    style: TextStyle(
-                      fontSize: 64,
-                      color: AppColors.textTertiary.withValues(alpha: 0.3),
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-                  Text(
-                    '暂无通知',
-                    style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                          color: AppColors.textTertiary,
-                        ),
-                  ),
-                ],
-              ),
-            );
-          }
-
-          return ListView.separated(
-            itemCount: items.length,
-            separatorBuilder: (_, __) => Divider(
-              color: AppColors.white05,
-              height: 1,
-              indent: 16,
-              endIndent: 16,
-            ),
-            itemBuilder: (context, index) {
-              final item = items[index];
-              return ListTile(
-                onTap: () async {
-                  await provider.markRead(item.id);
-                  if (!context.mounted) return;
-                  _handleTap(context, item);
-                },
-                onLongPress: () => provider.remove(item.id),
-                leading: _buildLeading(item),
-                title: Text(
-                  item.title,
-                  style: TextStyle(
-                    color: AppColors.textPrimary,
-                    fontWeight:
-                        item.isRead ? FontWeight.w300 : FontWeight.w500,
-                  ),
-                ),
-                subtitle: Padding(
-                  padding: const EdgeInsets.only(top: 6),
-                  child: Text(
-                    item.body,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(color: AppColors.textSecondary),
-                  ),
-                ),
-                trailing: item.isRead
-                    ? Text(
-                        _formatTime(item.createdAt),
-                        style: const TextStyle(
-                          color: AppColors.textTertiary,
-                          fontSize: 12,
-                        ),
-                      )
-                    : Container(
-                        width: 10,
-                        height: 10,
-                        decoration: const BoxDecoration(
-                          color: AppColors.brandBlue,
-                          shape: BoxShape.circle,
-                        ),
-                      ),
+          final filteredItems = items
+              .where((item) => _matchesFilter(item, _selectedFilter))
+              .toList();
+          final settingsProvider = Provider.of<SettingsProvider?>(context);
+          final showPermissionNotice = settingsProvider != null &&
+              NotificationPermissionGuidance.needsSystemPermission(
+                notificationEnabled: settingsProvider.notificationEnabled,
+                permissionGranted:
+                    settingsProvider.pushRuntimeState.permissionGranted,
               );
-            },
+
+          return ListView(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+            children: [
+              if (showPermissionNotice) ...[
+                NotificationPermissionNoticeCard(
+                  key: const Key('notification-center-permission-banner'),
+                  description: NotificationPermissionGuidance
+                      .notificationCenterDescription,
+                  actionLabel:
+                      NotificationPermissionGuidance.openSettingsPageAction,
+                  actionKey: const Key(
+                    'notification-center-permission-action',
+                  ),
+                  onActionPressed: () => context.push('/settings'),
+                ),
+                const SizedBox(height: 12),
+              ],
+              if (items.isNotEmpty) ...[
+                _buildFilterBar(),
+                const SizedBox(height: 12),
+              ],
+              if (filteredItems.isEmpty)
+                Padding(
+                  padding: EdgeInsets.only(
+                    top: showPermissionNotice ? 40 : 120,
+                  ),
+                  child: _buildEmptyState(
+                    context,
+                    hasAnyItems: items.isNotEmpty,
+                  ),
+                )
+              else
+                ...filteredItems.asMap().entries.expand((entry) {
+                  final isLast = entry.key == filteredItems.length - 1;
+                  return <Widget>[
+                    _buildNotificationTile(context, provider, entry.value),
+                    if (!isLast)
+                      Divider(
+                        color: AppColors.white05,
+                        height: 1,
+                        indent: 16,
+                        endIndent: 16,
+                      ),
+                  ];
+                }),
+            ],
           );
         },
       ),
+    );
+  }
+
+  Widget _buildFilterBar() {
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children:
+          NotificationCenterSourceFilter.values.map(_buildFilterChip).toList(),
+    );
+  }
+
+  Widget _buildFilterChip(NotificationCenterSourceFilter filter) {
+    final selected = _selectedFilter == filter;
+    final label = switch (filter) {
+      NotificationCenterSourceFilter.all => '全部',
+      NotificationCenterSourceFilter.message => '消息',
+      NotificationCenterSourceFilter.friend => '好友',
+      NotificationCenterSourceFilter.system => '系统',
+    };
+    final icon = switch (filter) {
+      NotificationCenterSourceFilter.all => Icons.inbox_outlined,
+      NotificationCenterSourceFilter.message => Icons.chat_bubble_outline,
+      NotificationCenterSourceFilter.friend => Icons.person_add_outlined,
+      NotificationCenterSourceFilter.system => Icons.info_outline,
+    };
+
+    return InkWell(
+      key: Key('notification-center-filter-${filter.name}'),
+      onTap: () {
+        if (_selectedFilter == filter) return;
+        setState(() {
+          _selectedFilter = filter;
+        });
+      },
+      borderRadius: BorderRadius.circular(999),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+        decoration: BoxDecoration(
+          color: selected
+              ? AppColors.brandBlue.withValues(alpha: 0.14)
+              : AppColors.white05,
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(
+            color: selected
+                ? AppColors.brandBlue.withValues(alpha: 0.22)
+                : AppColors.white08,
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              icon,
+              size: 13,
+              color: selected ? AppColors.brandBlue : AppColors.textSecondary,
+            ),
+            const SizedBox(width: 6),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w300,
+                color: selected ? AppColors.brandBlue : AppColors.textSecondary,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEmptyState(
+    BuildContext context, {
+    required bool hasAnyItems,
+  }) {
+    final emptyTitle =
+        hasAnyItems && _selectedFilter != NotificationCenterSourceFilter.all
+            ? switch (_selectedFilter) {
+                NotificationCenterSourceFilter.all => '暂无通知',
+                NotificationCenterSourceFilter.message => '当前没有消息提醒',
+                NotificationCenterSourceFilter.friend => '当前没有好友相关提醒',
+                NotificationCenterSourceFilter.system => '当前没有系统提醒',
+              }
+            : '暂无通知';
+
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Text(
+            '🔔',
+            style: TextStyle(
+              fontSize: 64,
+              color: AppColors.textTertiary.withValues(alpha: 0.3),
+            ),
+          ),
+          const SizedBox(height: 24),
+          Text(
+            emptyTitle,
+            style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                  color: AppColors.textTertiary,
+                ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  bool _matchesFilter(
+    AppNotification item,
+    NotificationCenterSourceFilter filter,
+  ) {
+    return switch (filter) {
+      NotificationCenterSourceFilter.all => true,
+      NotificationCenterSourceFilter.message =>
+        item.type == AppNotificationType.message,
+      NotificationCenterSourceFilter.friend =>
+        item.type == AppNotificationType.friendRequest ||
+            item.type == AppNotificationType.friendAccepted,
+      NotificationCenterSourceFilter.system =>
+        item.type == AppNotificationType.system,
+    };
+  }
+
+  Widget _buildNotificationTile(
+    BuildContext context,
+    NotificationCenterProvider provider,
+    AppNotification item,
+  ) {
+    return ListTile(
+      onTap: () async {
+        await provider.markRead(item.id);
+        if (!context.mounted) return;
+        _handleTap(context, item);
+      },
+      onLongPress: () => provider.remove(item.id),
+      leading: _buildLeading(item),
+      title: Text(
+        item.title,
+        style: TextStyle(
+          color: AppColors.textPrimary,
+          fontWeight: item.isRead ? FontWeight.w300 : FontWeight.w500,
+        ),
+      ),
+      subtitle: Padding(
+        padding: const EdgeInsets.only(top: 6),
+        child: Text(
+          item.body,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(color: AppColors.textSecondary),
+        ),
+      ),
+      trailing: item.isRead
+          ? Text(
+              _formatTime(item.createdAt),
+              style: const TextStyle(
+                color: AppColors.textTertiary,
+                fontSize: 12,
+              ),
+            )
+          : Container(
+              width: 10,
+              height: 10,
+              decoration: const BoxDecoration(
+                color: AppColors.brandBlue,
+                shape: BoxShape.circle,
+              ),
+            ),
     );
   }
 

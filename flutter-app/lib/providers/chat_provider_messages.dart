@@ -133,16 +133,38 @@ extension ChatProviderMessages on ChatProvider {
     String content,
   ) async {
     await _ensureRealtimeReady();
-    final joined = await _joinThreadRealtime(threadId);
-    final sent = joined &&
-        await _chatSocketService.sendText(
-          threadId: threadId,
-          content: content,
-          clientMsgId: localMessageId,
-        );
-    if (!sent) {
+    final joinResult = await _joinThreadRealtimeResult(threadId);
+    if (joinResult.shouldFallbackToHttp) {
       await _sendMessageRemote(threadId, localMessageId, content);
+      return;
     }
+    if (!joinResult.isSuccess) {
+      _markMessageFailed(
+        threadId,
+        localMessageId,
+        failureState: _deliveryFailureStateFromRequestFailure(joinResult.error),
+      );
+      return;
+    }
+
+    final socketResult = await _chatSocketService.sendTextResult(
+      threadId: threadId,
+      content: content,
+      clientMsgId: localMessageId,
+    );
+    if (socketResult.isSuccess) {
+      return;
+    }
+    if (socketResult.shouldFallbackToHttp) {
+      await _sendMessageRemote(threadId, localMessageId, content);
+      return;
+    }
+
+    _markMessageFailed(
+      threadId,
+      localMessageId,
+      failureState: _deliveryFailureStateFromRequestFailure(socketResult.error),
+    );
   }
 
   Future<void> _sendMessageRemote(
@@ -150,7 +172,7 @@ extension ChatProviderMessages on ChatProvider {
     String localMessageId,
     String content,
   ) async {
-    final remoteMessage = await _chatService.sendTextMessage(
+    final result = await _chatService.sendTextMessageResult(
       threadId,
       content,
       localMessageId,
@@ -161,15 +183,21 @@ extension ChatProviderMessages on ChatProvider {
     final index = messages.indexWhere((msg) => msg.id == localMessageId);
     if (index == -1) return;
 
+    final remoteMessage = result.data;
     if (remoteMessage != null) {
       messages[index] = remoteMessage;
+      _clearDeliveryFailureState(threadId, localMessageId);
       _addIntimacy(threadId, content, true);
       _recordDeliverySuccess(MessageType.text, localMessageId);
-    } else {
-      messages[index] = messages[index].copyWith(status: MessageStatus.failed);
-      _recordDeliveryFailure(MessageType.text, localMessageId);
+      notifyListeners();
+      return;
     }
-    notifyListeners();
+
+    _markMessageFailed(
+      threadId,
+      localMessageId,
+      failureState: _deliveryFailureStateFromRequestFailure(result.error),
+    );
   }
 
   Future<void> _simulateSend(
@@ -189,8 +217,10 @@ extension ChatProviderMessages on ChatProvider {
           status: isSuccess ? MessageStatus.sent : MessageStatus.failed,
         );
         if (isSuccess) {
+          _clearDeliveryFailureState(threadId, messageId);
           _recordDeliverySuccess(MessageType.text, messageId);
         } else {
+          _clearDeliveryFailureState(threadId, messageId);
           _recordDeliveryFailure(MessageType.text, messageId);
         }
         notifyListeners();
@@ -251,6 +281,58 @@ extension ChatProviderMessages on ChatProvider {
         message.type == MessageType.text;
   }
 
+  ChatDeliveryFailureState deliveryFailureStateFor(
+    String threadId,
+    String messageId,
+  ) {
+    threadId = _resolveThreadId(threadId);
+    final messages = _messages[threadId];
+    if (messages == null) {
+      return ChatDeliveryFailureState.retryUnavailable;
+    }
+
+    final message = messages.cast<Message?>().firstWhere(
+          (msg) => msg?.id == messageId,
+          orElse: () => null,
+        );
+    if (message == null ||
+        !message.isMe ||
+        message.status != MessageStatus.failed) {
+      return ChatDeliveryFailureState.retryable;
+    }
+
+    if (_deletedThreads[threadId] ?? false) {
+      return ChatDeliveryFailureState.retryUnavailable;
+    }
+
+    final thread = _threads[threadId];
+    if (thread == null) {
+      return ChatDeliveryFailureState.retryUnavailable;
+    }
+
+    if (!thread.isFriend && thread.isExpired) {
+      return ChatDeliveryFailureState.threadExpired;
+    }
+
+    if (message.type == MessageType.image &&
+        !_canRetryFailedImageFromLocalPreview(message)) {
+      return ChatDeliveryFailureState.imageReselectRequired;
+    }
+
+    final cachedFailureState =
+        _messageFailureStates[_deliveryFailureKey(threadId, messageId)];
+    if (cachedFailureState != null) {
+      return cachedFailureState;
+    }
+
+    final retryable = message.type == MessageType.image
+        ? _canRetryFailedImageMessage(threadId, message)
+        : canResendMessage(threadId, messageId);
+    return retryable
+        ? ChatDeliveryFailureState.retryable
+        : ChatDeliveryFailureState.retryUnavailable;
+  }
+
   Future<bool> retryFailedMessage(String threadId, String messageId) async {
     threadId = _resolveThreadId(threadId);
     final messages = _messages[threadId];
@@ -294,19 +376,16 @@ extension ChatProviderMessages on ChatProvider {
       return false;
     }
 
-    final imagePath = message.imagePath;
-    if (imagePath == null || imagePath.isEmpty) {
+    if (!_canRetryFailedImageFromLocalPreview(message)) {
       _deliveryStatsService.recordImageReselectRequired();
       return false;
     }
+    final imagePath = message.imagePath!.trim();
     final imageFile = File(imagePath);
-    if (!await imageFile.exists()) {
-      _deliveryStatsService.recordImageReselectRequired();
-      return false;
-    }
 
     _deliveryStatsService.recordRetryRequested();
     _retryingMessageIds.add(messageId);
+    _clearDeliveryFailureState(threadId, messageId);
     messages[index] = message.copyWith(status: MessageStatus.sending);
     notifyListeners();
 
@@ -327,6 +406,29 @@ extension ChatProviderMessages on ChatProvider {
     }
 
     return true;
+  }
+
+  bool _canRetryFailedImageMessage(String threadId, Message message) {
+    final thread = _getSendableThread(
+      threadId,
+      requireImagePermission: true,
+    );
+    if (thread == null) {
+      return false;
+    }
+    if (!message.isMe ||
+        message.status != MessageStatus.failed ||
+        message.type != MessageType.image) {
+      return false;
+    }
+    return _canRetryFailedImageFromLocalPreview(message);
+  }
+
+  bool _canRetryFailedImageFromLocalPreview(Message message) {
+    if (message.type != MessageType.image) {
+      return false;
+    }
+    return canRetryImageFromLocalPreview(message.imagePath);
   }
 
   bool resendMessage(String threadId, String messageId) {
@@ -351,6 +453,7 @@ extension ChatProviderMessages on ChatProvider {
     final content = messages[index].content;
     _deliveryStatsService.recordRetryRequested();
     _retryingMessageIds.add(messageId);
+    _clearDeliveryFailureState(threadId, messageId);
     messages[index] = messages[index].copyWith(
       status: MessageStatus.sending,
     );
@@ -369,7 +472,11 @@ extension ChatProviderMessages on ChatProvider {
     return true;
   }
 
-  void _markMessageFailed(String threadId, String messageId) {
+  void _markMessageFailed(
+    String threadId,
+    String messageId, {
+    ChatDeliveryFailureState? failureState,
+  }) {
     threadId = _resolveThreadId(threadId);
     final messages = _messages[threadId];
     if (messages == null) return;
@@ -377,8 +484,68 @@ extension ChatProviderMessages on ChatProvider {
     if (index == -1) return;
     final message = messages[index];
     messages[index] = message.copyWith(status: MessageStatus.failed);
+    if (failureState != null) {
+      _setDeliveryFailureState(threadId, messageId, failureState);
+    } else {
+      _clearDeliveryFailureState(threadId, messageId);
+    }
     _recordDeliveryFailure(message.type, messageId);
     notifyListeners();
+  }
+
+  ChatDeliveryFailureState _deliveryFailureStateFromRequestFailure(
+    ChatRequestFailure? failure,
+  ) {
+    switch (failure?.code) {
+      case 'THREAD_EXPIRED':
+        return ChatDeliveryFailureState.threadExpired;
+      case 'BLOCKED_RELATION':
+      case 'USER_BLOCKED':
+        return ChatDeliveryFailureState.blockedRelation;
+      case 'UPLOAD_TOKEN_INVALID':
+        return ChatDeliveryFailureState.imageUploadTokenInvalid;
+      case 'IMAGE_UPLOAD_TOO_LARGE':
+        return ChatDeliveryFailureState.imageUploadFileTooLarge;
+      case 'IMAGE_UPLOAD_UNSUPPORTED_FORMAT':
+        return ChatDeliveryFailureState.imageUploadUnsupportedFormat;
+      case 'NETWORK_ERROR':
+      case 'SOCKET_TRANSPORT_ERROR':
+      case 'SERVICE_UNAVAILABLE':
+      case 'RATE_LIMITED':
+      case 'UPLOAD_TOKEN_FAILED':
+        return ChatDeliveryFailureState.networkIssue;
+      case 'AUTH_TOKEN_INVALID':
+      case 'AUTH_TOKEN_EXPIRED':
+      case 'THREAD_NOT_FOUND':
+      case 'POLICY_UNLOCK_REQUIRED':
+        return ChatDeliveryFailureState.retryUnavailable;
+      default:
+        return ChatDeliveryFailureState.retryable;
+    }
+  }
+
+  ChatDeliveryFailureState
+      _deliveryFailureStateFromImageUploadPreparationResult(
+    ChatImageUploadPreparationResult result,
+  ) {
+    final requestState = _deliveryFailureStateFromRequestFailure(result.error);
+    if (requestState == ChatDeliveryFailureState.threadExpired ||
+        requestState == ChatDeliveryFailureState.blockedRelation ||
+        requestState == ChatDeliveryFailureState.retryUnavailable ||
+        requestState == ChatDeliveryFailureState.imageUploadTokenInvalid ||
+        requestState == ChatDeliveryFailureState.imageUploadFileTooLarge ||
+        requestState == ChatDeliveryFailureState.imageUploadUnsupportedFormat) {
+      return requestState;
+    }
+
+    switch (result.stage) {
+      case ChatImageUploadFailureStage.token:
+        return ChatDeliveryFailureState.imageUploadPreparationFailed;
+      case ChatImageUploadFailureStage.upload:
+        return ChatDeliveryFailureState.imageUploadInterrupted;
+      case null:
+        return requestState;
+    }
   }
 
   Future<void> _mockReply(String threadId) async {
@@ -446,8 +613,15 @@ extension ChatProviderMessages on ChatProvider {
             currentUnread > 0);
     if (_chatService.hasSession) {
       if (shouldSyncRemote) {
+        final previousSyncedMessageId = _lastReadSyncMessageIds[threadId];
         _lastReadSyncMessageIds[threadId] = lastMessageId;
-        unawaited(_markAsReadRealtime(threadId, lastMessageId: lastMessageId));
+        unawaited(
+          _markAsReadRealtime(
+            threadId,
+            lastMessageId: lastMessageId,
+            previousSyncedMessageId: previousSyncedMessageId,
+          ),
+        );
       }
     }
   }
@@ -455,20 +629,66 @@ extension ChatProviderMessages on ChatProvider {
   Future<void> _markAsReadRealtime(
     String threadId, {
     String? lastMessageId,
+    String? previousSyncedMessageId,
   }) async {
     await _ensureRealtimeReady();
-    final joined = await _joinThreadRealtime(threadId);
-    final sent = joined &&
-        await _chatSocketService.markRead(
+    final joinResult = await _joinThreadRealtimeResult(threadId);
+    if (!joinResult.isSuccess) {
+      if (joinResult.shouldFallbackToHttp) {
+        final fallbackResult = await _chatService.markThreadReadResult(
           threadId,
           lastReadMessageId: lastMessageId,
         );
-    if (!sent) {
-      await _chatService.markThreadRead(
+        if (fallbackResult.isSuccess) {
+          return;
+        }
+      }
+      _restoreLastReadSyncState(
+        threadId,
+        attemptedMessageId: lastMessageId,
+        previousSyncedMessageId: previousSyncedMessageId,
+      );
+      return;
+    }
+
+    final markReadResult = await _chatSocketService.markReadResult(
+      threadId,
+      lastReadMessageId: lastMessageId,
+    );
+    if (markReadResult.isSuccess) {
+      return;
+    }
+    if (markReadResult.shouldFallbackToHttp) {
+      final fallbackResult = await _chatService.markThreadReadResult(
         threadId,
         lastReadMessageId: lastMessageId,
       );
+      if (fallbackResult.isSuccess) {
+        return;
+      }
     }
+
+    _restoreLastReadSyncState(
+      threadId,
+      attemptedMessageId: lastMessageId,
+      previousSyncedMessageId: previousSyncedMessageId,
+    );
+  }
+
+  void _restoreLastReadSyncState(
+    String threadId, {
+    String? attemptedMessageId,
+    String? previousSyncedMessageId,
+  }) {
+    if (attemptedMessageId == null ||
+        _lastReadSyncMessageIds[threadId] != attemptedMessageId) {
+      return;
+    }
+    if (previousSyncedMessageId == null) {
+      _lastReadSyncMessageIds.remove(threadId);
+      return;
+    }
+    _lastReadSyncMessageIds[threadId] = previousSyncedMessageId;
   }
 
   void _markPeerReadForOutgoing(
@@ -674,17 +894,33 @@ extension ChatProviderMessages on ChatProvider {
       return;
     }
 
-    final preparedUpload = await _mediaUploadService.prepareChatImageUpload(
+    final preparedUploadResult =
+        await _mediaUploadService.prepareChatImageUploadResult(
       resolvedThreadId,
       compressedImage,
     );
+    final preparedUpload = preparedUploadResult.data;
     if (_getSendableThread(resolvedThreadId, requireImagePermission: true) ==
         null) {
       _markMessageFailed(resolvedThreadId, localMessageId);
       return;
     }
+    if (preparedUpload == null) {
+      _markMessageFailed(
+        resolvedThreadId,
+        localMessageId,
+        failureState: _deliveryFailureStateFromImageUploadPreparationResult(
+          preparedUploadResult,
+        ),
+      );
+      return;
+    }
     if (_chatService.hasSession && !preparedUpload.isRemotePrepared) {
-      _markMessageFailed(resolvedThreadId, localMessageId);
+      _markMessageFailed(
+        resolvedThreadId,
+        localMessageId,
+        failureState: ChatDeliveryFailureState.imageUploadPreparationFailed,
+      );
       return;
     }
 
@@ -720,22 +956,49 @@ extension ChatProviderMessages on ChatProvider {
     bool burnAfterReading,
   ) async {
     await _ensureRealtimeReady();
-    final joined = await _joinThreadRealtime(threadId);
-    final sent = joined &&
-        await _chatSocketService.sendImage(
-          threadId: threadId,
-          imageKey: imageKey,
-          burnAfterReading: burnAfterReading,
-          clientMsgId: localMessageId,
-        );
-    if (!sent) {
+    final joinResult = await _joinThreadRealtimeResult(threadId);
+    if (joinResult.shouldFallbackToHttp) {
       await _sendImageMessageRemote(
         threadId,
         localMessageId,
         imageKey,
         burnAfterReading,
       );
+      return;
     }
+    if (!joinResult.isSuccess) {
+      _markMessageFailed(
+        threadId,
+        localMessageId,
+        failureState: _deliveryFailureStateFromRequestFailure(joinResult.error),
+      );
+      return;
+    }
+
+    final socketResult = await _chatSocketService.sendImageResult(
+      threadId: threadId,
+      imageKey: imageKey,
+      burnAfterReading: burnAfterReading,
+      clientMsgId: localMessageId,
+    );
+    if (socketResult.isSuccess) {
+      return;
+    }
+    if (socketResult.shouldFallbackToHttp) {
+      await _sendImageMessageRemote(
+        threadId,
+        localMessageId,
+        imageKey,
+        burnAfterReading,
+      );
+      return;
+    }
+
+    _markMessageFailed(
+      threadId,
+      localMessageId,
+      failureState: _deliveryFailureStateFromRequestFailure(socketResult.error),
+    );
   }
 
   Future<void> _simulateSendImage(String threadId, String messageId) async {
@@ -751,8 +1014,10 @@ extension ChatProviderMessages on ChatProvider {
           status: isSuccess ? MessageStatus.sent : MessageStatus.failed,
         );
         if (isSuccess) {
+          _clearDeliveryFailureState(threadId, messageId);
           _recordDeliverySuccess(MessageType.image, messageId);
         } else {
+          _clearDeliveryFailureState(threadId, messageId);
           _recordDeliveryFailure(MessageType.image, messageId);
         }
         notifyListeners();
@@ -770,7 +1035,7 @@ extension ChatProviderMessages on ChatProvider {
     String imageKey,
     bool burnAfterReading,
   ) async {
-    final remoteMessage = await _chatService.sendImageMessage(
+    final result = await _chatService.sendImageMessageResult(
       threadId,
       imageKey,
       burnAfterReading,
@@ -782,15 +1047,21 @@ extension ChatProviderMessages on ChatProvider {
     final index = messages.indexWhere((msg) => msg.id == localMessageId);
     if (index == -1) return;
 
+    final remoteMessage = result.data;
     if (remoteMessage != null) {
       messages[index] = _mergeRemoteMessage(messages[index], remoteMessage);
+      _clearDeliveryFailureState(threadId, localMessageId);
       _addIntimacy(threadId, '[图片]', true);
       _recordDeliverySuccess(MessageType.image, localMessageId);
-    } else {
-      messages[index] = messages[index].copyWith(status: MessageStatus.failed);
-      _recordDeliveryFailure(MessageType.image, localMessageId);
+      notifyListeners();
+      return;
     }
-    notifyListeners();
+
+    _markMessageFailed(
+      threadId,
+      localMessageId,
+      failureState: _deliveryFailureStateFromRequestFailure(result.error),
+    );
   }
 
   void markImageAsRead(String threadId, String messageId) {
@@ -825,9 +1096,14 @@ extension ChatProviderMessages on ChatProvider {
           if (_chatService.hasSession &&
               lastMessageId != null &&
               _lastReadSyncMessageIds[threadId] != lastMessageId) {
+            final previousSyncedMessageId = _lastReadSyncMessageIds[threadId];
             _lastReadSyncMessageIds[threadId] = lastMessageId;
             unawaited(
-              _markAsReadRealtime(threadId, lastMessageId: lastMessageId),
+              _markAsReadRealtime(
+                threadId,
+                lastMessageId: lastMessageId,
+                previousSyncedMessageId: previousSyncedMessageId,
+              ),
             );
           }
         }
@@ -861,6 +1137,7 @@ extension ChatProviderMessages on ChatProvider {
     final messages = _messages[threadId];
     if (messages == null) return false;
     messages.removeWhere((msg) => msg.id == messageId);
+    _clearDeliveryFailureState(threadId, messageId);
     (_recalledMessageIds[threadId] ??= <String>{}).add(messageId);
     notifyListeners();
     unawaited(_chatService.recallMessage(messageId));

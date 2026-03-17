@@ -11,6 +11,7 @@ import '../models/models.dart';
 import '../providers/chat_provider.dart';
 import '../providers/friend_provider.dart';
 import '../providers/notification_center_provider.dart';
+import '../utils/chat_delivery_state.dart';
 import 'app_toast.dart';
 import 'chat_delivery_status.dart';
 
@@ -176,6 +177,21 @@ class _MessagesTabState extends State<MessagesTab> {
               final draft = chatProvider.draftForThread(thread.id);
               final isFriend = friendProvider.isFriend(thread.otherUser.id) &&
                   !friendProvider.isBlocked(thread.otherUser.id);
+              final deliveryFailureState = lastMessage != null &&
+                      lastMessage.status == MessageStatus.failed
+                  ? chatProvider.deliveryFailureStateFor(
+                      thread.id,
+                      lastMessage.id,
+                    )
+                  : null;
+              final deliveryState = lastMessage == null
+                  ? const ChatDeliveryStatusSpec()
+                  : (resolveChatDeliveryStatus(
+                        lastMessage,
+                        failureState: deliveryFailureState ??
+                            ChatDeliveryFailureState.retryable,
+                      ) ??
+                      const ChatDeliveryStatusSpec());
 
               return Dismissible(
                 key: Key(thread.id),
@@ -213,6 +229,8 @@ class _MessagesTabState extends State<MessagesTab> {
                   lastMessage: lastMessage,
                   draft: draft,
                   isFriend: isFriend,
+                  deliveryFailureState: deliveryFailureState,
+                  deliveryState: deliveryState,
                   onTap: () {
                     final routeThreadId = chatProvider.routeThreadId(
                           threadId: thread.id,
@@ -273,6 +291,8 @@ class _ThreadItem extends StatelessWidget {
     required this.lastMessage,
     required this.draft,
     required this.isFriend,
+    required this.deliveryFailureState,
+    required this.deliveryState,
     required this.onTap,
   });
 
@@ -280,21 +300,19 @@ class _ThreadItem extends StatelessWidget {
   final Message? lastMessage;
   final String draft;
   final bool isFriend;
+  final ChatDeliveryFailureState? deliveryFailureState;
+  final ChatDeliveryStatusSpec deliveryState;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     final isOnline = thread.otherUser.isOnline;
     final hasDraft = draft.trim().isNotEmpty;
-    final message = lastMessage;
     final layout = _MessagesLayoutSpec.fromSize(MediaQuery.of(context).size);
-    final deliveryState = message == null
-        ? const ChatDeliveryStatusSpec()
-        : (resolveChatDeliveryStatus(message) ??
-            const ChatDeliveryStatusSpec());
     final priority = _resolvePriorityState(
       hasDraft: hasDraft,
       isFriend: isFriend,
+      deliveryFailureState: deliveryFailureState,
       deliveryState: deliveryState,
     );
     final showUrgencyHint = !isFriend && thread.timeRemaining.inHours < 3;
@@ -534,11 +552,64 @@ class _ThreadItem extends StatelessWidget {
   _ThreadPriorityState? _resolvePriorityState({
     required bool hasDraft,
     required bool isFriend,
+    required ChatDeliveryFailureState? deliveryFailureState,
     required ChatDeliveryStatusSpec deliveryState,
   }) {
     if (hasDraft) {
       return const _ThreadPriorityState(
         label: '寰呭彂鑽夌',
+        color: AppColors.warning,
+      );
+    }
+    if (deliveryFailureState == ChatDeliveryFailureState.threadExpired) {
+      return const _ThreadPriorityState(
+        label: '会话过期',
+        color: AppColors.warning,
+      );
+    }
+    if (deliveryFailureState == ChatDeliveryFailureState.blockedRelation) {
+      return const _ThreadPriorityState(
+        label: '关系受限',
+        color: AppColors.warning,
+      );
+    }
+    if (deliveryFailureState ==
+        ChatDeliveryFailureState.imageUploadTokenInvalid) {
+      return const _ThreadPriorityState(
+        label: '凭证失效',
+        color: AppColors.warning,
+      );
+    }
+    if (deliveryFailureState == ChatDeliveryFailureState.networkIssue) {
+      return const _ThreadPriorityState(
+        label: '网络波动',
+        color: AppColors.warning,
+      );
+    }
+    if (deliveryFailureState ==
+        ChatDeliveryFailureState.imageUploadPreparationFailed) {
+      return const _ThreadPriorityState(
+        label: '上传失败',
+        color: AppColors.error,
+      );
+    }
+    if (deliveryFailureState ==
+        ChatDeliveryFailureState.imageUploadInterrupted) {
+      return const _ThreadPriorityState(
+        label: '上传中断',
+        color: AppColors.error,
+      );
+    }
+    if (deliveryFailureState ==
+        ChatDeliveryFailureState.imageReselectRequired) {
+      return const _ThreadPriorityState(
+        label: '重选图片',
+        color: AppColors.error,
+      );
+    }
+    if (deliveryFailureState == ChatDeliveryFailureState.retryUnavailable) {
+      return const _ThreadPriorityState(
+        label: '暂不可重试',
         color: AppColors.warning,
       );
     }
@@ -549,6 +620,20 @@ class _ThreadItem extends StatelessWidget {
       );
     }
     if (deliveryState.actionType == ChatDeliveryAction.showGuide) {
+      if (deliveryState.guideFailureState ==
+          ChatDeliveryFailureState.imageUploadFileTooLarge) {
+        return const _ThreadPriorityState(
+          label: '图片过大',
+          color: AppColors.error,
+        );
+      }
+      if (deliveryState.guideFailureState ==
+          ChatDeliveryFailureState.imageUploadUnsupportedFormat) {
+        return const _ThreadPriorityState(
+          label: '格式异常',
+          color: AppColors.error,
+        );
+      }
       return const _ThreadPriorityState(
         label: '鍥剧墖闇€閲嶆柊閫夋嫨',
         color: AppColors.error,

@@ -164,7 +164,8 @@ void main() {
     await tester.pump();
 
     expect(find.text('原图失效，请重选图片'), findsOneWidget);
-    expect(find.text('重选图片'), findsOneWidget);
+    expect(find.text('重选图片'), findsNWidgets(2));
+    expect(find.byIcon(Icons.photo_library_outlined), findsOneWidget);
 
     await _disposeHost(tester, chatProvider, friendProvider);
   });

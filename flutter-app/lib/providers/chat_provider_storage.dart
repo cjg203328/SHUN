@@ -51,6 +51,7 @@ extension ChatProviderStorage on ChatProvider {
       _lastMessageTime.clear();
       _recalledMessageIds.clear();
       _deletedThreads.clear();
+      _messageFailureStates.clear();
       _deliveryStatsService.clear();
 
       if (rawThreads is Map) {
@@ -269,6 +270,7 @@ extension ChatProviderStorage on ChatProvider {
     _joinedRealtimeThreads.remove(threadId);
     _joiningRealtimeThreads.remove(threadId);
     _threadIdAliases.remove(threadId);
+    _clearDeliveryFailureStatesForThread(threadId);
     for (final alias in _threadIdAliases.keys.toList(growable: false)) {
       if (_threadIdAliases[alias] == threadId) {
         _threadIdAliases.remove(alias);

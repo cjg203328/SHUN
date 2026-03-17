@@ -212,6 +212,7 @@ extension ChatProviderThreads on ChatProvider {
     _threads.remove(oldThreadId);
     _threads[newThread.id] = newThread;
     _threadIdAliases[oldThreadId] = newThread.id;
+    _remapDeliveryFailureStates(oldThreadId, newThread.id);
     for (final alias in _threadIdAliases.keys.toList(growable: false)) {
       if (_threadIdAliases[alias] == oldThreadId) {
         _threadIdAliases[alias] = newThread.id;
