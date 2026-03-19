@@ -337,7 +337,7 @@ class _MessagesTabState extends State<MessagesTab> {
                                         _,
                                       ) {
                                         if (context.mounted) {
-                                          context.go('/main?tab=1');
+                                          context.go('/main?tab=0');
                                         }
                                       });
                                     },

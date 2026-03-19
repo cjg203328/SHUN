@@ -1,5 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sunliao/providers/auth_provider.dart';
+import 'package:sunliao/providers/notification_center_provider.dart';
+import 'package:sunliao/services/push_notification_service.dart';
 import 'package:sunliao/services/storage_service.dart';
 import 'package:sunliao/utils/permission_manager.dart';
 
@@ -8,11 +10,24 @@ import '../helpers/test_bootstrap.dart';
 void main() {
   setUp(() async {
     await initTestAppStorage();
+    await NotificationCenterProvider.instance.clearSession();
+    PushNotificationService.instance.debugSetState(
+      const PushRuntimeState(
+        notificationsEnabled: true,
+        permissionGranted: true,
+        deviceToken: 'stub_push_test_device',
+      ),
+    );
+  });
+
+  tearDown(() async {
+    await NotificationCenterProvider.instance.clearSession();
   });
 
   test('login should persist phone and uid', () async {
     final provider = AuthProvider();
     await Future<void>.delayed(Duration.zero);
+    await provider.sendOtp('13800138000');
 
     final ok = await provider.login('13800138000', '123456');
 
@@ -39,6 +54,7 @@ void main() {
   test('auth state should restore on new provider instance', () async {
     final provider = AuthProvider();
     await Future<void>.delayed(Duration.zero);
+    await provider.sendOtp('13900139000');
     await provider.login('13900139000', '123456');
     final firstUid = provider.uid;
 
@@ -54,6 +70,7 @@ void main() {
       () async {
     final provider = AuthProvider();
     await Future<void>.delayed(Duration.zero);
+    await provider.sendOtp('13700137000');
     await provider.login('13700137000', '123456');
     PermissionManager.setSessionLocationPermission(true);
 

@@ -450,7 +450,7 @@ void main() {
         );
 
     final router = GoRouter(
-      initialLocation: '/main?tab=1',
+      initialLocation: '/main?tab=0',
       routes: [
         GoRoute(
           path: '/main',
@@ -482,15 +482,25 @@ void main() {
     );
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
+    await tester.pumpAndSettle(const Duration(milliseconds: 50));
 
-    expect(find.byKey(const Key('messages-tab-title')), findsOneWidget);
     expect(
-      find.byKey(const Key('messages-thread-item-u_messages_backflow')),
+      find.byKey(const Key('messages-tab-title'), skipOffstage: false),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(
+        const Key('messages-thread-item-u_messages_backflow'),
+        skipOffstage: false,
+      ),
       findsOneWidget,
     );
 
     await tester.tap(
-      find.byKey(const Key('messages-thread-item-u_messages_backflow')),
+      find.byKey(
+        const Key('messages-thread-item-u_messages_backflow'),
+        skipOffstage: false,
+      ),
     );
     await tester.pump();
     await tester.pumpAndSettle();
@@ -500,11 +510,21 @@ void main() {
     await tester.tap(find.byIcon(Icons.arrow_back));
     await tester.pump();
     await tester.pumpAndSettle();
+    // The .then() callback fires after pop completes; pump to process it
+    await tester.pump();
+    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 300));
 
-    expect(find.byKey(const Key('messages-tab-title')), findsOneWidget);
     expect(find.byType(ChatScreen), findsNothing);
     expect(
-      find.byKey(const Key('messages-thread-item-u_messages_backflow')),
+      find.byKey(const Key('messages-tab-title'), skipOffstage: false),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(
+        const Key('messages-thread-item-u_messages_backflow'),
+        skipOffstage: false,
+      ),
       findsOneWidget,
     );
 

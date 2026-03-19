@@ -364,6 +364,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                 children: [
                   _buildSettingItem(
                     context,
+                    key: const Key('settings-about-item'),
                     icon: Icons.info_outlined,
                     title: '关于瞬',
                     subtitle: '查看产品介绍、版本信息与开发说明',
@@ -372,6 +373,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                   _buildDivider(),
                   _buildSettingItem(
                     context,
+                    key: const Key('settings-privacy-policy-item'),
                     icon: Icons.privacy_tip_outlined,
                     title: '隐私政策',
                     subtitle: '说明我们如何收集、使用和保护你的数据',
@@ -380,6 +382,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                   _buildDivider(),
                   _buildSettingItem(
                     context,
+                    key: const Key('settings-user-agreement-item'),
                     icon: Icons.description_outlined,
                     title: '用户协议',
                     subtitle: '查看使用规则、权责说明与服务条款',

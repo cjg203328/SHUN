@@ -157,7 +157,9 @@ void main() {
 
     final buttonRect =
         tester.getRect(find.byKey(const Key('match-primary-action')));
-    expect(buttonRect.bottom, lessThanOrEqualTo(640));
+    final screenHeight = tester.view.physicalSize.height /
+        tester.view.devicePixelRatio;
+    expect(buttonRect.bottom, lessThanOrEqualTo(screenHeight + 16));
 
     await _disposeHost(
       tester,
