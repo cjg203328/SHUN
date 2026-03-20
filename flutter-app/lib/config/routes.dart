@@ -12,9 +12,12 @@ import '../screens/report_screen.dart';
 import '../content/app_legal_content.dart';
 
 class AppRouter {
-  static GoRouter createRouter(AuthProvider authProvider) {
+  static GoRouter createRouter(
+    AuthProvider authProvider, {
+    String initialLocation = '/',
+  }) {
     return GoRouter(
-      initialLocation: '/',
+      initialLocation: initialLocation,
       refreshListenable: authProvider,
       redirect: (context, state) {
         // 启动态不重定向，避免闪烁；由 Splash 统一处理首跳转

@@ -33,9 +33,7 @@ class AppToast {
               width: 3,
               height: 36,
               decoration: BoxDecoration(
-                color: isError
-                    ? AppColors.error
-                    : AppColors.brandBlue,
+                color: isError ? AppColors.error : AppColors.brandBlue,
                 borderRadius: BorderRadius.circular(3),
               ),
             ),
@@ -91,7 +89,8 @@ class AppToast {
 }
 
 class AppDialog {
-  static final AnimationStyle sheetAnimationStyle = AppOverlay.sheetAnimationStyle;
+  static final AnimationStyle sheetAnimationStyle =
+      AppOverlay.sheetAnimationStyle;
   static const BorderRadius sheetBorderRadius =
       BorderRadius.vertical(top: Radius.circular(UiTokens.radiusXl));
 
@@ -150,90 +149,103 @@ class AppDialog {
   }) {
     return showModalBottomSheet<bool>(
       context: context,
+      isScrollControlled: true,
       backgroundColor: Colors.transparent,
       sheetAnimationStyle: sheetAnimationStyle,
-      builder: (context) => buildSheetSurface(
-        padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              title,
-              style: const TextStyle(
-                fontSize: 17,
-                fontWeight: FontWeight.w400,
-                color: AppColors.textPrimary,
-                letterSpacing: 0.5,
-              ),
-              textAlign: TextAlign.center,
-            ),
-            if (content != null) ...[
-              const SizedBox(height: 12),
-              Text(
-                content,
-                style: const TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w300,
-                  color: AppColors.textSecondary,
-                  letterSpacing: 0.3,
-                  height: 1.5,
-                ),
-                textAlign: TextAlign.center,
-              ),
-            ],
-            const SizedBox(height: 30),
-            Row(
-              children: [
-                Expanded(
-                  child: TextButton(
-                    onPressed: () => Navigator.pop(context, false),
-                    style: TextButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 16),
-                      backgroundColor: AppColors.white05,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
+      builder: (context) {
+        final maxSheetHeight = MediaQuery.sizeOf(context).height * 0.72;
+        return buildSheetSurface(
+          padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(maxHeight: maxSheetHeight),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      fontSize: 17,
+                      fontWeight: FontWeight.w400,
+                      color: AppColors.textPrimary,
+                      letterSpacing: 0.5,
                     ),
-                    child: Text(
-                      cancelText,
+                    textAlign: TextAlign.center,
+                  ),
+                  if (content != null) ...[
+                    const SizedBox(height: 12),
+                    Text(
+                      content,
                       style: const TextStyle(
-                        fontSize: 15,
+                        fontSize: 14,
                         fontWeight: FontWeight.w300,
                         color: AppColors.textSecondary,
-                        letterSpacing: 1,
+                        letterSpacing: 0.3,
+                        height: 1.5,
                       ),
+                      textAlign: TextAlign.center,
                     ),
+                  ],
+                  const SizedBox(height: 30),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextButton(
+                          key: const Key('app-dialog-cancel'),
+                          onPressed: () => Navigator.pop(context, false),
+                          style: TextButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                            backgroundColor: AppColors.white05,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                          child: Text(
+                            cancelText,
+                            style: const TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w300,
+                              color: AppColors.textSecondary,
+                              letterSpacing: 1,
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: TextButton(
+                          key: const Key('app-dialog-confirm'),
+                          onPressed: () => Navigator.pop(context, true),
+                          style: TextButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                            backgroundColor: isDanger
+                                ? AppColors.error.withValues(alpha: 0.15)
+                                : AppColors.white12,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                          child: Text(
+                            confirmText,
+                            style: TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w300,
+                              color: isDanger
+                                  ? AppColors.error
+                                  : AppColors.textPrimary,
+                              letterSpacing: 1,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: TextButton(
-                    onPressed: () => Navigator.pop(context, true),
-                    style: TextButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 16),
-                      backgroundColor: isDanger
-                          ? AppColors.error.withValues(alpha: 0.15)
-                          : AppColors.white12,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                    ),
-                    child: Text(
-                      confirmText,
-                      style: TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w300,
-                        color: isDanger ? AppColors.error : AppColors.textPrimary,
-                        letterSpacing: 1,
-                      ),
-                    ),
-                  ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ],
-        ),
-      ),
+          ),
+        );
+      },
     );
   }
 

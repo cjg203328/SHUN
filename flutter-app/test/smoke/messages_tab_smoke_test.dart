@@ -42,6 +42,7 @@ ChatThread _buildThread(String id) {
 Widget _buildHost({
   required ChatProvider chatProvider,
   required FriendProvider friendProvider,
+  DateTime Function()? nowProvider,
 }) {
   return MultiProvider(
     providers: [
@@ -51,7 +52,9 @@ Widget _buildHost({
       ChangeNotifierProvider<ChatProvider>.value(value: chatProvider),
       ChangeNotifierProvider<FriendProvider>.value(value: friendProvider),
     ],
-    child: const MaterialApp(home: MessagesTab()),
+    child: MaterialApp(
+      home: MessagesTab(nowProvider: nowProvider),
+    ),
   );
 }
 
@@ -309,6 +312,61 @@ void main() {
       find.byKey(const Key('messages-thread-expiring-u_messages_priority')),
       findsOneWidget,
     );
+
+    await _disposeHost(tester, chatProvider, friendProvider);
+  });
+
+  testWidgets(
+      'messages tab should refresh remaining-time copy without rebuilding the whole page',
+      (tester) async {
+    final chatProvider = ChatProvider();
+    final friendProvider = FriendProvider();
+
+    var now = DateTime.now();
+    final thread = ChatThread(
+      id: 'u_messages_timer_tick',
+      otherUser: _buildUser('u_messages_timer_tick'),
+      createdAt: now.subtract(const Duration(minutes: 10)),
+      expiresAt: now.add(const Duration(hours: 1, minutes: 1, seconds: 10)),
+      intimacyPoints: 60,
+    );
+    chatProvider.addThread(thread);
+    chatProvider.getMessages(thread.id).add(
+          Message(
+            id: 'timer-message',
+            content: 'timer tick',
+            isMe: false,
+            timestamp: now.subtract(const Duration(seconds: 59)),
+            status: MessageStatus.sent,
+          ),
+        );
+
+    await tester.pumpWidget(
+      _buildHost(
+        chatProvider: chatProvider,
+        friendProvider: friendProvider,
+        nowProvider: () => now,
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    final relativeTimeFinder = find.byKey(
+      const Key('messages-thread-last-time-u_messages_timer_tick'),
+    );
+    expect(relativeTimeFinder, findsOneWidget);
+
+    final before =
+        tester.widget<Text>(relativeTimeFinder).data ?? '<missing-before>';
+
+    now = now.add(const Duration(seconds: 31));
+    await tester.pump(const Duration(seconds: 31));
+    await tester.pump();
+
+    final after =
+        tester.widget<Text>(relativeTimeFinder).data ?? '<missing-after>';
+
+    expect(after, isNot(before));
 
     await _disposeHost(tester, chatProvider, friendProvider);
   });

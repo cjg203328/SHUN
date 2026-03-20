@@ -12,11 +12,11 @@ import 'package:sunliao/services/chat_socket_service.dart';
 
 import '../helpers/test_bootstrap.dart';
 
-User _buildUser(String id) {
+User _buildUser(String id, {String? nickname}) {
   return User(
     id: id,
     uid: 'SN$id',
-    nickname: 'User-$id',
+    nickname: nickname ?? 'User-$id',
     avatar: '🙂',
     distance: '2km',
     status: 'available',
@@ -24,11 +24,11 @@ User _buildUser(String id) {
   );
 }
 
-ChatThread _buildThread(String id) {
+ChatThread _buildThread(String id, {String? nickname}) {
   final now = DateTime.now();
   return ChatThread(
     id: id,
-    otherUser: _buildUser(id),
+    otherUser: _buildUser(id, nickname: nickname),
     createdAt: now.subtract(const Duration(minutes: 10)),
     expiresAt: now.add(const Duration(hours: 24)),
     intimacyPoints: 60,
@@ -71,6 +71,7 @@ Future<void> _disposeHost(
   await tester.pumpWidget(const SizedBox.shrink());
   chatProvider.dispose();
   friendProvider.dispose();
+  await NotificationCenterProvider.instance.clearSession();
   await tester.pump(const Duration(milliseconds: 250));
 }
 
@@ -450,6 +451,57 @@ void main() {
     final sendRect =
         tester.getRect(find.byKey(const Key('chat-composer-send-button')));
     expect(sendRect.bottom, lessThanOrEqualTo(640));
+
+    await _disposeHost(tester, chatProvider, friendProvider);
+  });
+
+  testWidgets(
+      'chat screen should keep header and composer stable on tight size',
+      (tester) async {
+    tester.view.physicalSize = const Size(320, 568);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    final chatProvider = ChatProvider();
+    final friendProvider = FriendProvider();
+    final thread = _buildThread(
+      'u_chat_screen_tight_layout',
+      nickname: 'A very long contact name for tight layout verification',
+    );
+    chatProvider.addThread(thread);
+
+    await tester.pumpWidget(
+      _ChatScreenHost(
+        threadId: thread.id,
+        chatProvider: chatProvider,
+        friendProvider: friendProvider,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.byKey(const Key('chat-composer-input')),
+      List<String>.generate(10, (index) => 'tight line $index').join('\n'),
+    );
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+    expect(find.byKey(const Key('chat-header-title')), findsOneWidget);
+
+    final avatarRect =
+        tester.getRect(find.byKey(const Key('chat-header-avatar')));
+    final titleRect =
+        tester.getRect(find.byKey(const Key('chat-header-title')));
+    final menuRect = tester.getRect(find.byIcon(Icons.more_horiz));
+    final sendRect =
+        tester.getRect(find.byKey(const Key('chat-composer-send-button')));
+
+    expect(avatarRect.right, lessThan(titleRect.right));
+    expect(titleRect.right, lessThanOrEqualTo(menuRect.left));
+    expect(sendRect.bottom, lessThanOrEqualTo(568));
 
     await _disposeHost(tester, chatProvider, friendProvider);
   });

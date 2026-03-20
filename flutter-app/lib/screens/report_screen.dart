@@ -4,8 +4,92 @@ import '../config/theme.dart';
 import '../core/feedback/app_feedback.dart';
 import '../core/network/api_exception.dart';
 import '../services/api_client.dart';
+import '../widgets/app_toast.dart';
 
 enum ReportTargetType { user, message }
+
+enum ReportSubmissionStatus {
+  accepted,
+  duplicate,
+  rateLimited,
+  ignoredSelf,
+}
+
+class ReportSubmissionResult {
+  const ReportSubmissionResult({
+    required this.status,
+    this.reportId,
+  });
+
+  final ReportSubmissionStatus status;
+  final String? reportId;
+
+  factory ReportSubmissionResult.fromPayload(Map<String, dynamic> payload) {
+    final rawStatus = payload['status']?.toString().trim().toLowerCase();
+    final rawReportId = payload['reportId']?.toString().trim();
+
+    switch (rawStatus) {
+      case 'duplicate':
+      case 'dedup':
+        return ReportSubmissionResult(
+          status: ReportSubmissionStatus.duplicate,
+          reportId: _normalizeReportId(rawReportId),
+        );
+      case 'rate_limited':
+      case 'ratelimited':
+        return ReportSubmissionResult(
+          status: ReportSubmissionStatus.rateLimited,
+          reportId: _normalizeReportId(rawReportId),
+        );
+      case 'ignored_self':
+      case 'ignoredself':
+      case 'noop':
+        return ReportSubmissionResult(
+          status: ReportSubmissionStatus.ignoredSelf,
+          reportId: _normalizeReportId(rawReportId),
+        );
+      case 'accepted':
+        return ReportSubmissionResult(
+          status: ReportSubmissionStatus.accepted,
+          reportId: _normalizeReportId(rawReportId),
+        );
+    }
+
+    switch (rawReportId) {
+      case 'dedup':
+        return const ReportSubmissionResult(
+          status: ReportSubmissionStatus.duplicate,
+        );
+      case 'rate_limited':
+        return const ReportSubmissionResult(
+          status: ReportSubmissionStatus.rateLimited,
+        );
+      case 'noop':
+        return const ReportSubmissionResult(
+          status: ReportSubmissionStatus.ignoredSelf,
+        );
+      default:
+        return ReportSubmissionResult(
+          status: ReportSubmissionStatus.accepted,
+          reportId: _normalizeReportId(rawReportId),
+        );
+    }
+  }
+
+  static String? _normalizeReportId(String? value) {
+    if (value == null || value.isEmpty) {
+      return null;
+    }
+    return value;
+  }
+}
+
+typedef ReportSubmitCallback = Future<ReportSubmissionResult> Function({
+  required ReportTargetType targetType,
+  required String targetId,
+  required String categoryId,
+  String? detail,
+});
 
 class ReportScreen extends StatefulWidget {
   const ReportScreen({
@@ -13,11 +97,13 @@ class ReportScreen extends StatefulWidget {
     required this.targetId,
     required this.targetType,
     this.targetName,
+    this.onSubmitReport,
   });
 
   final String targetId;
   final ReportTargetType targetType;
   final String? targetName;
+  final ReportSubmitCallback? onSubmitReport;
 
   @override
   State<ReportScreen> createState() => _ReportScreenState();
@@ -72,29 +158,80 @@ class _ReportScreenState extends State<ReportScreen> {
     super.dispose();
   }
 
+  Future<ReportSubmissionResult> _submitReportRequest({
+    required String categoryId,
+    String? detail,
+  }) async {
+    final submitOverride = widget.onSubmitReport;
+    if (submitOverride != null) {
+      return submitOverride(
+        targetType: widget.targetType,
+        targetId: widget.targetId,
+        categoryId: categoryId,
+        detail: detail,
+      );
+    }
+
+    final payload = await ApiClient.instance.post<Map<String, dynamic>>(
+      '/report',
+      data: {
+        'targetType':
+            widget.targetType == ReportTargetType.user ? 'user' : 'message',
+        'targetId': widget.targetId,
+        'category': categoryId,
+        if (detail != null && detail.isNotEmpty) 'detail': detail,
+      },
+    );
+    return ReportSubmissionResult.fromPayload(payload);
+  }
+
+  void _popWithToast(String message) {
+    final navigator = Navigator.of(context);
+    navigator.pop();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!navigator.mounted) {
+        return;
+      }
+      AppToast.show(navigator.context, message);
+    });
+  }
+
   Future<void> _submit() async {
-    if (_selectedCategoryId == null) {
+    final categoryId = _selectedCategoryId;
+    if (categoryId == null) {
       AppFeedback.showError(context, AppErrorCode.invalidInput,
           detail: '请选择举报类型');
       return;
     }
     setState(() => _submitting = true);
     try {
-      await ApiClient.instance.post<Map<String, dynamic>>(
-        '/report',
-        data: {
-          'targetType': widget.targetType == ReportTargetType.user
-              ? 'user'
-              : 'message',
-          'targetId': widget.targetId,
-          'category': _selectedCategoryId,
-          if (_detailController.text.trim().isNotEmpty)
-            'detail': _detailController.text.trim(),
-        },
+      final result = await _submitReportRequest(
+        categoryId: categoryId,
+        detail: _detailController.text.trim(),
       );
       if (!mounted) return;
-      AppFeedback.showToast(context, AppToastCode.sent, subject: '举报');
-      context.pop();
+      switch (result.status) {
+        case ReportSubmissionStatus.accepted:
+          _popWithToast('举报已提交，我们会尽快处理');
+          break;
+        case ReportSubmissionStatus.duplicate:
+          _popWithToast('今天已提交过该举报，我们会合并处理');
+          break;
+        case ReportSubmissionStatus.rateLimited:
+          AppFeedback.showError(
+            context,
+            AppErrorCode.sendFailed,
+            detail: '提交过于频繁，请稍后再试',
+          );
+          break;
+        case ReportSubmissionStatus.ignoredSelf:
+          AppFeedback.showError(
+            context,
+            AppErrorCode.invalidInput,
+            detail: '不能举报自己',
+          );
+          break;
+      }
     } on ApiException catch (e) {
       if (!mounted) return;
       AppFeedback.showError(context, AppErrorCode.sendFailed,
@@ -133,6 +270,7 @@ class _ReportScreenState extends State<ReportScreen> {
             padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
             child: Text(
               targetLabel,
+              key: const Key('report-target-label'),
               style: const TextStyle(
                 fontSize: 13,
                 color: AppColors.textTertiary,
@@ -146,10 +284,10 @@ class _ReportScreenState extends State<ReportScreen> {
               padding: const EdgeInsets.symmetric(horizontal: 16),
               children: [
                 ..._categories.map((cat) => _CategoryTile(
+                      key: Key('report-category-${cat.id}'),
                       category: cat,
                       isSelected: _selectedCategoryId == cat.id,
-                      onTap: () =>
-                          setState(() => _selectedCategoryId = cat.id),
+                      onTap: () => setState(() => _selectedCategoryId = cat.id),
                     )),
                 const SizedBox(height: 20),
                 // Detail text field
@@ -172,6 +310,7 @@ class _ReportScreenState extends State<ReportScreen> {
                       ),
                       const SizedBox(height: 8),
                       TextField(
+                        key: const Key('report-detail-field'),
                         controller: _detailController,
                         maxLines: 4,
                         maxLength: 300,
@@ -190,18 +329,18 @@ class _ReportScreenState extends State<ReportScreen> {
                           ),
                           border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(12),
-                            borderSide: const BorderSide(
-                                color: AppColors.white12),
+                            borderSide:
+                                const BorderSide(color: AppColors.white12),
                           ),
                           enabledBorder: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(12),
-                            borderSide: const BorderSide(
-                                color: AppColors.white12),
+                            borderSide:
+                                const BorderSide(color: AppColors.white12),
                           ),
                           focusedBorder: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(12),
-                            borderSide: const BorderSide(
-                                color: AppColors.brandBlue),
+                            borderSide:
+                                const BorderSide(color: AppColors.brandBlue),
                           ),
                         ),
                       ),
@@ -219,6 +358,7 @@ class _ReportScreenState extends State<ReportScreen> {
               child: SizedBox(
                 width: double.infinity,
                 child: FilledButton(
+                  key: const Key('report-submit-button'),
                   onPressed: _submitting ? null : _submit,
                   style: FilledButton.styleFrom(
                     backgroundColor: AppColors.error,
@@ -270,6 +410,7 @@ class _ReportCategory {
 
 class _CategoryTile extends StatelessWidget {
   const _CategoryTile({
+    super.key,
     required this.category,
     required this.isSelected,
     required this.onTap,
@@ -287,8 +428,7 @@ class _CategoryTile extends StatelessWidget {
         duration: const Duration(milliseconds: 160),
         curve: Curves.easeOutCubic,
         margin: const EdgeInsets.only(bottom: 8),
-        padding:
-            const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         decoration: BoxDecoration(
           color: isSelected
               ? AppColors.error.withValues(alpha: 0.08)
@@ -306,9 +446,7 @@ class _CategoryTile extends StatelessWidget {
             Icon(
               category.icon,
               size: 20,
-              color: isSelected
-                  ? AppColors.error
-                  : AppColors.textSecondary,
+              color: isSelected ? AppColors.error : AppColors.textSecondary,
             ),
             const SizedBox(width: 12),
             Expanded(

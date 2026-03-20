@@ -11,6 +11,7 @@ export class RedisRuntimeStateStore implements RuntimeStateStore {
     this.redis = new Redis({
       host: process.env.REDIS_HOST ?? '127.0.0.1',
       port: Number(process.env.REDIS_PORT ?? 6379),
+      ...(process.env.REDIS_PASSWORD ? { password: process.env.REDIS_PASSWORD } : {}),
       lazyConnect: false,
       maxRetriesPerRequest: 2,
     });

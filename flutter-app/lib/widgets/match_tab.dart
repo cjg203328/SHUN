@@ -141,8 +141,8 @@ class _MatchLayoutSpec {
         guideTextSize: 11,
         guideToOrbSpacing: 24,
         orbSize: 164,
-        orbShadowBlur: 42,
-        orbShadowSpread: 14,
+        orbShadowBlur: 30,
+        orbShadowSpread: 10,
         orbToFeedbackSpacing: 20,
         feedbackGap: 14,
         buttonVerticalPadding: 14,
@@ -186,8 +186,8 @@ class _MatchLayoutSpec {
       guideTextSize: 12,
       guideToOrbSpacing: 42,
       orbSize: 200,
-      orbShadowBlur: 60,
-      orbShadowSpread: 20,
+      orbShadowBlur: 44,
+      orbShadowSpread: 14,
       orbToFeedbackSpacing: 34,
       feedbackGap: 18,
       buttonVerticalPadding: 16,
@@ -382,16 +382,8 @@ class _MatchTabState extends State<MatchTab>
               duration: const Duration(milliseconds: 320),
               switchInCurve: Curves.easeOutCubic,
               switchOutCurve: Curves.easeInCubic,
-              transitionBuilder: (child, animation) => FadeTransition(
-                opacity: animation,
-                child: SlideTransition(
-                  position: Tween<Offset>(
-                    begin: const Offset(0, 0.04),
-                    end: Offset.zero,
-                  ).animate(animation),
-                  child: child,
-                ),
-              ),
+              transitionBuilder: (child, animation) =>
+                  FadeTransition(opacity: animation, child: child),
               child: _buildScrollableMatchCard(matchProvider),
             );
           }
@@ -1119,7 +1111,7 @@ class _MatchTabState extends State<MatchTab>
                   ? [
                       BoxShadow(
                         color: AppColors.success.withValues(alpha: 0.1),
-                        blurRadius: 20,
+                        blurRadius: 14,
                         spreadRadius: 0,
                       ),
                     ]
@@ -1289,47 +1281,40 @@ class _MatchTabState extends State<MatchTab>
         ),
         const SizedBox(height: 16),
         if (_greetingController.text.isEmpty)
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              children: quickGreetings.map((greeting) {
-                final isSelected = _selectedQuickGreeting == greeting;
-                return Padding(
-                  padding: const EdgeInsets.only(right: 8),
-                  child: GestureDetector(
-                    onTap: () {
-                      setState(() {
-                        _selectedQuickGreeting = greeting;
-                      });
-                    },
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 16, vertical: 10),
-                      decoration: BoxDecoration(
-                        color:
-                            isSelected ? AppColors.white12 : AppColors.white05,
-                        border: Border.all(
-                          color: isSelected
-                              ? AppColors.white20
-                              : AppColors.white08,
-                        ),
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: Text(
-                        greeting,
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w300,
-                          color: isSelected
-                              ? AppColors.textPrimary
-                              : AppColors.textSecondary,
-                        ),
-                      ),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: quickGreetings.map((greeting) {
+              final isSelected = _selectedQuickGreeting == greeting;
+              return GestureDetector(
+                onTap: () {
+                  setState(() {
+                    _selectedQuickGreeting = greeting;
+                  });
+                },
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: isSelected ? AppColors.white12 : AppColors.white05,
+                    border: Border.all(
+                      color: isSelected ? AppColors.white20 : AppColors.white08,
+                    ),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text(
+                    greeting,
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w300,
+                      color: isSelected
+                          ? AppColors.textPrimary
+                          : AppColors.textSecondary,
                     ),
                   ),
-                );
-              }).toList(),
-            ),
+                ),
+              );
+            }).toList(),
           ),
         if (_selectedQuickGreeting == null) ...[
           const SizedBox(height: 12),
@@ -1488,47 +1473,40 @@ class _MatchTabState extends State<MatchTab>
 
         // 快捷语（仅在未自定义时显示）
         if (_greetingController.text.isEmpty)
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              children: _defaultQuickGreetings.map((greeting) {
-                final isSelected = _selectedQuickGreeting == greeting;
-                return Padding(
-                  padding: const EdgeInsets.only(right: 10),
-                  child: GestureDetector(
-                    onTap: () {
-                      setState(() {
-                        _selectedQuickGreeting = greeting;
-                      });
-                    },
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 20, vertical: 14),
-                      decoration: BoxDecoration(
-                        color:
-                            isSelected ? AppColors.white12 : AppColors.white05,
-                        border: Border.all(
-                          color: isSelected
-                              ? AppColors.white20
-                              : AppColors.white08,
-                        ),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Text(
-                        greeting,
-                        style: TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w300,
-                          color: isSelected
-                              ? AppColors.textPrimary
-                              : AppColors.textSecondary,
-                        ),
-                      ),
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: _defaultQuickGreetings.map((greeting) {
+              final isSelected = _selectedQuickGreeting == greeting;
+              return GestureDetector(
+                onTap: () {
+                  setState(() {
+                    _selectedQuickGreeting = greeting;
+                  });
+                },
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+                  decoration: BoxDecoration(
+                    color: isSelected ? AppColors.white12 : AppColors.white05,
+                    border: Border.all(
+                      color: isSelected ? AppColors.white20 : AppColors.white08,
+                    ),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    greeting,
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w300,
+                      color: isSelected
+                          ? AppColors.textPrimary
+                          : AppColors.textSecondary,
                     ),
                   ),
-                );
-              }).toList(),
-            ),
+                ),
+              );
+            }).toList(),
           ),
 
         // 自定义输入提示（仅在未选择快捷语时显示）
@@ -1630,9 +1608,8 @@ class _MatchTabState extends State<MatchTab>
   Widget _buildMatchButton(MatchProvider provider, _MatchLayoutSpec layout) {
     String buttonText;
     String helperText;
-    final bool isIdle = !_isPreparingMatch &&
-        !provider.isMatching &&
-        provider.matchCount > 0;
+    final bool isIdle =
+        !_isPreparingMatch && !provider.isMatching && provider.matchCount > 0;
 
     if (_isPreparingMatch) {
       buttonText = '准备中';
@@ -1655,7 +1632,8 @@ class _MatchTabState extends State<MatchTab>
       children: [
         SizedBox(
           width: double.infinity,
-          height: layout.buttonVerticalPadding * 2 + layout.buttonTextSize * 1.4,
+          height:
+              layout.buttonVerticalPadding * 2 + layout.buttonTextSize * 1.4,
           child: DecoratedBox(
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(14),
@@ -1673,7 +1651,7 @@ class _MatchTabState extends State<MatchTab>
                   ? [
                       BoxShadow(
                         color: const Color(0xFFFFFFFF).withValues(alpha: 0.12),
-                        blurRadius: 24,
+                        blurRadius: 14,
                         spreadRadius: 0,
                         offset: const Offset(0, 2),
                       ),
@@ -1746,9 +1724,7 @@ class _MatchTabState extends State<MatchTab>
         AnimatedSwitcher(
           duration: const Duration(milliseconds: 200),
           child: Text(
-            showLocationTip && isIdle
-                ? '未开启位置也可以匹配 · $helperText'
-                : helperText,
+            showLocationTip && isIdle ? '未开启位置也可以匹配 · $helperText' : helperText,
             key: ValueKey(helperText),
             style: TextStyle(
               fontSize: layout.helperTextSize,
@@ -1923,7 +1899,7 @@ class _MatchTabState extends State<MatchTab>
                 boxShadow: [
                   BoxShadow(
                     color: const Color(0xFFFFFFFF).withValues(alpha: 0.10),
-                    blurRadius: 20,
+                    blurRadius: 14,
                     spreadRadius: 0,
                     offset: const Offset(0, 2),
                   ),

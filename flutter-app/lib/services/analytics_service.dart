@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
@@ -10,8 +11,10 @@ class AnalyticsService {
   AnalyticsService._();
 
   static final AnalyticsService instance = AnalyticsService._();
+  static const Duration _persistDebounce = Duration(milliseconds: 900);
 
   final List<AnalyticsEvent> _events = <AnalyticsEvent>[];
+  Timer? _persistTimer;
 
   List<AnalyticsEvent> get events => List.unmodifiable(_events);
 
@@ -36,8 +39,10 @@ class AnalyticsService {
     if (_events.length > 200) {
       _events.removeRange(200, _events.length);
     }
-    await _persist();
-    debugPrint('[analytics][$level] $name ${jsonEncode(properties)}');
+    _schedulePersist();
+    if (kDebugMode) {
+      debugPrint('[analytics][$level] $name ${jsonEncode(properties)}');
+    }
   }
 
   Future<void> trackScreenView(String screenName) {
@@ -61,6 +66,7 @@ class AnalyticsService {
   }
 
   Future<void> clearSession() async {
+    _persistTimer?.cancel();
     _events.clear();
     await StorageService.clearAnalyticsState();
   }
@@ -87,5 +93,12 @@ class AnalyticsService {
     await StorageService.saveAnalyticsState(
       jsonEncode(_events.map((item) => item.toJson()).toList(growable: false)),
     );
+  }
+
+  void _schedulePersist() {
+    _persistTimer?.cancel();
+    _persistTimer = Timer(_persistDebounce, () {
+      unawaited(_persist());
+    });
   }
 }

@@ -157,8 +157,8 @@ void main() {
 
     final buttonRect =
         tester.getRect(find.byKey(const Key('match-primary-action')));
-    final screenHeight = tester.view.physicalSize.height /
-        tester.view.devicePixelRatio;
+    final screenHeight =
+        tester.view.physicalSize.height / tester.view.devicePixelRatio;
     expect(buttonRect.bottom, lessThanOrEqualTo(screenHeight + 16));
 
     await _disposeHost(
@@ -227,6 +227,83 @@ void main() {
     final actionsRect =
         tester.getRect(find.byKey(const Key('match-result-actions')));
     expect(actionsRect.bottom, lessThanOrEqualTo(640));
+    expect(tester.takeException(), isNull);
+
+    await _disposeHost(
+      tester,
+      matchProvider,
+      chatProvider,
+      friendProvider,
+    );
+  });
+
+  testWidgets(
+      'match tab should show quick greetings without horizontal scrolling on compact screens',
+      (tester) async {
+    tester.view.physicalSize = const Size(360, 640);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    final matchProvider = MatchProvider(
+      matchService: _FakeMatchService(
+        startMatchHandler: (_) async => MatchStartAttempt.success(
+          MatchResult(
+            matchId: 'match-compact-greeting',
+            threadId: 'thread-compact-greeting',
+            user: User(
+              id: 'u_match_greeting',
+              uid: 'SNF0A302',
+              nickname: 'Greeting Match',
+              avatar: 'G',
+              distance: '1km',
+              status: 'online now',
+              isOnline: true,
+              hasLocationPermission: true,
+            ),
+            remaining: 19,
+            createdAt: DateTime(2026, 3, 18, 10),
+            expiresAt: DateTime(2026, 3, 19, 10),
+          ),
+        ),
+      ),
+      allowMockFallback: false,
+    );
+    final chatProvider = ChatProvider(
+      enableRealtime: false,
+      enableRemoteHydration: false,
+    );
+    final friendProvider = FriendProvider(enableRemoteHydration: false);
+
+    await tester.pumpWidget(
+      _buildHost(
+        matchProvider: matchProvider,
+        chatProvider: chatProvider,
+        friendProvider: friendProvider,
+      ),
+    );
+    await tester.pump();
+
+    await tester.tap(find.byKey(const Key('match-primary-action')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 200));
+
+    expect(find.byKey(const Key('match-result-card')), findsOneWidget);
+
+    final firstGreeting = find.text('嗨，刚好刷到你');
+    final laterGreeting = find.text('今天过得怎么样');
+    expect(firstGreeting, findsOneWidget);
+    expect(laterGreeting, findsOneWidget);
+
+    final firstRect = tester.getRect(firstGreeting);
+    final laterRect = tester.getRect(laterGreeting);
+    final screenWidth =
+        tester.view.physicalSize.width / tester.view.devicePixelRatio;
+
+    expect(laterRect.right, lessThanOrEqualTo(screenWidth));
+    expect(laterRect.top, greaterThan(firstRect.top));
     expect(tester.takeException(), isNull);
 
     await _disposeHost(

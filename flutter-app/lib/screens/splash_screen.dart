@@ -5,7 +5,16 @@ import '../config/theme.dart';
 import '../providers/auth_provider.dart';
 
 class SplashScreen extends StatefulWidget {
-  const SplashScreen({super.key});
+  const SplashScreen({
+    super.key,
+    this.displayDuration = const Duration(milliseconds: 2500),
+    this.animationDuration = const Duration(milliseconds: 2500),
+    this.authPollInterval = const Duration(milliseconds: 100),
+  });
+
+  final Duration displayDuration;
+  final Duration animationDuration;
+  final Duration authPollInterval;
 
   @override
   State<SplashScreen> createState() => _SplashScreenState();
@@ -22,7 +31,7 @@ class _SplashScreenState extends State<SplashScreen>
     super.initState();
 
     _controller = AnimationController(
-      duration: const Duration(milliseconds: 2500),
+      duration: widget.animationDuration,
       vsync: this,
     );
 
@@ -40,13 +49,13 @@ class _SplashScreenState extends State<SplashScreen>
   }
 
   Future<void> _navigateAfterSplash() async {
-    await Future.delayed(const Duration(milliseconds: 2500));
+    await Future.delayed(widget.displayDuration);
     if (!mounted) return;
 
     final authProvider = context.read<AuthProvider>();
     if (!authProvider.isInitialized) {
       await Future.doWhile(() async {
-        await Future.delayed(const Duration(milliseconds: 100));
+        await Future.delayed(widget.authPollInterval);
         return mounted && !authProvider.isInitialized;
       });
       if (!mounted) return;
@@ -92,8 +101,8 @@ class _SplashScreenState extends State<SplashScreen>
                     boxShadow: [
                       BoxShadow(
                         color: AppColors.brandBlue.withValues(alpha: 0.5),
-                        blurRadius: 60,
-                        spreadRadius: 20,
+                        blurRadius: 36,
+                        spreadRadius: 10,
                       ),
                     ],
                   ),

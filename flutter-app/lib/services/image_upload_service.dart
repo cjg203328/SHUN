@@ -285,8 +285,15 @@ class ImageUploadService {
     await prefs.setString(_avatarPathKey, path);
   }
 
-  static Future<void> saveAvatarReference(String path) async {
+  static Future<void> saveAvatarReference(
+    String path, {
+    String? cleanupLocalPath,
+  }) async {
     await _saveAvatarPath(path);
+    await _cleanupLocalReplacementReference(
+      savedReference: path,
+      cleanupLocalPath: cleanupLocalPath,
+    );
   }
 
   /// 保存背景路径
@@ -295,8 +302,15 @@ class ImageUploadService {
     await prefs.setString(_backgroundPathKey, path);
   }
 
-  static Future<void> saveBackgroundReference(String path) async {
+  static Future<void> saveBackgroundReference(
+    String path, {
+    String? cleanupLocalPath,
+  }) async {
     await _saveBackgroundPath(path);
+    await _cleanupLocalReplacementReference(
+      savedReference: path,
+      cleanupLocalPath: cleanupLocalPath,
+    );
   }
 
   /// 获取头像路径
@@ -369,6 +383,29 @@ class ImageUploadService {
       return true;
     }
     return !path.startsWith('avatar/') && !path.startsWith('background/');
+  }
+
+  static Future<void> _cleanupLocalReplacementReference({
+    required String savedReference,
+    String? cleanupLocalPath,
+  }) async {
+    if (cleanupLocalPath == null || cleanupLocalPath.isEmpty) {
+      return;
+    }
+    if (savedReference == cleanupLocalPath ||
+        !_isLocalFilePath(cleanupLocalPath)) {
+      return;
+    }
+
+    try {
+      final cleanupFile = File(cleanupLocalPath);
+      if (!await cleanupFile.exists()) {
+        return;
+      }
+      await cleanupFile.delete();
+    } catch (e) {
+      debugPrint('清理临时图片失败: $e');
+    }
   }
 
   @visibleForTesting

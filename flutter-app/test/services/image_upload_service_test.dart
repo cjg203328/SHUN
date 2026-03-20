@@ -89,4 +89,31 @@ void main() {
     expect(ImageUploadService.debugAvatarPickOverride, isNull);
     expect(ImageUploadService.debugBackgroundPickOverride, isNull);
   });
+
+  test(
+      'saveAvatarReference should delete temporary local preview after remote save',
+      () async {
+    final tempDir = await Directory.systemTemp.createTemp(
+      'sunliao-avatar-upload-test',
+    );
+    addTearDown(() async {
+      if (await tempDir.exists()) {
+        await tempDir.delete(recursive: true);
+      }
+    });
+
+    final localFile = File('${tempDir.path}\\avatar_preview.jpg');
+    await localFile.writeAsBytes(<int>[1, 2, 3, 4]);
+
+    await ImageUploadService.saveAvatarReference(
+      'https://example.com/media/avatar/mock_uploaded.jpg',
+      cleanupLocalPath: localFile.path,
+    );
+
+    expect(
+      await ImageUploadService.getAvatarPath(),
+      'https://example.com/media/avatar/mock_uploaded.jpg',
+    );
+    expect(await localFile.exists(), isFalse);
+  });
 }

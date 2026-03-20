@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -6,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
+import '../config/app_env.dart';
 import '../config/theme.dart';
 import '../models/app_notification.dart';
 import '../providers/auth_provider.dart';
@@ -14,6 +16,7 @@ import '../providers/chat_provider.dart';
 import '../providers/notification_center_provider.dart';
 import '../providers/settings_provider.dart';
 import '../services/image_upload_service.dart';
+import '../services/media_upload_service.dart';
 import '../services/storage_service.dart';
 import '../utils/notification_permission_guidance.dart';
 import '../utils/permission_manager.dart';
@@ -22,7 +25,12 @@ import '../widgets/chat_delivery_debug_sheet.dart';
 import '../core/feedback/app_feedback.dart';
 
 class SettingsScreen extends StatefulWidget {
-  const SettingsScreen({super.key});
+  const SettingsScreen({
+    super.key,
+    this.mediaUploadService,
+  });
+
+  final MediaUploadService? mediaUploadService;
 
   @override
   State<SettingsScreen> createState() => _SettingsScreenState();
@@ -31,6 +39,7 @@ class SettingsScreen extends StatefulWidget {
 class _SettingsLayoutSpec {
   const _SettingsLayoutSpec({
     required this.isCompact,
+    required this.isTight,
     required this.pageHorizontalPadding,
     required this.topPadding,
     required this.bottomPadding,
@@ -48,6 +57,7 @@ class _SettingsLayoutSpec {
   });
 
   final bool isCompact;
+  final bool isTight;
   final double pageHorizontalPadding;
   final double topPadding;
   final double bottomPadding;
@@ -64,21 +74,44 @@ class _SettingsLayoutSpec {
   final double trailingGap;
 
   static _SettingsLayoutSpec fromSize(Size size) {
-    final isCompact = size.width <= 390 || size.height <= 720;
+    final isTight = size.width <= 340 || size.height <= 620;
+    final isCompact = isTight || size.width <= 390 || size.height <= 720;
+    if (isTight) {
+      return const _SettingsLayoutSpec(
+        isCompact: true,
+        isTight: true,
+        pageHorizontalPadding: 13,
+        topPadding: 12,
+        bottomPadding: 20,
+        sectionSpacing: 16,
+        sectionTitleInset: 2,
+        sectionTitleBottomSpacing: 8,
+        overviewPadding: 10,
+        overviewGap: 8,
+        sectionCardRadius: 14,
+        itemHorizontalPadding: 11,
+        itemVerticalPadding: 10,
+        leadingBoxSize: 30,
+        leadingIconSize: 16,
+        trailingGap: 8,
+      );
+    }
+
     if (isCompact) {
       return const _SettingsLayoutSpec(
         isCompact: true,
-        pageHorizontalPadding: 16,
-        topPadding: 16,
-        bottomPadding: 28,
-        sectionSpacing: 20,
+        isTight: false,
+        pageHorizontalPadding: 15,
+        topPadding: 14,
+        bottomPadding: 24,
+        sectionSpacing: 18,
         sectionTitleInset: 4,
-        sectionTitleBottomSpacing: 10,
-        overviewPadding: 14,
-        overviewGap: 12,
+        sectionTitleBottomSpacing: 9,
+        overviewPadding: 12,
+        overviewGap: 10,
         sectionCardRadius: 14,
-        itemHorizontalPadding: 14,
-        itemVerticalPadding: 12,
+        itemHorizontalPadding: 13,
+        itemVerticalPadding: 11,
         leadingBoxSize: 32,
         leadingIconSize: 17,
         trailingGap: 8,
@@ -87,6 +120,7 @@ class _SettingsLayoutSpec {
 
     return const _SettingsLayoutSpec(
       isCompact: false,
+      isTight: false,
       pageHorizontalPadding: 20,
       topPadding: 20,
       bottomPadding: 40,
@@ -108,11 +142,18 @@ class _SettingsLayoutSpec {
 class _SettingsScreenState extends State<SettingsScreen>
     with WidgetsBindingObserver {
   _SettingsInlineFeedbackState? _inlineFeedback;
+  _SettingsMediaPreviewState _avatarPreviewState =
+      const _SettingsMediaPreviewState();
+  _SettingsMediaPreviewState _backgroundPreviewState =
+      const _SettingsMediaPreviewState();
+  late final MediaUploadService _mediaUploadService;
 
   @override
   void initState() {
     super.initState();
+    _mediaUploadService = widget.mediaUploadService ?? MediaUploadService();
     WidgetsBinding.instance.addObserver(this);
+    unawaited(_refreshMediaPreviewStates());
   }
 
   @override
@@ -137,6 +178,66 @@ class _SettingsScreenState extends State<SettingsScreen>
     if (!mounted || !didRefresh) return;
     _showInlineFeedback(
       _buildNotificationResumeInlineFeedback(settingsProvider),
+    );
+  }
+
+  Future<void> _refreshMediaPreviewStates() async {
+    final avatarState = await _readAvatarPreviewState();
+    final backgroundState = await _readBackgroundPreviewState();
+    if (!mounted) return;
+    setState(() {
+      _avatarPreviewState = avatarState;
+      _backgroundPreviewState = backgroundState;
+    });
+  }
+
+  Future<void> _refreshAvatarPreviewState() async {
+    final nextState = await _readAvatarPreviewState();
+    if (!mounted) return;
+    setState(() {
+      _avatarPreviewState = nextState;
+    });
+  }
+
+  Future<void> _refreshBackgroundPreviewState() async {
+    final nextState = await _readBackgroundPreviewState();
+    if (!mounted) return;
+    setState(() {
+      _backgroundPreviewState = nextState;
+    });
+  }
+
+  Future<_SettingsMediaPreviewState> _readAvatarPreviewState() {
+    return _readMediaPreviewState(
+      loadPath: ImageUploadService.getAvatarPath,
+      exists: ImageUploadService.avatarExists,
+    );
+  }
+
+  Future<_SettingsMediaPreviewState> _readBackgroundPreviewState() {
+    return _readMediaPreviewState(
+      loadPath: ImageUploadService.getBackgroundPath,
+      exists: ImageUploadService.backgroundExists,
+    );
+  }
+
+  Future<_SettingsMediaPreviewState> _readMediaPreviewState({
+    required Future<String?> Function() loadPath,
+    required Future<bool> Function() exists,
+  }) async {
+    final mediaPath = await loadPath();
+    if (mediaPath == null || mediaPath.trim().isEmpty) {
+      return const _SettingsMediaPreviewState();
+    }
+
+    final hasMedia = await exists();
+    if (!hasMedia) {
+      return const _SettingsMediaPreviewState();
+    }
+
+    return _SettingsMediaPreviewState(
+      mediaPath: mediaPath,
+      hasMedia: true,
     );
   }
 
@@ -175,278 +276,272 @@ class _SettingsScreenState extends State<SettingsScreen>
             settingsProvider,
           );
 
-          return ListView(
-            padding: EdgeInsets.fromLTRB(
-              layout.pageHorizontalPadding,
-              layout.topPadding,
-              layout.pageHorizontalPadding,
-              layout.bottomPadding,
-            ),
+          return Stack(
             children: [
-              _buildSettingsOverviewCard(context, settingsProvider),
-              SizedBox(height: layout.sectionSpacing),
-              _buildSectionTitle('账号与安全', subtitle: '登录、身份标识与账号找回'),
-              _buildSectionCard(
+              ListView(
+                padding: EdgeInsets.fromLTRB(
+                  layout.pageHorizontalPadding,
+                  layout.topPadding,
+                  layout.pageHorizontalPadding,
+                  layout.bottomPadding,
+                ),
                 children: [
-                  _buildSettingItem(
-                    context,
-                    key: const Key('settings-phone-item'),
-                    icon: Icons.phone_outlined,
-                    title: '手机号',
-                    subtitle: '用于登录、接收验证码和找回账号',
-                    trailing: Consumer<AuthProvider>(
-                      builder: (context, auth, child) => Text(
-                        auth.phone ?? '未绑定',
-                        style: const TextStyle(
-                          fontSize: 13,
-                          color: AppColors.textTertiary,
+                  _buildSettingsOverviewCard(context, settingsProvider),
+                  SizedBox(height: layout.sectionSpacing),
+                  _buildSectionTitle('账号与安全', subtitle: '登录、身份标识与账号找回'),
+                  _buildSectionCard(
+                    children: [
+                      _buildSettingItem(
+                        context,
+                        key: const Key('settings-phone-item'),
+                        icon: Icons.phone_outlined,
+                        title: '手机号',
+                        subtitle: '用于登录、接收验证码和找回账号',
+                        trailing: Consumer<AuthProvider>(
+                          builder: (context, auth, child) => Text(
+                            auth.phone ?? '未绑定',
+                            style: const TextStyle(
+                              fontSize: 13,
+                              color: AppColors.textTertiary,
+                            ),
+                          ),
+                        ),
+                        onTap: () => _presentPhoneEditorSheet(context),
+                      ),
+                      _buildDivider(),
+                      _buildSettingItem(
+                        context,
+                        icon: Icons.badge_outlined,
+                        title: '账号 UID',
+                        subtitle: '点击即可复制，便于测试、加好友或排查问题',
+                        trailing: Consumer<AuthProvider>(
+                          builder: (context, auth, child) => Text(
+                            auth.uid ?? '生成中',
+                            style: const TextStyle(
+                              fontSize: 13,
+                              color: AppColors.textTertiary,
+                            ),
+                          ),
+                        ),
+                        onTap: () => _copyUid(context),
+                      ),
+                      _buildDivider(),
+                      _buildSettingItem(
+                        context,
+                        key: const Key('settings-password-item'),
+                        icon: Icons.lock_outlined,
+                        title: '修改密码',
+                        subtitle: '定期更新密码，能更好保护你的账号安全',
+                        onTap: () => _presentPasswordEditorSheet(context),
+                      ),
+                    ],
+                  ),
+                  SizedBox(height: layout.sectionSpacing),
+                  _buildSectionTitle('隐私与展示', subtitle: '优先保留影响曝光和关系边界的核心设置'),
+                  _buildSectionCard(
+                    children: [
+                      _buildSettingItem(
+                        context,
+                        key: const Key('settings-invisible-mode-item'),
+                        icon: Icons.visibility_off_outlined,
+                        title: '隐身模式',
+                        subtitle: '开启后，你的活跃状态和匹配曝光会更低调',
+                        helperText: invisibleSettingHint.description,
+                        badgeLabel: invisibleSettingHint.badgeLabel,
+                        badgeKey: const Key('settings-invisible-mode-badge'),
+                        badgeHighlight: !invisibleSettingHint.isHealthy,
+                        trailing: Switch(
+                          value: settingsProvider.invisibleMode,
+                          onChanged: _updateInvisibleMode,
+                          activeColor: AppColors.brandBlue,
+                        ),
+                        onTap: null,
+                      ),
+                    ],
+                  ),
+                  SizedBox(height: layout.sectionSpacing),
+                  _buildSectionTitle('通知与提醒', subtitle: '建议保持消息通知开启，避免错过新回复'),
+                  _buildSectionCard(
+                    children: [
+                      _buildSettingItem(
+                        context,
+                        key: const Key('settings-notification-item'),
+                        icon: Icons.notifications_outlined,
+                        title: '消息通知',
+                        subtitle: '关闭后，将不再收到新消息提醒',
+                        helperText: notificationSettingHint.description,
+                        badgeLabel: notificationSettingHint.badgeLabel,
+                        badgeKey: const Key('settings-notification-badge'),
+                        badgeHighlight: !notificationSettingHint.isHealthy,
+                        trailing: Switch(
+                          value: settingsProvider.notificationEnabled,
+                          onChanged: _updateNotificationEnabled,
+                          activeColor: AppColors.brandBlue,
+                        ),
+                        onTap: null,
+                      ),
+                    ],
+                  ),
+                  SizedBox(height: layout.sectionSpacing),
+                  _buildSectionTitle('资料与展示', subtitle: '优先维护头像，背景等低频内容可按需调整'),
+                  _buildSectionCard(
+                    children: [
+                      _buildAvatarManagementItem(context),
+                    ],
+                  ),
+                  SizedBox(height: layout.sectionSpacing),
+                  _buildSectionTitle('更多设置（低频）',
+                      subtitle: '这些内容通常不用频繁修改，需要时再进入即可'),
+                  _buildSectionCard(
+                    children: [
+                      _buildSettingItem(
+                        context,
+                        key: const Key('settings-blocked-users-item'),
+                        icon: Icons.block_outlined,
+                        title: '黑名单',
+                        subtitle: '管理你不想再看到或接触的人',
+                        onTap: () => _showBlockedUsers(context),
+                      ),
+                      _buildDivider(),
+                      _buildSettingItem(
+                        context,
+                        key: const Key('settings-vibration-item'),
+                        icon: Icons.vibration_outlined,
+                        title: '震动提醒',
+                        subtitle: '收到消息时通过震动给予提示',
+                        helperText: vibrationSettingHint.description,
+                        badgeLabel: vibrationSettingHint.badgeLabel,
+                        badgeKey: const Key('settings-vibration-badge'),
+                        badgeHighlight: !vibrationSettingHint.isHealthy,
+                        trailing: Switch(
+                          value: settingsProvider.vibrationEnabled,
+                          onChanged: _updateVibrationEnabled,
+                          activeColor: AppColors.brandBlue,
+                        ),
+                        onTap: null,
+                      ),
+                      _buildDivider(),
+                      _buildBackgroundManagementItem(context),
+                    ],
+                  ),
+                  SizedBox(height: layout.sectionSpacing),
+                  _buildSectionTitle('安全与举报', subtitle: '保护自己和他人的使用体验'),
+                  _buildSectionCard(
+                    children: [
+                      _buildSettingItem(
+                        context,
+                        icon: Icons.flag_outlined,
+                        title: '举报违规用户',
+                        subtitle: '在聊天页面点击右上角菜单，选择「举报」进行投诉',
+                        onTap: () => AppToast.show(
+                          context,
+                          '请在聊天页面通过右上角菜单举报对方',
+                        ),
+                      ),
+                      _buildDivider(),
+                      _buildSettingItem(
+                        context,
+                        icon: Icons.security_outlined,
+                        title: '账号安全提示',
+                        subtitle: '不要轻信陌生人的转账、链接等请求',
+                        onTap: () => context.push('/legal/safety-tips'),
+                      ),
+                    ],
+                  ),
+                  SizedBox(height: layout.sectionSpacing),
+                  _buildSectionTitle('关于与协议', subtitle: '查看产品说明、协议与隐私内容'),
+                  _buildSectionCard(
+                    children: [
+                      _buildSettingItem(
+                        context,
+                        key: const Key('settings-about-item'),
+                        icon: Icons.info_outlined,
+                        title: '关于瞬聊',
+                        subtitle: '查看产品介绍、版本信息与开发说明',
+                        onTap: () => context.push('/about'),
+                      ),
+                      _buildDivider(),
+                      _buildSettingItem(
+                        context,
+                        key: const Key('settings-privacy-policy-item'),
+                        icon: Icons.privacy_tip_outlined,
+                        title: '隐私政策',
+                        subtitle: '说明我们如何收集、使用和保护你的数据',
+                        onTap: () => context.push('/legal/privacy-policy'),
+                      ),
+                      _buildDivider(),
+                      _buildSettingItem(
+                        context,
+                        key: const Key('settings-user-agreement-item'),
+                        icon: Icons.description_outlined,
+                        title: '用户协议',
+                        subtitle: '查看使用规则、权责说明与服务条款',
+                        onTap: () => context.push('/legal/user-agreement'),
+                      ),
+                    ],
+                  ),
+                  SizedBox(height: layout.sectionSpacing + 4),
+                  _buildSectionTitle(
+                    '账号操作',
+                    subtitle: '先区分当前设备退出和不可恢复的账号注销，避免误触。',
+                  ),
+                  _buildAccountHintCard(
+                    key: const Key('settings-account-actions-card'),
+                    icon: Icons.manage_accounts_outlined,
+                    title: '先确认你要离开的是当前设备还是整个账号',
+                    description:
+                        '退出登录只会清除这台设备上的登录状态，账号资料和好友关系会保留；注销账号会清除账号与会话数据，操作后无法恢复。',
+                  ),
+                  SizedBox(height: layout.isCompact ? 10 : 12),
+                  _buildAccountActionCard(
+                    cardKey: const Key('settings-logout-card'),
+                    actionKey: const Key('settings-logout-button'),
+                    icon: Icons.logout_rounded,
+                    title: '退出登录',
+                    badgeLabel: '仅当前设备',
+                    description: '适合临时退出、换设备登录或排查问题使用，不会删除你的账号本身。',
+                    onTap: () => _showLogoutDialog(context),
+                  ),
+                  SizedBox(height: layout.isCompact ? 10 : 12),
+                  _buildAccountActionCard(
+                    cardKey: const Key('settings-delete-account-card'),
+                    actionKey: const Key('settings-delete-account-button'),
+                    icon: Icons.delete_forever_outlined,
+                    title: '注销账号',
+                    badgeLabel: '不可恢复',
+                    description: '仅在确认不再使用该账号时再操作，注销后资料与会话数据会一并清除。',
+                    onTap: () => _showDeleteAccountDialog(context),
+                    isDanger: true,
+                  ),
+                  SizedBox(height: layout.isCompact ? 12 : 14),
+                  Center(
+                    child: GestureDetector(
+                      key: const ValueKey<String>(
+                          'settings-debug-version-trigger'),
+                      onLongPress: kDebugMode
+                          ? () => showChatDeliveryStatsDebugSheet(context)
+                          : null,
+                      child: Text(
+                        'V1.0.3',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: AppColors.textDisabled,
                         ),
                       ),
                     ),
-                    onTap: () => _presentPhoneEditorSheet(context),
-                  ),
-                  _buildDivider(),
-                  _buildSettingItem(
-                    context,
-                    icon: Icons.badge_outlined,
-                    title: '账号 UID',
-                    subtitle: '点击即可复制，便于测试、加好友或排查问题',
-                    trailing: Consumer<AuthProvider>(
-                      builder: (context, auth, child) => Text(
-                        auth.uid ?? '生成中',
-                        style: const TextStyle(
-                          fontSize: 13,
-                          color: AppColors.textTertiary,
-                        ),
-                      ),
-                    ),
-                    onTap: () => _copyUid(context),
-                  ),
-                  _buildDivider(),
-                  _buildSettingItem(
-                    context,
-                    key: const Key('settings-password-item'),
-                    icon: Icons.lock_outlined,
-                    title: '修改密码',
-                    subtitle: '定期更新密码，能更好保护你的账号安全',
-                    onTap: () => _presentPasswordEditorSheet(context),
                   ),
                 ],
               ),
-              SizedBox(height: layout.sectionSpacing),
-              _buildSectionTitle('隐私与展示', subtitle: '优先保留影响曝光和关系边界的核心设置'),
-              _buildSectionCard(
-                children: [
-                  _buildSettingItem(
-                    context,
-                    key: const Key('settings-invisible-mode-item'),
-                    icon: Icons.visibility_off_outlined,
-                    title: '隐身模式',
-                    subtitle: '开启后，你的活跃状态和匹配曝光会更低调',
-                    helperText: invisibleSettingHint.description,
-                    badgeLabel: invisibleSettingHint.badgeLabel,
-                    badgeKey: const Key('settings-invisible-mode-badge'),
-                    badgeHighlight: !invisibleSettingHint.isHealthy,
-                    trailing: Switch(
-                      value: settingsProvider.invisibleMode,
-                      onChanged: _updateInvisibleMode,
-                      activeColor: AppColors.brandBlue,
-                    ),
-                    onTap: null,
-                  ),
-                ],
-              ),
-              SizedBox(height: layout.sectionSpacing),
-              _buildSectionTitle('通知与提醒', subtitle: '建议保持消息通知开启，避免错过新回复'),
-              _buildSectionCard(
-                children: [
-                  _buildSettingItem(
-                    context,
-                    key: const Key('settings-notification-item'),
-                    icon: Icons.notifications_outlined,
-                    title: '消息通知',
-                    subtitle: '关闭后，将不再收到新消息提醒',
-                    helperText: notificationSettingHint.description,
-                    badgeLabel: notificationSettingHint.badgeLabel,
-                    badgeKey: const Key('settings-notification-badge'),
-                    badgeHighlight: !notificationSettingHint.isHealthy,
-                    trailing: Switch(
-                      value: settingsProvider.notificationEnabled,
-                      onChanged: _updateNotificationEnabled,
-                      activeColor: AppColors.brandBlue,
-                    ),
-                    onTap: null,
-                  ),
-                ],
-              ),
-              SizedBox(height: layout.sectionSpacing),
-              _buildSectionTitle('资料与展示', subtitle: '优先维护头像，背景等低频内容可按需调整'),
-              _buildSectionCard(
-                children: [
-                  _buildSettingItem(
-                    context,
-                    key: const Key('settings-avatar-management-item'),
-                    icon: Icons.photo_outlined,
-                    title: '头像管理',
-                    subtitle: '上传、替换或删除你的当前头像',
-                    onTap: () => _presentAvatarManagementSheet(context),
-                  ),
-                ],
-              ),
-              SizedBox(height: layout.sectionSpacing),
-              _buildSectionTitle('更多设置（低频）', subtitle: '这些内容通常不用频繁修改，需要时再进入即可'),
-              _buildSectionCard(
-                children: [
-                  _buildSettingItem(
-                    context,
-                    key: const Key('settings-blocked-users-item'),
-                    icon: Icons.block_outlined,
-                    title: '黑名单',
-                    subtitle: '管理你不想再看到或接触的人',
-                    onTap: () => _showBlockedUsers(context),
-                  ),
-                  _buildDivider(),
-                  _buildSettingItem(
-                    context,
-                    key: const Key('settings-vibration-item'),
-                    icon: Icons.vibration_outlined,
-                    title: '震动提醒',
-                    subtitle: '收到消息时通过震动给予提示',
-                    helperText: vibrationSettingHint.description,
-                    badgeLabel: vibrationSettingHint.badgeLabel,
-                    badgeKey: const Key('settings-vibration-badge'),
-                    badgeHighlight: !vibrationSettingHint.isHealthy,
-                    trailing: Switch(
-                      value: settingsProvider.vibrationEnabled,
-                      onChanged: _updateVibrationEnabled,
-                      activeColor: AppColors.brandBlue,
-                    ),
-                    onTap: null,
-                  ),
-                  _buildDivider(),
-                  _buildSettingItem(
-                    context,
-                    key: const Key('settings-background-management-item'),
-                    icon: Icons.wallpaper_outlined,
-                    title: '背景管理',
-                    subtitle: '主页背景会影响别人看到你的第一印象',
-                    onTap: () => _presentBackgroundManagementSheet(context),
-                  ),
-                ],
-              ),
-              SizedBox(height: layout.sectionSpacing),
-              _buildSectionTitle('安全与举报', subtitle: '保护自己和他人的使用体验'),
-              _buildSectionCard(
-                children: [
-                  _buildSettingItem(
-                    context,
-                    icon: Icons.flag_outlined,
-                    title: '举报违规用户',
-                    subtitle: '在聊天页面点击右上角菜单，选择「举报」进行投诉',
-                    onTap: () => AppToast.show(
-                      context,
-                      '请在聊天页面通过右上角菜单举报对方',
-                    ),
-                  ),
-                  _buildDivider(),
-                  _buildSettingItem(
-                    context,
-                    icon: Icons.security_outlined,
-                    title: '账号安全提示',
-                    subtitle: '不要轻信陌生人的转账、链接等请求',
-                    onTap: () => context.push('/legal/safety-tips'),
-                  ),
-                ],
-              ),
-              SizedBox(height: layout.sectionSpacing),
-              _buildSectionTitle('关于与协议', subtitle: '查看产品说明、协议与隐私内容'),
-              _buildSectionCard(
-                children: [
-                  _buildSettingItem(
-                    context,
-                    key: const Key('settings-about-item'),
-                    icon: Icons.info_outlined,
-                    title: '关于瞬',
-                    subtitle: '查看产品介绍、版本信息与开发说明',
-                    onTap: () => context.push('/about'),
-                  ),
-                  _buildDivider(),
-                  _buildSettingItem(
-                    context,
-                    key: const Key('settings-privacy-policy-item'),
-                    icon: Icons.privacy_tip_outlined,
-                    title: '隐私政策',
-                    subtitle: '说明我们如何收集、使用和保护你的数据',
-                    onTap: () => context.push('/legal/privacy-policy'),
-                  ),
-                  _buildDivider(),
-                  _buildSettingItem(
-                    context,
-                    key: const Key('settings-user-agreement-item'),
-                    icon: Icons.description_outlined,
-                    title: '用户协议',
-                    subtitle: '查看使用规则、权责说明与服务条款',
-                    onTap: () => context.push('/legal/user-agreement'),
-                  ),
-                ],
-              ),
-              SizedBox(height: layout.sectionSpacing + 4),
-              Padding(
-                padding: EdgeInsets.symmetric(
-                  horizontal: layout.sectionTitleInset,
-                ),
-                child: OutlinedButton(
-                  onPressed: () => _showLogoutDialog(context),
-                  style: OutlinedButton.styleFrom(
-                    padding: EdgeInsets.symmetric(
-                      vertical: layout.isCompact ? 14 : 16,
-                    ),
-                    side: const BorderSide(color: AppColors.error, width: 1),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                  child: const Text(
-                    '退出登录',
-                    style: TextStyle(
-                      color: AppColors.error,
-                      fontSize: 15,
-                      fontWeight: FontWeight.w300,
-                      letterSpacing: 1,
-                    ),
+              if (_inlineFeedback != null)
+                Positioned(
+                  top: 8,
+                  left: layout.pageHorizontalPadding,
+                  right: layout.pageHorizontalPadding,
+                  child: IgnorePointer(
+                    ignoring: true,
+                    child: _buildInlineFeedbackCard(_inlineFeedback!),
                   ),
                 ),
-              ),
-              SizedBox(height: layout.isCompact ? 10 : 12),
-              Center(
-                child: TextButton(
-                  onPressed: () => _showDeleteAccountDialog(context),
-                  child: const Text(
-                    '注销账号',
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: AppColors.textDisabled,
-                      fontWeight: FontWeight.w300,
-                    ),
-                  ),
-                ),
-              ),
-              SizedBox(height: layout.isCompact ? 4 : 6),
-              Center(
-                child: GestureDetector(
-                  key: const ValueKey<String>('settings-debug-version-trigger'),
-                  onLongPress: kDebugMode
-                      ? () => showChatDeliveryStatsDebugSheet(context)
-                      : null,
-                  child: Text(
-                    'V1.0.3',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: AppColors.textDisabled,
-                    ),
-                  ),
-                ),
-              ),
             ],
           );
         },
@@ -454,226 +549,93 @@ class _SettingsScreenState extends State<SettingsScreen>
     );
   }
 
-  // 头像管理
-  // ignore: unused_element
-  static Future<void> _showAvatarManagement(BuildContext context) async {
-    final hasAvatar = await ImageUploadService.avatarExists();
-    if (!context.mounted) return;
+  Widget _buildAvatarManagementItem(BuildContext context) {
+    final summary = _resolveAvatarManagementSummary(_avatarPreviewState);
+    return _buildSettingItem(
+      context,
+      key: const Key('settings-avatar-management-item'),
+      icon: Icons.photo_outlined,
+      title: '头像管理',
+      subtitle: summary.itemSubtitle,
+      badgeLabel: summary.itemBadgeLabel,
+      badgeKey: const Key('settings-avatar-management-badge'),
+      trailing: _buildAvatarManagementTrailing(context),
+      onTap: () => _presentAvatarManagementSheet(context),
+    );
+  }
 
-    await showDialog(
-      context: context,
-      builder: (context) => Dialog(
-        backgroundColor: AppColors.cardBg,
-        shape: RoundedRectangleBorder(
-          borderRadius: AppOverlay.dialogBorderRadius,
-        ),
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                '头像管理',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w400,
-                  color: AppColors.textPrimary,
-                ),
-              ),
-              const SizedBox(height: 20),
+  Widget _buildBackgroundManagementItem(BuildContext context) {
+    final summary =
+        _resolveBackgroundManagementSummary(_backgroundPreviewState);
+    return _buildSettingItem(
+      context,
+      key: const Key('settings-background-management-item'),
+      icon: Icons.wallpaper_outlined,
+      title: '背景管理',
+      subtitle: summary.itemSubtitle,
+      badgeLabel: summary.itemBadgeLabel,
+      badgeKey: const Key('settings-background-management-badge'),
+      trailing: _buildBackgroundManagementTrailing(context),
+      onTap: () => _presentBackgroundManagementSheet(context),
+    );
+  }
 
-              // 更换头像
-              _buildManagementItem(
-                context,
-                icon: Icons.photo_camera_outlined,
-                title: '更换头像',
-                onTap: () async {
-                  Navigator.pop(context);
-                  final imageFile =
-                      await ImageUploadService.pickAvatar(context);
-                  if (imageFile != null && context.mounted) {
-                    AppFeedback.showToast(
-                      context,
-                      AppToastCode.saved,
-                      subject: '头像',
-                    );
-                  }
-                },
-              ),
-
-              // 删除头像（仅在有头像时显示）
-              if (hasAvatar) ...[
-                const SizedBox(height: 12),
-                _buildManagementItem(
-                  context,
-                  icon: Icons.delete_outline,
-                  title: '删除头像',
-                  isDanger: true,
-                  onTap: () async {
-                    Navigator.pop(context);
-                    final confirm = await _showConfirmDialog(
-                      context,
-                      title: '确定要删除头像吗？',
-                      content: '删除后将恢复默认头像',
-                    );
-
-                    if (confirm == true) {
-                      await ImageUploadService.clearAvatar();
-                      if (context.mounted) {
-                        AppFeedback.showToast(
-                          context,
-                          AppToastCode.deleted,
-                          subject: '头像',
-                        );
-                      }
-                    }
-                  },
-                ),
-              ],
-
-              const SizedBox(height: 20),
-
-              // 取消按钮
-              SizedBox(
-                width: double.infinity,
-                child: TextButton(
-                  onPressed: () => Navigator.pop(context),
-                  style: TextButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    backgroundColor: AppColors.white05,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                  child: const Text(
-                    '取消',
-                    style: TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w300,
-                      color: AppColors.textSecondary,
-                    ),
-                  ),
-                ),
-              ),
-            ],
+  Widget _buildAvatarManagementTrailing(BuildContext context) {
+    final layout = _SettingsLayoutSpec.fromSize(
+      MediaQuery.of(context).size,
+    );
+    return Padding(
+      padding: EdgeInsets.only(top: layout.isCompact ? 2 : 0),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _buildAvatarPreviewSurface(
+            key: const Key('settings-avatar-management-preview'),
+            avatarPath: _avatarPreviewState.mediaPath,
+            size: layout.isCompact ? 30 : 34,
+            iconSize: layout.isCompact ? 16 : 18,
           ),
-        ),
+          const SizedBox(width: 6),
+          const Icon(
+            Icons.chevron_right,
+            color: AppColors.textTertiary,
+            size: 20,
+          ),
+        ],
       ),
     );
   }
 
-  // 背景管理
-  // ignore: unused_element
-  static Future<void> _showBackgroundManagement(BuildContext context) async {
-    final hasBackground = await ImageUploadService.backgroundExists();
-    if (!context.mounted) return;
-
-    await showDialog(
-      context: context,
-      builder: (context) => Dialog(
-        backgroundColor: AppColors.cardBg,
-        shape: RoundedRectangleBorder(
-          borderRadius: AppOverlay.dialogBorderRadius,
-        ),
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                '背景管理',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w400,
-                  color: AppColors.textPrimary,
-                ),
-              ),
-              const SizedBox(height: 20),
-
-              // 更换背景
-              _buildManagementItem(
-                context,
-                icon: Icons.wallpaper_outlined,
-                title: '更换背景',
-                onTap: () async {
-                  Navigator.pop(context);
-                  final imageFile =
-                      await ImageUploadService.pickBackground(context);
-                  if (imageFile != null && context.mounted) {
-                    AppFeedback.showToast(
-                      context,
-                      AppToastCode.saved,
-                      subject: '背景',
-                    );
-                  }
-                },
-              ),
-
-              // 删除背景（仅在有背景时显示）
-              if (hasBackground) ...[
-                const SizedBox(height: 12),
-                _buildManagementItem(
-                  context,
-                  icon: Icons.delete_outline,
-                  title: '删除背景',
-                  isDanger: true,
-                  onTap: () async {
-                    Navigator.pop(context);
-                    final confirm = await _showConfirmDialog(
-                      context,
-                      title: '确定要删除背景吗？',
-                      content: '删除后将恢复默认背景',
-                    );
-
-                    if (confirm == true) {
-                      await ImageUploadService.clearBackground();
-                      if (context.mounted) {
-                        AppFeedback.showToast(
-                          context,
-                          AppToastCode.deleted,
-                          subject: '背景',
-                        );
-                      }
-                    }
-                  },
-                ),
-              ],
-
-              const SizedBox(height: 20),
-
-              // 取消按钮
-              SizedBox(
-                width: double.infinity,
-                child: TextButton(
-                  onPressed: () => Navigator.pop(context),
-                  style: TextButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    backgroundColor: AppColors.white05,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                  child: const Text(
-                    '取消',
-                    style: TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w300,
-                      color: AppColors.textSecondary,
-                    ),
-                  ),
-                ),
-              ),
-            ],
+  Widget _buildBackgroundManagementTrailing(BuildContext context) {
+    final layout = _SettingsLayoutSpec.fromSize(
+      MediaQuery.of(context).size,
+    );
+    return Padding(
+      padding: EdgeInsets.only(top: layout.isCompact ? 2 : 0),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _buildBackgroundPreviewSurface(
+            key: const Key('settings-background-management-preview'),
+            backgroundPath: _backgroundPreviewState.mediaPath,
+            width: layout.isCompact ? 34 : 40,
+            height: layout.isCompact ? 24 : 28,
+            iconSize: layout.isCompact ? 15 : 16,
           ),
-        ),
+          const SizedBox(width: 6),
+          const Icon(
+            Icons.chevron_right,
+            color: AppColors.textTertiary,
+            size: 20,
+          ),
+        ],
       ),
     );
   }
 
   Future<void> _presentAvatarManagementSheet(BuildContext context) async {
-    final hasAvatar = await ImageUploadService.avatarExists();
+    final avatarPreviewState = await _readAvatarPreviewState();
+    final summary = _resolveAvatarManagementSummary(avatarPreviewState);
     if (!context.mounted) return;
 
     await showModalBottomSheet<void>(
@@ -684,34 +646,19 @@ class _SettingsScreenState extends State<SettingsScreen>
         key: const Key('settings-avatar-sheet'),
         context: sheetContext,
         title: '头像管理',
-        description: '头像会持续出现在消息列表和个人页里，建议保持清晰、稳定、容易识别。',
+        description: '',
+        headerPreview: _buildAvatarManagementPreviewCard(
+          avatarPreviewState,
+          summary,
+        ),
         replaceAction: _buildManagementItem(
           context,
           key: const Key('settings-avatar-replace-action'),
           icon: Icons.photo_camera_outlined,
-          title: '更换头像',
-          onTap: () async {
-            Navigator.pop(sheetContext);
-            final imageFile = await ImageUploadService.pickAvatar(context);
-            if (imageFile != null && context.mounted) {
-              _showInlineFeedback(
-                const _SettingsInlineFeedbackState(
-                  icon: Icons.photo_camera_outlined,
-                  title: '头像已经更新',
-                  badgeLabel: '资料已刷新',
-                  description: '新的头像会同步出现在消息列表和个人页里，别人更容易认出你。',
-                  isHealthy: true,
-                ),
-              );
-              AppFeedback.showToast(
-                context,
-                AppToastCode.saved,
-                subject: '头像',
-              );
-            }
-          },
+          title: summary.replaceActionLabel,
+          onTap: () => _replaceAvatar(sheetContext),
         ),
-        deleteAction: hasAvatar
+        deleteAction: avatarPreviewState.hasMedia
             ? _buildManagementItem(
                 context,
                 key: const Key('settings-avatar-delete-action'),
@@ -727,21 +674,21 @@ class _SettingsScreenState extends State<SettingsScreen>
                   );
                   if (confirm == true) {
                     await ImageUploadService.clearAvatar();
-                    if (context.mounted) {
-                      _showInlineFeedback(
-                        const _SettingsInlineFeedbackState(
-                          icon: Icons.delete_outline,
-                          title: '头像已恢复默认',
-                          badgeLabel: '已清空',
-                          description: '当前资料会回到默认头像，如果之后要恢复识别度，可以再重新上传。',
-                        ),
-                      );
-                      AppFeedback.showToast(
-                        context,
-                        AppToastCode.deleted,
-                        subject: '头像',
-                      );
-                    }
+                    await _refreshAvatarPreviewState();
+                    if (!mounted || !context.mounted) return;
+                    _showInlineFeedback(
+                      const _SettingsInlineFeedbackState(
+                        icon: Icons.delete_outline,
+                        title: '头像已恢复默认',
+                        badgeLabel: '已清空',
+                        description: '当前资料会回到默认头像，如需恢复识别度，可以稍后再重新上传。',
+                      ),
+                    );
+                    AppFeedback.showToast(
+                      context,
+                      AppToastCode.deleted,
+                      subject: '头像',
+                    );
                   }
                 },
               )
@@ -753,7 +700,8 @@ class _SettingsScreenState extends State<SettingsScreen>
   Future<void> _presentBackgroundManagementSheet(
     BuildContext context,
   ) async {
-    final hasBackground = await ImageUploadService.backgroundExists();
+    final backgroundPreviewState = await _readBackgroundPreviewState();
+    final summary = _resolveBackgroundManagementSummary(backgroundPreviewState);
     if (!context.mounted) return;
 
     await showModalBottomSheet<void>(
@@ -764,34 +712,19 @@ class _SettingsScreenState extends State<SettingsScreen>
         key: const Key('settings-background-sheet'),
         context: sheetContext,
         title: '背景管理',
-        description: '背景会影响别人进入你主页时的第一眼氛围，建议保持清爽、不过度花哨。',
+        description: '',
+        headerPreview: _buildBackgroundManagementPreviewCard(
+          backgroundPreviewState,
+          summary,
+        ),
         replaceAction: _buildManagementItem(
           context,
           key: const Key('settings-background-replace-action'),
           icon: Icons.wallpaper_outlined,
-          title: '更换背景',
-          onTap: () async {
-            Navigator.pop(sheetContext);
-            final imageFile = await ImageUploadService.pickBackground(context);
-            if (imageFile != null && context.mounted) {
-              _showInlineFeedback(
-                const _SettingsInlineFeedbackState(
-                  icon: Icons.wallpaper_outlined,
-                  title: '背景已经更新',
-                  badgeLabel: '氛围已刷新',
-                  description: '新的背景会影响别人进入你主页时的第一眼感受，现在已经同步生效。',
-                  isHealthy: true,
-                ),
-              );
-              AppFeedback.showToast(
-                context,
-                AppToastCode.saved,
-                subject: '背景',
-              );
-            }
-          },
+          title: summary.replaceActionLabel,
+          onTap: () => _replaceBackground(sheetContext),
         ),
-        deleteAction: hasBackground
+        deleteAction: backgroundPreviewState.hasMedia
             ? _buildManagementItem(
                 context,
                 key: const Key('settings-background-delete-action'),
@@ -807,21 +740,21 @@ class _SettingsScreenState extends State<SettingsScreen>
                   );
                   if (confirm == true) {
                     await ImageUploadService.clearBackground();
-                    if (context.mounted) {
-                      _showInlineFeedback(
-                        const _SettingsInlineFeedbackState(
-                          icon: Icons.delete_outline,
-                          title: '背景已恢复默认',
-                          badgeLabel: '已清空',
-                          description: '主页氛围已经回到默认状态，后续如果想重新做区分度，可以再上传新的背景。',
-                        ),
-                      );
-                      AppFeedback.showToast(
-                        context,
-                        AppToastCode.deleted,
-                        subject: '背景',
-                      );
-                    }
+                    await _refreshBackgroundPreviewState();
+                    if (!mounted || !context.mounted) return;
+                    _showInlineFeedback(
+                      const _SettingsInlineFeedbackState(
+                        icon: Icons.delete_outline,
+                        title: '背景已恢复默认',
+                        badgeLabel: '已清空',
+                        description: '主页氛围已经回到默认状态，后续如果想重新区分，可以再上传新的背景。',
+                      ),
+                    );
+                    AppFeedback.showToast(
+                      context,
+                      AppToastCode.deleted,
+                      subject: '背景',
+                    );
                   }
                 },
               )
@@ -843,7 +776,7 @@ class _SettingsScreenState extends State<SettingsScreen>
       onTap: onTap,
       borderRadius: BorderRadius.circular(12),
       child: Container(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 11),
         decoration: BoxDecoration(
           color: AppColors.white05,
           borderRadius: BorderRadius.circular(12),
@@ -852,15 +785,15 @@ class _SettingsScreenState extends State<SettingsScreen>
           children: [
             Icon(
               icon,
-              size: 22,
+              size: 19,
               color: isDanger ? AppColors.error : AppColors.textSecondary,
             ),
-            const SizedBox(width: 16),
+            const SizedBox(width: 12),
             Expanded(
               child: Text(
                 title,
                 style: TextStyle(
-                  fontSize: 16,
+                  fontSize: 14.5,
                   fontWeight: FontWeight.w300,
                   color: isDanger ? AppColors.error : AppColors.textPrimary,
                 ),
@@ -872,69 +805,325 @@ class _SettingsScreenState extends State<SettingsScreen>
     );
   }
 
+  Widget _buildAvatarManagementPreviewCard(
+    _SettingsMediaPreviewState avatarPreviewState,
+    _SettingsMediaManagementSummary summary,
+  ) {
+    return Container(
+      key: const Key('settings-avatar-sheet-preview'),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: AppColors.white05,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.white08),
+      ),
+      child: Row(
+        children: [
+          _buildAvatarPreviewSurface(
+            key: const Key('settings-avatar-sheet-avatar'),
+            avatarPath: avatarPreviewState.mediaPath,
+            size: 42,
+            iconSize: 18,
+          ),
+          const SizedBox(width: 9),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  summary.previewStatusLabel,
+                  key: const Key('settings-avatar-sheet-status'),
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w400,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 6),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: avatarPreviewState.hasMedia
+                  ? AppColors.brandBlue.withValues(alpha: 0.14)
+                  : AppColors.white08,
+              borderRadius: BorderRadius.circular(999),
+              border: Border.all(
+                color: avatarPreviewState.hasMedia
+                    ? AppColors.brandBlue.withValues(alpha: 0.22)
+                    : AppColors.white12,
+              ),
+            ),
+            child: Text(
+              summary.previewBadgeLabel,
+              key: const Key('settings-avatar-sheet-badge'),
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w300,
+                color: avatarPreviewState.hasMedia
+                    ? AppColors.brandBlue
+                    : AppColors.textSecondary,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBackgroundManagementPreviewCard(
+    _SettingsMediaPreviewState backgroundPreviewState,
+    _SettingsMediaManagementSummary summary,
+  ) {
+    return Container(
+      key: const Key('settings-background-sheet-preview'),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: AppColors.white05,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.white08),
+      ),
+      child: Row(
+        children: [
+          _buildBackgroundPreviewSurface(
+            key: const Key('settings-background-sheet-thumbnail'),
+            backgroundPath: backgroundPreviewState.mediaPath,
+            width: 54,
+            height: 36,
+            iconSize: 16,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              summary.previewStatusLabel,
+              key: const Key('settings-background-sheet-status'),
+              style: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w400,
+                color: AppColors.textPrimary,
+              ),
+            ),
+          ),
+          const SizedBox(width: 6),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: backgroundPreviewState.hasMedia
+                  ? AppColors.brandBlue.withValues(alpha: 0.14)
+                  : AppColors.white08,
+              borderRadius: BorderRadius.circular(999),
+              border: Border.all(
+                color: backgroundPreviewState.hasMedia
+                    ? AppColors.brandBlue.withValues(alpha: 0.22)
+                    : AppColors.white12,
+              ),
+            ),
+            child: Text(
+              summary.previewBadgeLabel,
+              key: const Key('settings-background-sheet-badge'),
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w300,
+                color: backgroundPreviewState.hasMedia
+                    ? AppColors.brandBlue
+                    : AppColors.textSecondary,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAvatarPreviewSurface({
+    Key? key,
+    required String? avatarPath,
+    required double size,
+    required double iconSize,
+  }) {
+    final previewImage = _buildMediaPreviewImageProvider(avatarPath);
+    return Container(
+      key: key,
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: AppColors.white08,
+        border: Border.all(color: AppColors.white12),
+      ),
+      child: ClipOval(
+        child: previewImage == null
+            ? Center(
+                child: Icon(
+                  Icons.person_rounded,
+                  size: iconSize,
+                  color: AppColors.textTertiary,
+                ),
+              )
+            : Image(
+                image: previewImage,
+                fit: BoxFit.cover,
+                errorBuilder: (context, error, stackTrace) {
+                  return Center(
+                    child: Icon(
+                      Icons.person_rounded,
+                      size: iconSize,
+                      color: AppColors.textTertiary,
+                    ),
+                  );
+                },
+              ),
+      ),
+    );
+  }
+
+  Widget _buildBackgroundPreviewSurface({
+    Key? key,
+    required String? backgroundPath,
+    required double width,
+    required double height,
+    required double iconSize,
+  }) {
+    final previewImage = _buildMediaPreviewImageProvider(backgroundPath);
+    return Container(
+      key: key,
+      width: width,
+      height: height,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(10),
+        color: AppColors.white08,
+        border: Border.all(color: AppColors.white12),
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(10),
+        child: previewImage == null
+            ? Center(
+                child: Icon(
+                  Icons.wallpaper_rounded,
+                  size: iconSize,
+                  color: AppColors.textTertiary,
+                ),
+              )
+            : Image(
+                image: previewImage,
+                fit: BoxFit.cover,
+                errorBuilder: (context, error, stackTrace) {
+                  return Center(
+                    child: Icon(
+                      Icons.wallpaper_rounded,
+                      size: iconSize,
+                      color: AppColors.textTertiary,
+                    ),
+                  );
+                },
+              ),
+      ),
+    );
+  }
+
+  ImageProvider<Object>? _buildMediaPreviewImageProvider(String? mediaRef) {
+    if (mediaRef == null || mediaRef.trim().isEmpty) {
+      return null;
+    }
+
+    final resolvedPath = _resolveDisplayMediaPath(mediaRef.trim());
+    if (_isRemoteMediaReference(resolvedPath)) {
+      return NetworkImage(resolvedPath);
+    }
+
+    return FileImage(_resolveLocalMediaFile(resolvedPath));
+  }
+
+  String _resolveDisplayMediaPath(String path) {
+    return AppEnv.resolveMediaUrl(path);
+  }
+
+  File _resolveLocalMediaFile(String path) {
+    if (path.startsWith('file://')) {
+      return File.fromUri(Uri.parse(path));
+    }
+    return File(path);
+  }
+
   static Widget _buildMediaManagementSheet({
     required Key key,
     required BuildContext context,
     required String title,
     required String description,
     required Widget replaceAction,
+    Widget? headerPreview,
     Widget? deleteAction,
   }) {
+    final maxSheetHeight = MediaQuery.of(context).size.height * 0.76;
     return Container(
       key: key,
       child: AppDialog.buildSheetSurface(
         padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              title,
-              style: const TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.w400,
-                color: AppColors.textPrimary,
-              ),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              description,
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w300,
-                color: AppColors.textTertiary.withValues(alpha: 0.92),
-                height: 1.45,
-              ),
-            ),
-            const SizedBox(height: 16),
-            replaceAction,
-            if (deleteAction != null) ...[
-              const SizedBox(height: 12),
-              deleteAction,
-            ],
-            const SizedBox(height: 18),
-            SizedBox(
-              width: double.infinity,
-              child: TextButton(
-                onPressed: () => Navigator.pop(context),
-                style: TextButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  backgroundColor: AppColors.white05,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
+        child: ConstrainedBox(
+          constraints: BoxConstraints(maxHeight: maxSheetHeight),
+          child: SingleChildScrollView(
+            physics: const ClampingScrollPhysics(),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w400,
+                    color: AppColors.textPrimary,
                   ),
                 ),
-                child: const Text(
-                  '取消',
-                  style: TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w300,
-                    color: AppColors.textSecondary,
+                if (description.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    description,
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w300,
+                      color: AppColors.textTertiary.withValues(alpha: 0.92),
+                      height: 1.45,
+                    ),
+                  ),
+                ],
+                if (headerPreview != null) ...[
+                  const SizedBox(height: 12),
+                  headerPreview,
+                ],
+                const SizedBox(height: 12),
+                replaceAction,
+                if (deleteAction != null) ...[
+                  const SizedBox(height: 10),
+                  deleteAction,
+                ],
+                const SizedBox(height: 14),
+                SizedBox(
+                  width: double.infinity,
+                  child: TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    style: TextButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      backgroundColor: AppColors.white05,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    child: const Text(
+                      '取消',
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w300,
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
                   ),
                 ),
-              ),
+              ],
             ),
-          ],
+          ),
         ),
       ),
     );
@@ -1009,6 +1198,189 @@ class _SettingsScreenState extends State<SettingsScreen>
     );
   }
 
+  Future<void> _replaceAvatar(BuildContext sheetContext) async {
+    Navigator.pop(sheetContext);
+    final imageFile = await ImageUploadService.pickAvatar(context);
+    if (imageFile == null || !mounted) {
+      return;
+    }
+
+    try {
+      final mediaRef = await _mediaUploadService.uploadUserMedia(
+        'avatar',
+        imageFile,
+      );
+      await ImageUploadService.saveAvatarReference(
+        mediaRef,
+        cleanupLocalPath: imageFile.path,
+      );
+      await _refreshAvatarPreviewState();
+      if (!mounted) {
+        return;
+      }
+      _showInlineFeedback(
+        _buildMediaUpdatedFeedback(
+          icon: Icons.photo_camera_outlined,
+          title: '头像已经更新',
+          remoteBadgeLabel: '资料已刷新',
+          remoteDescription: '新的头像已经走远端媒体链路保存，消息列表和个人页会优先回显最新资料。',
+          localBadgeLabel: '资料已刷新',
+          localDescription: '新的头像已经写回本地资料缓存，当前页面和“我的”页会继续保持同步。',
+          mediaRef: mediaRef,
+        ),
+      );
+      AppFeedback.showToast(
+        context,
+        AppToastCode.saved,
+        subject: '头像',
+      );
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+      _showInlineFeedback(
+        const _SettingsInlineFeedbackState(
+          icon: Icons.photo_camera_outlined,
+          title: '头像更新失败',
+          badgeLabel: '稍后重试',
+          description: '这次没有成功保存新头像，可能是网络或上传链路波动，稍后再试一次会更稳。',
+        ),
+      );
+      AppFeedback.showError(
+        context,
+        AppErrorCode.unknown,
+        detail: '头像更新失败，请稍后重试',
+      );
+    }
+  }
+
+  Future<void> _replaceBackground(BuildContext sheetContext) async {
+    Navigator.pop(sheetContext);
+    final imageFile = await ImageUploadService.pickBackground(context);
+    if (imageFile == null || !mounted) {
+      return;
+    }
+
+    try {
+      final mediaRef = await _mediaUploadService.uploadUserMedia(
+        'background',
+        imageFile,
+      );
+      await ImageUploadService.saveBackgroundReference(
+        mediaRef,
+        cleanupLocalPath: imageFile.path,
+      );
+      await _refreshBackgroundPreviewState();
+      if (!mounted) {
+        return;
+      }
+      _showInlineFeedback(
+        _buildMediaUpdatedFeedback(
+          icon: Icons.wallpaper_outlined,
+          title: '背景已经更新',
+          remoteBadgeLabel: '氛围已刷新',
+          remoteDescription: '新的背景已经走远端媒体链路保存，别人进入主页时会优先看到最新封面。',
+          localBadgeLabel: '氛围已刷新',
+          localDescription: '新的背景已经写回本地资料缓存，当前主页氛围会继续保持最新状态。',
+          mediaRef: mediaRef,
+        ),
+      );
+      AppFeedback.showToast(
+        context,
+        AppToastCode.saved,
+        subject: '背景',
+      );
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+      _showInlineFeedback(
+        const _SettingsInlineFeedbackState(
+          icon: Icons.wallpaper_outlined,
+          title: '背景更新失败',
+          badgeLabel: '稍后重试',
+          description: '这次没有成功保存新背景，可能是网络或上传链路波动，稍后再试一次会更稳。',
+        ),
+      );
+      AppFeedback.showError(
+        context,
+        AppErrorCode.unknown,
+        detail: '背景更新失败，请稍后重试',
+      );
+    }
+  }
+
+  _SettingsInlineFeedbackState _buildMediaUpdatedFeedback({
+    required IconData icon,
+    required String title,
+    required String remoteBadgeLabel,
+    required String remoteDescription,
+    required String localBadgeLabel,
+    required String localDescription,
+    required String mediaRef,
+  }) {
+    final isRemoteReference = _isRemoteMediaReference(mediaRef);
+    return _SettingsInlineFeedbackState(
+      icon: icon,
+      title: title,
+      badgeLabel: isRemoteReference ? remoteBadgeLabel : localBadgeLabel,
+      description: isRemoteReference ? remoteDescription : localDescription,
+      isHealthy: true,
+    );
+  }
+
+  bool _isRemoteMediaReference(String mediaRef) {
+    final normalized = mediaRef.trim();
+    return normalized.startsWith('http://') ||
+        normalized.startsWith('https://') ||
+        normalized.startsWith('avatar/') ||
+        normalized.startsWith('background/');
+  }
+
+  _SettingsMediaManagementSummary _resolveAvatarManagementSummary(
+    _SettingsMediaPreviewState previewState,
+  ) {
+    if (previewState.hasMedia) {
+      return const _SettingsMediaManagementSummary(
+        itemSubtitle: '当前头像已经同步到消息列表和个人主页，别人会优先看到这一版资料。',
+        itemBadgeLabel: '已同步',
+        previewStatusLabel: '当前头像已经同步',
+        previewBadgeLabel: '展示中',
+        replaceActionLabel: '重新上传头像',
+      );
+    }
+
+    return const _SettingsMediaManagementSummary(
+      itemSubtitle: '当前还在使用默认头像，补一个清晰头像会更容易识别。',
+      itemBadgeLabel: '待补充',
+      previewStatusLabel: '当前还在使用默认头像',
+      previewBadgeLabel: '待补充',
+      replaceActionLabel: '补一个头像',
+    );
+  }
+
+  _SettingsMediaManagementSummary _resolveBackgroundManagementSummary(
+    _SettingsMediaPreviewState previewState,
+  ) {
+    if (previewState.hasMedia) {
+      return const _SettingsMediaManagementSummary(
+        itemSubtitle: '当前背景已经生效在个人主页首屏，别人进入主页时会先看到这张封面。',
+        itemBadgeLabel: '首屏已生效',
+        previewStatusLabel: '当前背景已经生效',
+        previewBadgeLabel: '首屏展示中',
+        replaceActionLabel: '重新上传背景',
+      );
+    }
+
+    return const _SettingsMediaManagementSummary(
+      itemSubtitle: '当前还是默认背景，补一张更有辨识度的封面会更容易建立第一印象。',
+      itemBadgeLabel: '待补充',
+      previewStatusLabel: '当前还在使用默认背景',
+      previewBadgeLabel: '待补充',
+      replaceActionLabel: '补一张背景',
+    );
+  }
+
   static Future<bool?> _showConfirmDialog(
     BuildContext context, {
     required String title,
@@ -1023,6 +1395,64 @@ class _SettingsScreenState extends State<SettingsScreen>
     );
   }
 
+  Widget _buildPillBadge({
+    Key? key,
+    Key? textKey,
+    required String label,
+    required Color backgroundColor,
+    required Color textColor,
+    Color? borderColor,
+  }) {
+    return Container(
+      key: key,
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: backgroundColor,
+        borderRadius: BorderRadius.circular(999),
+        border: borderColor == null ? null : Border.all(color: borderColor),
+      ),
+      child: Text(
+        key: textKey,
+        label,
+        style: TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.w300,
+          color: textColor,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildResponsiveHeader({
+    required Widget title,
+    required Widget badge,
+    double spacing = 8,
+    bool stackOnCompact = false,
+  }) {
+    final layout = _SettingsLayoutSpec.fromSize(
+      MediaQuery.of(context).size,
+    );
+    if (layout.isTight || (stackOnCompact && layout.isCompact)) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          title,
+          SizedBox(height: spacing - 2),
+          badge,
+        ],
+      );
+    }
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(child: title),
+        SizedBox(width: spacing),
+        badge,
+      ],
+    );
+  }
+
   Widget _buildSettingsOverviewCard(
     BuildContext context,
     SettingsProvider settingsProvider,
@@ -1031,16 +1461,42 @@ class _SettingsScreenState extends State<SettingsScreen>
       MediaQuery.of(context).size,
     );
     final auth = context.watch<AuthProvider>();
+    final hasPhone = (auth.phone ?? '').trim().isNotEmpty;
     final focusState = _resolveOverviewFocusState(
       auth: auth,
       settingsProvider: settingsProvider,
     );
+    final invisibleSettingHint = _resolveInvisibleSettingHint(settingsProvider);
     final notificationRuntimeState = _resolveNotificationRuntimeState(
       settingsProvider,
     );
-    final overviewDescription = layout.isCompact
-        ? '把高频设置集中在首屏，先处理通知、账号和隐私即可。'
-        : '把高频功能集中放在前面，方便你快速调整账号、安全、隐私和通知。';
+    final overviewActions = <Widget>[
+      _buildOverviewAction(
+        key: const Key('settings-overview-phone-action'),
+        icon: Icons.phone_outlined,
+        label: hasPhone ? '更新手机号' : '补手机号',
+        onTap: () => _presentPhoneEditorSheet(context),
+      ),
+      _buildOverviewAction(
+        key: const Key('settings-overview-uid-action'),
+        icon: Icons.badge_outlined,
+        label: '复制 UID',
+        onTap: () => _copyUid(context),
+      ),
+      _buildOverviewAction(
+        key: const Key('settings-overview-notification-action'),
+        icon: notificationRuntimeState.actionIcon,
+        label: notificationRuntimeState.actionLabel,
+        onTap: () => _handleNotificationAction(
+          notificationRuntimeState.actionType,
+        ),
+      ),
+    ];
+    final overviewDescription = layout.isTight
+        ? '先看提醒、账号和展示状态即可'
+        : layout.isCompact
+            ? '把高频状态集中到首屏，先看提醒、账号和展示是否已经就绪'
+            : '把高频状态集中放在前面，方便你快速确认账号、安全、展示和通知是否已经就绪';
 
     return Container(
       padding: EdgeInsets.all(layout.overviewPadding),
@@ -1064,12 +1520,12 @@ class _SettingsScreenState extends State<SettingsScreen>
           Text(
             overviewDescription,
             style: TextStyle(
-              fontSize: layout.isCompact ? 12 : 13,
+              fontSize: layout.isTight ? 11.5 : (layout.isCompact ? 12 : 13),
               fontWeight: FontWeight.w300,
               color: AppColors.textTertiary.withValues(alpha: 0.9),
               height: layout.isCompact ? 1.35 : 1.45,
             ),
-            maxLines: layout.isCompact ? 2 : null,
+            maxLines: layout.isCompact ? 1 : null,
             overflow:
                 layout.isCompact ? TextOverflow.ellipsis : TextOverflow.visible,
           ),
@@ -1082,11 +1538,11 @@ class _SettingsScreenState extends State<SettingsScreen>
           SizedBox(height: layout.overviewGap),
           Wrap(
             spacing: layout.isCompact ? 6 : 8,
-            runSpacing: layout.isCompact ? 6 : 8,
+            runSpacing: layout.isTight ? 4 : (layout.isCompact ? 6 : 8),
             children: [
               _buildStatusChip(
                 icon: Icons.phone_iphone_outlined,
-                label: auth.phone == null ? '手机号未绑定' : '手机号已绑定',
+                label: hasPhone ? '手机号已绑定' : '手机号待补全',
               ),
               _buildStatusChip(
                 icon: Icons.badge_outlined,
@@ -1097,56 +1553,54 @@ class _SettingsScreenState extends State<SettingsScreen>
                 label: notificationRuntimeState.statusChipLabel,
               ),
               _buildStatusChip(
-                icon: Icons.visibility_off_outlined,
-                label: settingsProvider.invisibleMode ? '当前隐身中' : '正常展示中',
+                icon: settingsProvider.invisibleMode
+                    ? Icons.visibility_off_outlined
+                    : Icons.visibility_outlined,
+                label: invisibleSettingHint.badgeLabel,
               ),
             ],
           ),
-          SizedBox(height: layout.overviewGap),
-          Wrap(
-            spacing: layout.isCompact ? 8 : 10,
-            runSpacing: layout.isCompact ? 8 : 10,
-            children: [
-              _buildOverviewAction(
-                key: const Key('settings-overview-phone-action'),
-                icon: Icons.phone_outlined,
-                label: '处理手机号',
-                onTap: () => _presentPhoneEditorSheet(context),
-              ),
-              _buildOverviewAction(
-                key: const Key('settings-overview-uid-action'),
-                icon: Icons.badge_outlined,
-                label: '复制 UID',
-                onTap: () => _copyUid(context),
-              ),
-              _buildOverviewAction(
-                key: const Key('settings-overview-notification-action'),
-                icon: notificationRuntimeState.actionIcon,
-                label: notificationRuntimeState.actionLabel,
-                onTap: () => _handleNotificationAction(
-                  notificationRuntimeState.actionType,
-                ),
-              ),
-            ],
-          ),
-          if (_inlineFeedback != null) ...[
-            SizedBox(height: layout.overviewGap),
-            AnimatedSwitcher(
-              duration: const Duration(milliseconds: 220),
-              switchInCurve: Curves.easeOutCubic,
-              switchOutCurve: Curves.easeInCubic,
-              child: _buildInlineFeedbackCard(_inlineFeedback!),
+          SizedBox(height: layout.isCompact ? 10 : 12),
+          if (layout.isCompact)
+            Column(
+              children: [
+                for (var index = 0;
+                    index < overviewActions.length;
+                    index++) ...[
+                  if (index > 0) SizedBox(height: layout.isTight ? 6 : 8),
+                  SizedBox(
+                    width: double.infinity,
+                    child: overviewActions[index],
+                  ),
+                ],
+              ],
+            )
+          else
+            Row(
+              children: [
+                for (var index = 0;
+                    index < overviewActions.length;
+                    index++) ...[
+                  if (index > 0) const SizedBox(width: 10),
+                  Expanded(child: overviewActions[index]),
+                ],
+              ],
             ),
-          ],
         ],
       ),
     );
   }
 
-  Widget _buildOverviewFocusCard(_SettingsOverviewFocusState state) {
+  Widget _buildOverviewFocusCard(_SettingsOverviewFocusState focusState) {
     final layout = _SettingsLayoutSpec.fromSize(
       MediaQuery.of(context).size,
     );
+    final badgeBackground = focusState.isHealthy
+        ? AppColors.brandBlue.withValues(alpha: 0.16)
+        : AppColors.white12;
+    final badgeTextColor =
+        focusState.isHealthy ? AppColors.brandBlue : AppColors.textSecondary;
+
     return Container(
       key: const Key('settings-overview-focus-card'),
       padding: EdgeInsets.all(layout.isCompact ? 12 : 14),
@@ -1159,76 +1613,53 @@ class _SettingsScreenState extends State<SettingsScreen>
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Container(
-            width: layout.leadingBoxSize,
-            height: layout.leadingBoxSize,
+            width: layout.isCompact ? 36 : 40,
+            height: layout.isCompact ? 36 : 40,
             decoration: BoxDecoration(
-              color: AppColors.white12,
+              color: focusState.isHealthy
+                  ? AppColors.brandBlue.withValues(alpha: 0.16)
+                  : AppColors.white12,
               borderRadius: BorderRadius.circular(12),
             ),
+            alignment: Alignment.center,
             child: Icon(
-              state.icon,
-              size: layout.leadingIconSize,
-              color: state.isHealthy
-                  ? AppColors.textSecondary
-                  : AppColors.brandBlue,
+              focusState.icon,
+              size: layout.isCompact ? 18 : 20,
+              color: focusState.isHealthy
+                  ? AppColors.brandBlue
+                  : AppColors.textSecondary,
             ),
           ),
-          SizedBox(width: layout.isCompact ? 10 : 12),
+          const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(
-                      child: Text(
-                        state.title,
-                        style: const TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w400,
-                          color: AppColors.textPrimary,
-                        ),
-                      ),
+                _buildResponsiveHeader(
+                  stackOnCompact: true,
+                  title: Text(
+                    focusState.title,
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w400,
+                      color: AppColors.textPrimary,
                     ),
-                    const SizedBox(width: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 4,
-                      ),
-                      decoration: BoxDecoration(
-                        color: state.isHealthy
-                            ? AppColors.white12
-                            : AppColors.brandBlue.withValues(alpha: 0.16),
-                        borderRadius: BorderRadius.circular(999),
-                      ),
-                      child: Text(
-                        state.badgeLabel,
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w300,
-                          color: state.isHealthy
-                              ? AppColors.textSecondary
-                              : AppColors.brandBlue,
-                        ),
-                      ),
-                    ),
-                  ],
+                  ),
+                  badge: _buildPillBadge(
+                    label: focusState.badgeLabel,
+                    backgroundColor: badgeBackground,
+                    textColor: badgeTextColor,
+                  ),
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  state.subtitle,
+                  focusState.subtitle,
                   style: TextStyle(
-                    fontSize: 12,
+                    fontSize: layout.isCompact ? 11.5 : 12,
                     fontWeight: FontWeight.w300,
                     color: AppColors.textTertiary.withValues(alpha: 0.92),
                     height: 1.4,
                   ),
-                  maxLines: layout.isCompact ? 2 : null,
-                  overflow: layout.isCompact
-                      ? TextOverflow.ellipsis
-                      : TextOverflow.visible,
                 ),
               ],
             ),
@@ -1247,40 +1678,56 @@ class _SettingsScreenState extends State<SettingsScreen>
     final layout = _SettingsLayoutSpec.fromSize(
       MediaQuery.of(context).size,
     );
-    return InkWell(
-      key: key,
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(14),
-      child: Container(
-        padding: EdgeInsets.symmetric(
-          horizontal: layout.isCompact ? 9 : 12,
-          vertical: layout.isCompact ? 8 : 10,
-        ),
-        decoration: BoxDecoration(
-          color: AppColors.white08,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: AppColors.white12),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              icon,
-              size: layout.isCompact ? 15 : 16,
-              color: AppColors.textSecondary,
-            ),
-            SizedBox(width: layout.isCompact ? 6 : 8),
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: layout.isCompact ? 11 : 12,
-                fontWeight: FontWeight.w300,
-                color: AppColors.textPrimary,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final useCompactActionLayout = layout.isCompact ||
+            (constraints.hasBoundedWidth && constraints.maxWidth < 120);
+        return SizedBox(
+          width: useCompactActionLayout ? double.infinity : null,
+          child: InkWell(
+            key: key,
+            onTap: onTap,
+            borderRadius: BorderRadius.circular(14),
+            child: Container(
+              padding: EdgeInsets.symmetric(
+                horizontal: useCompactActionLayout ? 9 : 12,
+                vertical: useCompactActionLayout ? 8 : 10,
+              ),
+              decoration: BoxDecoration(
+                color: AppColors.white08,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: AppColors.white12),
+              ),
+              child: Row(
+                mainAxisSize: useCompactActionLayout
+                    ? MainAxisSize.max
+                    : MainAxisSize.min,
+                children: [
+                  Icon(
+                    icon,
+                    size: useCompactActionLayout ? 15 : 16,
+                    color: AppColors.textSecondary,
+                  ),
+                  SizedBox(width: useCompactActionLayout ? 6 : 8),
+                  Flexible(
+                    fit: useCompactActionLayout ? FlexFit.tight : FlexFit.loose,
+                    child: Text(
+                      label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: useCompactActionLayout ? 11 : 12,
+                        fontWeight: FontWeight.w300,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
-          ],
-        ),
-      ),
+          ),
+        );
+      },
     );
   }
 
@@ -1288,17 +1735,16 @@ class _SettingsScreenState extends State<SettingsScreen>
     final layout = _SettingsLayoutSpec.fromSize(
       MediaQuery.of(context).size,
     );
+    final invisibleSettingHint = _resolveInvisibleSettingHint(settingsProvider);
+    final vibrationSettingHint = _resolveVibrationSettingHint(settingsProvider);
     final notificationRuntimeState = _resolveNotificationRuntimeState(
       settingsProvider,
-    );
-    final notificationCenterDigest = _resolveNotificationCenterDigest(
-      Provider.of<NotificationCenterProvider?>(context),
     );
     final statusItems = <_SettingsDeviceStatusItem>[
       _SettingsDeviceStatusItem(
         key: const Key('settings-device-status-notification'),
         icon: notificationRuntimeState.icon,
-        title: '消息触达',
+        title: '消息通知',
         badgeLabel: notificationRuntimeState.badgeLabel,
         description: notificationRuntimeState.description,
         isHealthy: notificationRuntimeState.isHealthy,
@@ -1308,26 +1754,26 @@ class _SettingsScreenState extends State<SettingsScreen>
         icon: settingsProvider.invisibleMode
             ? Icons.visibility_off_outlined
             : Icons.visibility_outlined,
-        title: '曝光状态',
-        badgeLabel: settingsProvider.invisibleMode ? '低曝光' : '正常展示',
-        description: settingsProvider.invisibleMode
-            ? '当前更偏隐私保护，适合观察环境，但匹配和被回复概率会更保守。'
-            : '当前更适合正常匹配和聊天，别人更容易感知到你在线。 ',
-        isHealthy: !settingsProvider.invisibleMode,
+        title: '展示状态',
+        badgeLabel: invisibleSettingHint.badgeLabel,
+        description: invisibleSettingHint.description,
+        isHealthy: invisibleSettingHint.isHealthy,
       ),
       _SettingsDeviceStatusItem(
         key: const Key('settings-device-status-vibration'),
         icon: settingsProvider.vibrationEnabled
             ? Icons.vibration_outlined
             : Icons.do_not_disturb_on_outlined,
-        title: '提醒强度',
-        badgeLabel: settingsProvider.vibrationEnabled ? '更及时' : '更安静',
-        description: settingsProvider.vibrationEnabled
-            ? '振动开启后，弱网或锁屏场景下更不容易错过关键提醒。'
-            : '更适合安静使用，但建议配合通知开启一起看，避免完全静默。',
-        isHealthy: settingsProvider.vibrationEnabled,
+        title: '震动提醒',
+        badgeLabel: vibrationSettingHint.badgeLabel,
+        description: vibrationSettingHint.description,
+        isHealthy: vibrationSettingHint.isHealthy,
       ),
     ];
+    final shouldCondenseCompactStatusCard = layout.isCompact &&
+        notificationRuntimeState.isHealthy &&
+        invisibleSettingHint.isHealthy &&
+        vibrationSettingHint.isHealthy;
 
     return Container(
       key: const Key('settings-device-status-card'),
@@ -1351,19 +1797,23 @@ class _SettingsScreenState extends State<SettingsScreen>
           const SizedBox(height: 6),
           Text(
             layout.isCompact
-                ? '先判断这台设备现在偏及时触达、安静使用还是隐私优先。'
-                : '不用逐项扫开关，也能先判断这台设备现在更偏及时触达、安静使用还是隐私优先。',
+                ? '先判断这台设备现在的通知、展示和提醒是否已经就绪。'
+                : '不用逐项打开开关，也能先判断这台设备现在的通知、展示和提醒是否已经就绪。',
             style: TextStyle(
               fontSize: 12,
               fontWeight: FontWeight.w300,
               color: AppColors.textTertiary.withValues(alpha: 0.92),
               height: 1.4,
             ),
-            maxLines: layout.isCompact ? 2 : null,
+            maxLines: layout.isCompact ? 1 : null,
             overflow:
                 layout.isCompact ? TextOverflow.ellipsis : TextOverflow.visible,
           ),
-          SizedBox(height: layout.isCompact ? 10 : 12),
+          SizedBox(
+            height: shouldCondenseCompactStatusCard
+                ? 8
+                : (layout.isCompact ? 10 : 12),
+          ),
           if (layout.isCompact)
             Wrap(
               spacing: 8,
@@ -1386,7 +1836,6 @@ class _SettingsScreenState extends State<SettingsScreen>
             _buildNotificationRuntimeCard(
               context,
               notificationRuntimeState,
-              digest: notificationCenterDigest,
             ),
           ],
         ],
@@ -1533,10 +1982,62 @@ class _SettingsScreenState extends State<SettingsScreen>
   }
 
   Widget _buildNotificationRuntimeCard(
-      BuildContext context, _SettingsNotificationRuntimeState state,
-      {_SettingsNotificationCenterDigestState? digest}) {
+    BuildContext context,
+    _SettingsNotificationRuntimeState state,
+  ) {
     final layout = _SettingsLayoutSpec.fromSize(
       MediaQuery.of(context).size,
+    );
+    final primaryActionButton = TextButton(
+      key: const Key('settings-notification-runtime-action'),
+      onPressed: () => _handleNotificationAction(state.actionType),
+      style: TextButton.styleFrom(
+        alignment: layout.isCompact ? Alignment.centerLeft : null,
+        padding: EdgeInsets.symmetric(
+          horizontal: layout.isCompact ? 9 : 12,
+          vertical: layout.isCompact ? 7 : 10,
+        ),
+        foregroundColor: AppColors.brandBlue,
+        backgroundColor: AppColors.brandBlue.withValues(alpha: 0.12),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+        ),
+      ),
+      child: Text(
+        state.actionLabel,
+        style: const TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w300,
+        ),
+      ),
+    );
+    final notificationCenterButton = TextButton.icon(
+      key: const Key('settings-notification-center-action'),
+      onPressed: () => context.push('/notifications'),
+      style: TextButton.styleFrom(
+        alignment: layout.isCompact ? Alignment.centerLeft : null,
+        padding: EdgeInsets.symmetric(
+          horizontal: layout.isCompact ? 9 : 12,
+          vertical: layout.isCompact ? 7 : 10,
+        ),
+        foregroundColor: AppColors.textSecondary,
+        backgroundColor: AppColors.white08,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: const BorderSide(color: AppColors.white12),
+        ),
+      ),
+      icon: const Icon(
+        Icons.notifications_none_outlined,
+        size: 16,
+      ),
+      label: const Text(
+        NotificationPermissionGuidance.openNotificationCenterAction,
+        style: TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w300,
+        ),
+      ),
     );
     return Container(
       key: const Key('settings-notification-runtime-card'),
@@ -1577,43 +2078,26 @@ class _SettingsScreenState extends State<SettingsScreen>
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Expanded(
-                      child: Text(
-                        '通知通道提示',
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w400,
-                          color: AppColors.textPrimary,
-                        ),
-                      ),
+                _buildResponsiveHeader(
+                  stackOnCompact: true,
+                  title: const Text(
+                    '通知通道提示',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w400,
+                      color: AppColors.textPrimary,
                     ),
-                    Container(
-                      key: const Key('settings-notification-runtime-badge'),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 4,
-                      ),
-                      decoration: BoxDecoration(
-                        color: state.isHealthy
-                            ? AppColors.white08
-                            : AppColors.brandBlue.withValues(alpha: 0.16),
-                        borderRadius: BorderRadius.circular(999),
-                      ),
-                      child: Text(
-                        state.badgeLabel,
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w300,
-                          color: state.isHealthy
-                              ? AppColors.textSecondary
-                              : AppColors.brandBlue,
-                        ),
-                      ),
-                    ),
-                  ],
+                  ),
+                  badge: _buildPillBadge(
+                    key: const Key('settings-notification-runtime-badge'),
+                    label: state.badgeLabel,
+                    backgroundColor: state.isHealthy
+                        ? AppColors.white08
+                        : AppColors.brandBlue.withValues(alpha: 0.16),
+                    textColor: state.isHealthy
+                        ? AppColors.textSecondary
+                        : AppColors.brandBlue,
+                  ),
                 ),
                 const SizedBox(height: 6),
                 Text(
@@ -1629,69 +2113,49 @@ class _SettingsScreenState extends State<SettingsScreen>
                       ? TextOverflow.ellipsis
                       : TextOverflow.visible,
                 ),
-                if (digest != null) ...[
-                  SizedBox(height: layout.isCompact ? 8 : 10),
-                  _buildNotificationCenterDigestCard(digest),
-                ],
-                SizedBox(height: layout.isCompact ? 8 : 10),
-                Wrap(
-                  spacing: layout.isCompact ? 6 : 8,
-                  runSpacing: layout.isCompact ? 6 : 8,
-                  children: [
-                    TextButton(
-                      key: const Key('settings-notification-runtime-action'),
-                      onPressed: () =>
-                          _handleNotificationAction(state.actionType),
-                      style: TextButton.styleFrom(
-                        padding: EdgeInsets.symmetric(
-                          horizontal: layout.isCompact ? 9 : 12,
-                          vertical: layout.isCompact ? 7 : 10,
-                        ),
-                        foregroundColor: AppColors.brandBlue,
-                        backgroundColor:
-                            AppColors.brandBlue.withValues(alpha: 0.12),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
+                Selector<NotificationCenterProvider?,
+                    _SettingsNotificationCenterDigestState?>(
+                  selector: (context, notificationCenterProvider) =>
+                      _resolveNotificationCenterDigest(
+                    notificationCenterProvider,
+                  ),
+                  builder: (context, digest, child) {
+                    if (digest == null) {
+                      return const SizedBox.shrink();
+                    }
+                    return Padding(
+                      padding: EdgeInsets.only(
+                        top: layout.isCompact ? 8 : 10,
                       ),
-                      child: Text(
-                        state.actionLabel,
-                        style: const TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w300,
-                        ),
-                      ),
-                    ),
-                    TextButton.icon(
-                      key: const Key('settings-notification-center-action'),
-                      onPressed: () => context.push('/notifications'),
-                      style: TextButton.styleFrom(
-                        padding: EdgeInsets.symmetric(
-                          horizontal: layout.isCompact ? 9 : 12,
-                          vertical: layout.isCompact ? 7 : 10,
-                        ),
-                        foregroundColor: AppColors.textSecondary,
-                        backgroundColor: AppColors.white08,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          side: const BorderSide(color: AppColors.white12),
-                        ),
-                      ),
-                      icon: const Icon(
-                        Icons.notifications_none_outlined,
-                        size: 16,
-                      ),
-                      label: const Text(
-                        NotificationPermissionGuidance
-                            .openNotificationCenterAction,
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w300,
-                        ),
-                      ),
-                    ),
-                  ],
+                      child: _buildNotificationCenterDigestCard(digest),
+                    );
+                  },
                 ),
+                SizedBox(height: layout.isCompact ? 8 : 10),
+                if (layout.isCompact)
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      SizedBox(
+                        width: double.infinity,
+                        child: primaryActionButton,
+                      ),
+                      const SizedBox(height: 8),
+                      SizedBox(
+                        width: double.infinity,
+                        child: notificationCenterButton,
+                      ),
+                    ],
+                  )
+                else
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      primaryActionButton,
+                      notificationCenterButton,
+                    ],
+                  ),
               ],
             ),
           ),
@@ -1717,41 +2181,26 @@ class _SettingsScreenState extends State<SettingsScreen>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: Text(
-                  state.title,
-                  key: const Key('settings-notification-center-summary-title'),
-                  style: const TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w400,
-                    color: AppColors.textPrimary,
-                  ),
-                ),
+          _buildResponsiveHeader(
+            title: Text(
+              state.title,
+              key: const Key('settings-notification-center-summary-title'),
+              style: const TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w400,
+                color: AppColors.textPrimary,
               ),
-              Container(
-                key: const Key('settings-notification-center-summary-badge'),
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: state.hasUnread
-                      ? AppColors.brandBlue.withValues(alpha: 0.16)
-                      : AppColors.white08,
-                  borderRadius: BorderRadius.circular(999),
-                ),
-                child: Text(
-                  state.badgeLabel,
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w300,
-                    color: state.hasUnread
-                        ? AppColors.brandBlue
-                        : AppColors.textSecondary,
-                  ),
-                ),
-              ),
-            ],
+            ),
+            badge: _buildPillBadge(
+              key: const Key('settings-notification-center-summary-badge'),
+              label: state.badgeLabel,
+              backgroundColor: state.hasUnread
+                  ? AppColors.brandBlue.withValues(alpha: 0.16)
+                  : AppColors.white08,
+              textColor: state.hasUnread
+                  ? AppColors.brandBlue
+                  : AppColors.textSecondary,
+            ),
           ),
           const SizedBox(height: 6),
           Text(
@@ -1763,7 +2212,7 @@ class _SettingsScreenState extends State<SettingsScreen>
               color: AppColors.textTertiary.withValues(alpha: 0.92),
               height: 1.35,
             ),
-            maxLines: layout.isCompact ? 2 : null,
+            maxLines: layout.isCompact ? 1 : null,
             overflow:
                 layout.isCompact ? TextOverflow.ellipsis : TextOverflow.visible,
           ),
@@ -1861,45 +2310,26 @@ class _SettingsScreenState extends State<SettingsScreen>
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(
-                      child: Text(
-                        state.title,
-                        key: const Key('settings-inline-feedback-title'),
-                        style: const TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w400,
-                          color: AppColors.textPrimary,
-                        ),
-                      ),
+                _buildResponsiveHeader(
+                  title: Text(
+                    state.title,
+                    key: const Key('settings-inline-feedback-title'),
+                    style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w400,
+                      color: AppColors.textPrimary,
                     ),
-                    const SizedBox(width: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 4,
-                      ),
-                      decoration: BoxDecoration(
-                        color: state.isHealthy
-                            ? AppColors.white12
-                            : AppColors.brandBlue.withValues(alpha: 0.16),
-                        borderRadius: BorderRadius.circular(999),
-                      ),
-                      child: Text(
-                        key: const Key('settings-inline-feedback-badge'),
-                        state.badgeLabel,
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w300,
-                          color: state.isHealthy
-                              ? AppColors.textSecondary
-                              : AppColors.brandBlue,
-                        ),
-                      ),
-                    ),
-                  ],
+                  ),
+                  badge: _buildPillBadge(
+                    label: state.badgeLabel,
+                    textKey: const Key('settings-inline-feedback-badge'),
+                    backgroundColor: state.isHealthy
+                        ? AppColors.white12
+                        : AppColors.brandBlue.withValues(alpha: 0.16),
+                    textColor: state.isHealthy
+                        ? AppColors.textSecondary
+                        : AppColors.brandBlue,
+                  ),
                 ),
                 const SizedBox(height: 5),
                 Text(
@@ -1931,7 +2361,7 @@ class _SettingsScreenState extends State<SettingsScreen>
     final activePreset = settingsProvider.activeExperiencePreset;
     final presetOptions = _experiencePresetOptions;
     final compactSummary = layout.isCompact
-        ? '按设备情况快速切到更及时、均衡或安静的体验。'
+        ? '按设备情况快速切到主入口、提醒更克制或展示收起的状态。'
         : currentPresetState.description;
 
     return Container(
@@ -1945,44 +2375,26 @@ class _SettingsScreenState extends State<SettingsScreen>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Expanded(
-                child: Text(
-                  '设备模式预设',
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w400,
-                    color: AppColors.textPrimary,
-                  ),
-                ),
+          _buildResponsiveHeader(
+            stackOnCompact: true,
+            title: const Text(
+              '设备模式预设',
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w400,
+                color: AppColors.textPrimary,
               ),
-              const SizedBox(width: 8),
-              Container(
-                key: const Key('settings-experience-preset-current-badge'),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 8,
-                  vertical: 4,
-                ),
-                decoration: BoxDecoration(
-                  color: currentPresetState.isHealthy
-                      ? AppColors.white12
-                      : AppColors.brandBlue.withValues(alpha: 0.16),
-                  borderRadius: BorderRadius.circular(999),
-                ),
-                child: Text(
-                  currentPresetState.badgeLabel,
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w300,
-                    color: currentPresetState.isHealthy
-                        ? AppColors.textSecondary
-                        : AppColors.brandBlue,
-                  ),
-                ),
-              ),
-            ],
+            ),
+            badge: _buildPillBadge(
+              key: const Key('settings-experience-preset-current-badge'),
+              label: currentPresetState.badgeLabel,
+              backgroundColor: currentPresetState.isHealthy
+                  ? AppColors.white12
+                  : AppColors.brandBlue.withValues(alpha: 0.16),
+              textColor: currentPresetState.isHealthy
+                  ? AppColors.textSecondary
+                  : AppColors.brandBlue,
+            ),
           ),
           const SizedBox(height: 6),
           Text(
@@ -1999,7 +2411,21 @@ class _SettingsScreenState extends State<SettingsScreen>
                 layout.isCompact ? TextOverflow.ellipsis : TextOverflow.visible,
           ),
           SizedBox(height: layout.isCompact ? 10 : 12),
-          if (layout.isCompact)
+          if (layout.isTight)
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                for (var index = 0; index < presetOptions.length; index++) ...[
+                  if (index > 0) const SizedBox(height: 8),
+                  _buildExperiencePresetOption(
+                    context,
+                    option: presetOptions[index],
+                    isActive: activePreset == presetOptions[index].preset,
+                  ),
+                ],
+              ],
+            )
+          else if (layout.isCompact)
             Wrap(
               spacing: 8,
               runSpacing: 8,
@@ -2046,15 +2472,18 @@ class _SettingsScreenState extends State<SettingsScreen>
             2)
         .clamp(132.0, 144.0)
         .toDouble();
+    final optionWidth = layout.isTight
+        ? double.infinity
+        : (layout.isCompact ? compactOptionWidth : null);
     return InkWell(
       key: option.key,
       onTap: () => _applyExperiencePreset(option.preset),
       borderRadius: BorderRadius.circular(14),
       child: Container(
-        width: layout.isCompact ? compactOptionWidth : null,
+        width: optionWidth,
         padding: EdgeInsets.symmetric(
-          horizontal: layout.isCompact ? 9 : 12,
-          vertical: layout.isCompact ? 9 : 12,
+          horizontal: layout.isTight ? 7 : (layout.isCompact ? 8 : 12),
+          vertical: layout.isTight ? 5 : (layout.isCompact ? 8 : 12),
         ),
         decoration: BoxDecoration(
           color: isActive
@@ -2071,75 +2500,65 @@ class _SettingsScreenState extends State<SettingsScreen>
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Container(
-              width: 32,
-              height: 32,
+              width: layout.isTight ? 26 : (layout.isCompact ? 28 : 32),
+              height: layout.isTight ? 26 : (layout.isCompact ? 28 : 32),
               decoration: BoxDecoration(
                 color: isActive
                     ? AppColors.brandBlue.withValues(alpha: 0.16)
                     : AppColors.white08,
-                borderRadius: BorderRadius.circular(11),
+                borderRadius: BorderRadius.circular(
+                    layout.isTight ? 9 : (layout.isCompact ? 10 : 11)),
               ),
               child: Icon(
                 option.icon,
-                size: 17,
+                size: layout.isTight ? 14 : (layout.isCompact ? 15 : 17),
                 color: isActive ? AppColors.brandBlue : AppColors.textSecondary,
               ),
             ),
-            const SizedBox(width: 10),
+            SizedBox(width: layout.isTight ? 7 : (layout.isCompact ? 8 : 10)),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          option.title,
-                          style: const TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w400,
-                            color: AppColors.textPrimary,
-                          ),
-                        ),
+                  _buildResponsiveHeader(
+                    stackOnCompact: false,
+                    spacing: 6,
+                    title: Text(
+                      option.title,
+                      style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w400,
+                        color: AppColors.textPrimary,
                       ),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 4,
-                        ),
-                        decoration: BoxDecoration(
-                          color: isActive
-                              ? AppColors.brandBlue.withValues(alpha: 0.18)
-                              : AppColors.white08,
-                          borderRadius: BorderRadius.circular(999),
-                        ),
-                        child: Text(
-                          isActive ? '当前' : option.badgeLabel,
-                          style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w300,
-                            color: isActive
-                                ? AppColors.brandBlue
-                                : AppColors.textSecondary,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    option.description,
-                    style: TextStyle(
-                      fontSize: layout.isCompact ? 10.5 : 11,
-                      fontWeight: FontWeight.w300,
-                      color: AppColors.textTertiary.withValues(alpha: 0.9),
-                      height: 1.35,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
-                    maxLines: layout.isCompact ? 2 : null,
-                    overflow: layout.isCompact
-                        ? TextOverflow.ellipsis
-                        : TextOverflow.visible,
+                    badge: _buildPillBadge(
+                      label: isActive ? '当前' : option.badgeLabel,
+                      backgroundColor: isActive
+                          ? AppColors.brandBlue.withValues(alpha: 0.18)
+                          : AppColors.white08,
+                      textColor: isActive
+                          ? AppColors.brandBlue
+                          : AppColors.textSecondary,
+                    ),
                   ),
+                  if (!layout.isCompact) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      option.description,
+                      style: TextStyle(
+                        fontSize: layout.isCompact ? 10.5 : 11,
+                        fontWeight: FontWeight.w300,
+                        color: AppColors.textTertiary.withValues(alpha: 0.9),
+                        height: 1.35,
+                      ),
+                      maxLines: layout.isCompact ? 2 : null,
+                      overflow: layout.isCompact
+                          ? TextOverflow.ellipsis
+                          : TextOverflow.visible,
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -2190,17 +2609,8 @@ class _SettingsScreenState extends State<SettingsScreen>
   _SettingsToggleHint _resolveInvisibleSettingHint(
     SettingsProvider settingsProvider,
   ) {
-    if (settingsProvider.invisibleMode) {
-      return const _SettingsToggleHint(
-        badgeLabel: '低曝光',
-        description: '当前更适合安静观察，别人更难感知到你在线，但匹配和被回复概率会更保守。',
-      );
-    }
-
-    return const _SettingsToggleHint(
-      badgeLabel: '正常展示',
-      description: '当前更适合正常匹配和聊天，别人更容易感知到你在线。',
-      isHealthy: true,
+    return _buildToggleHintFromInlineFeedback(
+      _buildInvisibleModeFeedback(settingsProvider.invisibleMode),
     );
   }
 
@@ -2210,25 +2620,25 @@ class _SettingsScreenState extends State<SettingsScreen>
     switch (settingsProvider.activeExperiencePreset) {
       case SettingsExperiencePreset.responsive:
         return const _SettingsExperiencePresetState(
-          badgeLabel: '在线回复',
-          description: '当前这台设备更适合做主聊天入口，通知、振动和正常展示都已经打开。',
+          badgeLabel: '主入口',
+          description: '通知、震动和展示都已经恢复，这台设备现在更适合作为主聊天入口。',
           isHealthy: true,
         );
       case SettingsExperiencePreset.balanced:
         return const _SettingsExperiencePresetState(
-          badgeLabel: '低干扰',
-          description: '当前保持在线触达，但提醒更克制，适合通勤或不想被频繁打断时使用。',
+          badgeLabel: '提醒更克制',
+          description: '通知继续保持在线，但震动已经收起，适合通勤或不想被频繁打断时使用。',
           isHealthy: true,
         );
       case SettingsExperiencePreset.quietObserve:
         return const _SettingsExperiencePresetState(
-          badgeLabel: '安静观察',
-          description: '当前更偏隐私和安静使用，适合短时离线、观察环境或暂时不想暴露在线状态。',
+          badgeLabel: '展示已收起',
+          description: '通知和震动已经收起，并同步切到了隐身状态，适合短暂离线或先观察。',
         );
       case null:
         return const _SettingsExperiencePresetState(
-          badgeLabel: '自定义组合',
-          description: '你已经手动组合了通知、隐身和振动设置；如果想快速回到稳定状态，可以直接使用下面的一键预设。',
+          badgeLabel: '手动调整中',
+          description: '你已经手动组合了通知、隐身和展示设置；如果想快速回到稳定状态，可以直接使用下面的一键预设。',
         );
     }
   }
@@ -2239,7 +2649,7 @@ class _SettingsScreenState extends State<SettingsScreen>
           preset: SettingsExperiencePreset.responsive,
           icon: Icons.flash_on_outlined,
           title: '在线回复',
-          badgeLabel: '推荐',
+          badgeLabel: '主入口',
           description: '通知、振动和正常展示全部打开，最适合作为主聊天入口。',
         ),
         _SettingsExperiencePresetOption(
@@ -2247,65 +2657,35 @@ class _SettingsScreenState extends State<SettingsScreen>
           preset: SettingsExperiencePreset.balanced,
           icon: Icons.tune_outlined,
           title: '低干扰',
-          badgeLabel: '通勤',
-          description: '保持消息在线，但收起振动打扰，更适合工作或通勤场景。',
+          badgeLabel: '提醒更克制',
+          description: '保持消息在线，但收起部分打扰，更适合工作或通勤场景。',
         ),
         _SettingsExperiencePresetOption(
           key: Key('settings-preset-quiet-observe'),
           preset: SettingsExperiencePreset.quietObserve,
           icon: Icons.nightlight_round_outlined,
           title: '安静观察',
-          badgeLabel: '低曝光',
-          description: '关闭通知和振动，并切到隐身状态，适合短时离线或观察环境。',
+          badgeLabel: '展示已收起',
+          description: '关闭通知和振动，并切到隐身状态，适合短暂离线或观察环境。',
         ),
       ];
 
   _SettingsToggleHint _resolveNotificationSettingHint(
     SettingsProvider settingsProvider,
   ) {
-    final pushState = settingsProvider.pushRuntimeState;
-    if (!settingsProvider.notificationEnabled) {
-      return const _SettingsToggleHint(
-        badgeLabel: '易漏消息',
-        description: '当前更偏安静使用，关闭后容易错过新回复和关键提醒。',
-      );
-    }
-
-    if (!pushState.permissionGranted) {
-      return const _SettingsToggleHint(
-        badgeLabel: '待授权',
-        description: '应用内通知已打开，但系统权限还没开启，锁屏和后台提醒仍可能缺失。',
-      );
-    }
-
-    if (pushState.deviceToken == null) {
-      return const _SettingsToggleHint(
-        badgeLabel: '同步中',
-        description: '系统权限已开启，正在准备这台设备的通知通道，稍后可刷新确认。',
-      );
-    }
-
-    return const _SettingsToggleHint(
-      badgeLabel: '在线',
-      description: '新消息会更快到这台设备，适合把它当主要聊天入口。',
-      isHealthy: true,
+    final runtimeState = _resolveNotificationRuntimeState(settingsProvider);
+    return _SettingsToggleHint(
+      badgeLabel: runtimeState.badgeLabel,
+      description: runtimeState.description,
+      isHealthy: runtimeState.isHealthy,
     );
   }
 
   _SettingsToggleHint _resolveVibrationSettingHint(
     SettingsProvider settingsProvider,
   ) {
-    if (!settingsProvider.vibrationEnabled) {
-      return const _SettingsToggleHint(
-        badgeLabel: '更安静',
-        description: '提醒会更克制，适合安静场景，但弱网和锁屏下更容易错过即时反馈。',
-      );
-    }
-
-    return const _SettingsToggleHint(
-      badgeLabel: '更及时',
-      description: '弱网或锁屏时更不容易错过关键提醒，整体反馈会更直接。',
-      isHealthy: true,
+    return _buildToggleHintFromInlineFeedback(
+      _buildVibrationFeedback(settingsProvider.vibrationEnabled),
     );
   }
 
@@ -2317,16 +2697,16 @@ class _SettingsScreenState extends State<SettingsScreen>
     if ((auth.phone ?? '').trim().isEmpty) {
       return const _SettingsOverviewFocusState(
         icon: Icons.phone_outlined,
-        title: '建议先绑定手机号',
-        subtitle: '这样登录找回、异常排查和账号确认都会更顺手，也能减少后续联调歧义。',
-        badgeLabel: '优先处理',
+        title: '手机号还没补全',
+        subtitle: '补上后登录找回、异常排查和账号确认都会更顺手，也能减少后续联调歧义。',
+        badgeLabel: '待补全',
       );
     }
 
     if (settingsProvider.notificationEnabled && !pushState.permissionGranted) {
       return const _SettingsOverviewFocusState(
         icon: Icons.notifications_paused_outlined,
-        title: '建议开启系统通知权限',
+        title: NotificationPermissionGuidance.title,
         subtitle: NotificationPermissionGuidance.settingsDescription,
         badgeLabel: NotificationPermissionGuidance.badgeLabel,
       );
@@ -2334,27 +2714,36 @@ class _SettingsScreenState extends State<SettingsScreen>
 
     if (!settingsProvider.notificationEnabled) {
       return const _SettingsOverviewFocusState(
-        icon: Icons.notifications_active_outlined,
-        title: '建议恢复消息通知',
-        subtitle: '通知关闭后很容易错过新回复，打开后这台设备会更像真正在线的聊天入口。',
-        badgeLabel: '建议开启',
+        icon: Icons.notifications_off_outlined,
+        title: '消息提醒当前已收起',
+        subtitle: '新回复会继续留在通知中心；如果这台设备要承担主聊天入口，建议恢复通知。',
+        badgeLabel: '提醒已收起',
+      );
+    }
+
+    if (pushState.deviceToken == null) {
+      return const _SettingsOverviewFocusState(
+        icon: Icons.sync_outlined,
+        title: '通知通道正在同步',
+        subtitle: '系统权限已经打开，当前正在等待这台设备的通知通道重新就绪，稍后可以再次刷新确认。',
+        badgeLabel: '通道同步中',
       );
     }
 
     if (settingsProvider.invisibleMode) {
       return const _SettingsOverviewFocusState(
         icon: Icons.visibility_off_outlined,
-        title: '当前处于隐身模式',
-        subtitle: '如果你接下来准备正常使用匹配和聊天，建议恢复展示状态，避免曝光和到达率偏低。',
-        badgeLabel: '继续观察',
+        title: '展示当前已切到隐身',
+        subtitle: '如果你接下来准备正常使用匹配和聊天，可以恢复展示状态，避免曝光和到达率偏低。',
+        badgeLabel: '展示已收起',
       );
     }
 
     return const _SettingsOverviewFocusState(
       icon: Icons.verified_outlined,
-      title: '当前设置状态良好',
-      subtitle: '高频设置已经收在前面，账号、通知和展示状态都比较完整，后续按需调整即可。',
-      badgeLabel: '无需处理',
+      title: '当前高频状态已经就绪',
+      subtitle: '账号、通知和展示状态都比较完整，这台设备可以继续作为稳定聊天入口使用。',
+      badgeLabel: '状态已就绪',
       isHealthy: true,
     );
   }
@@ -2366,11 +2755,11 @@ class _SettingsScreenState extends State<SettingsScreen>
     if (!settingsProvider.notificationEnabled) {
       return const _SettingsNotificationRuntimeState(
         icon: Icons.notifications_off_outlined,
-        badgeLabel: '已静默',
-        description: '应用内通知当前已关闭，新的消息会留在通知中心，适合主动查看型使用。',
-        followUpDescription: '如果你希望这台设备承担主聊天入口，建议重新开启通知并保持系统权限可用。',
-        statusChipLabel: '通知已关闭',
-        actionLabel: '开启通知',
+        badgeLabel: '提醒已收起',
+        description: '新消息会保存在通知中心，但锁屏和后台提醒已经收起，适合主动查看型使用。',
+        followUpDescription: '如果你希望这台设备继续承担主聊天入口，建议恢复通知并保持系统权限可用。',
+        statusChipLabel: '提醒已收起',
+        actionLabel: '恢复通知',
         actionIcon: Icons.notifications_active_outlined,
         actionType: _SettingsNotificationAction.enableNotifications,
       );
@@ -2393,10 +2782,10 @@ class _SettingsScreenState extends State<SettingsScreen>
     if (pushState.deviceToken == null) {
       return const _SettingsNotificationRuntimeState(
         icon: Icons.sync_outlined,
-        badgeLabel: '同步中',
-        description: '系统通知权限已开启，正在准备这台设备的通知通道，稍后可再次确认。',
+        badgeLabel: '通道同步中',
+        description: '系统权限已开启，当前正在等待这台设备的通知通道重新就绪，稍后可以再次刷新确认。',
         followUpDescription: '如果你刚刚改过权限或切换过账号，可以手动刷新一次，确认这台设备已经重新就绪。',
-        statusChipLabel: '通知同步中',
+        statusChipLabel: '通道同步中',
         actionLabel: '刷新状态',
         actionIcon: Icons.refresh_outlined,
         actionType: _SettingsNotificationAction.refreshRuntimeState,
@@ -2405,13 +2794,23 @@ class _SettingsScreenState extends State<SettingsScreen>
 
     return const _SettingsNotificationRuntimeState(
       icon: Icons.notifications_active_outlined,
-      badgeLabel: '已就绪',
-      description: '系统权限和设备通道都已准备好，这台设备适合作为主要聊天入口。',
-      statusChipLabel: '通知已就绪',
-      actionLabel: '关闭通知',
+      badgeLabel: '通道已就绪',
+      description: '系统权限和设备通道都已准备好，这台设备适合作为主聊天入口。',
+      statusChipLabel: '通道已就绪',
+      actionLabel: '收起通知',
       actionIcon: Icons.notifications_off_outlined,
       actionType: _SettingsNotificationAction.disableNotifications,
       isHealthy: true,
+    );
+  }
+
+  _SettingsToggleHint _buildToggleHintFromInlineFeedback(
+    _SettingsInlineFeedbackState feedback,
+  ) {
+    return _SettingsToggleHint(
+      badgeLabel: feedback.badgeLabel,
+      description: feedback.description,
+      isHealthy: feedback.isHealthy,
     );
   }
 
@@ -2615,125 +3014,110 @@ class _SettingsScreenState extends State<SettingsScreen>
     );
   }
 
-  // ignore: unused_element
-  void _showBlockedUsersLegacy(BuildContext context) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      isScrollControlled: true,
-      sheetAnimationStyle: AppDialog.sheetAnimationStyle,
-      builder: (context) => Container(
-        constraints: BoxConstraints(
-          maxHeight: MediaQuery.of(context).size.height * 0.72,
+  Widget _buildAccountActionCard({
+    required Key cardKey,
+    required Key actionKey,
+    required IconData icon,
+    required String title,
+    required String badgeLabel,
+    required String description,
+    required VoidCallback onTap,
+    bool isDanger = false,
+  }) {
+    final layout = _SettingsLayoutSpec.fromSize(
+      MediaQuery.of(context).size,
+    );
+    final cardColor =
+        isDanger ? AppColors.error.withValues(alpha: 0.06) : AppColors.white05;
+    final borderColor =
+        isDanger ? AppColors.error.withValues(alpha: 0.18) : AppColors.white12;
+    final iconColor = isDanger ? AppColors.error : AppColors.textSecondary;
+    final badgeBackground =
+        isDanger ? AppColors.error.withValues(alpha: 0.14) : AppColors.white08;
+    final badgeTextColor = isDanger ? AppColors.error : AppColors.textSecondary;
+    final leadingSize = layout.isCompact ? 34.0 : 38.0;
+
+    return Material(
+      key: cardKey,
+      color: Colors.transparent,
+      child: Ink(
+        decoration: BoxDecoration(
+          color: cardColor,
+          borderRadius: BorderRadius.circular(layout.sectionCardRadius),
+          border: Border.all(color: borderColor),
         ),
-        decoration: AppDialog.sheetDecoration(),
-        child: Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 16, 12, 8),
-              child: Row(
-                children: [
-                  const Text(
-                    '黑名单',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w400,
-                      color: AppColors.textPrimary,
-                    ),
+        child: InkWell(
+          key: actionKey,
+          borderRadius: BorderRadius.circular(layout.sectionCardRadius),
+          onTap: onTap,
+          child: Padding(
+            padding: EdgeInsets.all(layout.isCompact ? 14 : 16),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  width: leadingSize,
+                  height: leadingSize,
+                  decoration: BoxDecoration(
+                    color: badgeBackground,
+                    borderRadius: BorderRadius.circular(12),
                   ),
-                  const Spacer(),
-                  IconButton(
-                    icon:
-                        const Icon(Icons.close, color: AppColors.textSecondary),
-                    onPressed: () => Navigator.pop(context),
-                  ),
-                ],
-              ),
-            ),
-            Expanded(
-              child: Consumer2<FriendProvider, ChatProvider>(
-                builder: (context, friendProvider, chatProvider, child) {
-                  final blockedIds = friendProvider.blockedUserIds.toList()
-                    ..sort();
-                  if (blockedIds.isEmpty) {
-                    return Center(
-                      child: Text(
-                        '暂无拉黑用户',
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                              color: AppColors.textTertiary,
+                  child: Icon(icon, size: 18, color: iconColor),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 6,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          Text(
+                            title,
+                            style: TextStyle(
+                              fontSize: layout.isCompact ? 14 : 15,
+                              fontWeight: FontWeight.w400,
+                              color: isDanger
+                                  ? AppColors.error
+                                  : AppColors.textPrimary,
+                              letterSpacing: 0.3,
                             ),
+                          ),
+                          _buildPillBadge(
+                            label: badgeLabel,
+                            backgroundColor: badgeBackground,
+                            textColor: badgeTextColor,
+                            borderColor: borderColor,
+                          ),
+                        ],
                       ),
-                    );
-                  }
-
-                  return ListView.separated(
-                    itemCount: blockedIds.length,
-                    separatorBuilder: (_, __) =>
-                        Divider(color: AppColors.white05, height: 1),
-                    itemBuilder: (context, index) {
-                      final userId = blockedIds[index];
-                      final friend = friendProvider.getFriend(userId);
-                      final thread = chatProvider.getThread(userId);
-                      final avatar = friend?.user.avatar ??
-                          thread?.otherUser.avatar ??
-                          '👤';
-                      final name = friend?.displayName ??
-                          thread?.otherUser.nickname ??
-                          userId;
-
-                      return ListTile(
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 20,
-                          vertical: 4,
+                      const SizedBox(height: 6),
+                      Text(
+                        description,
+                        style: TextStyle(
+                          fontSize: layout.isCompact ? 11.5 : 12,
+                          fontWeight: FontWeight.w300,
+                          color: AppColors.textTertiary.withValues(alpha: 0.92),
+                          height: 1.4,
                         ),
-                        leading: CircleAvatar(
-                          backgroundColor: AppColors.white08,
-                          child: Text(
-                            avatar,
-                            style: const TextStyle(fontSize: 18),
-                          ),
-                        ),
-                        title: Text(
-                          name,
-                          style: const TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w300,
-                            color: AppColors.textPrimary,
-                          ),
-                        ),
-                        subtitle: Text(
-                          userId,
-                          style: const TextStyle(
-                            fontSize: 12,
-                            color: AppColors.textTertiary,
-                          ),
-                        ),
-                        trailing: TextButton(
-                          onPressed: () async {
-                            await friendProvider.unblockUser(userId);
-                            if (!context.mounted) return;
-                            context
-                                .read<ChatProvider>()
-                                .restoreConversationAfterUnblock(userId);
-                            if (!context.mounted) return;
-                            AppFeedback.showToast(
-                              context,
-                              AppToastCode.disabled,
-                              subject: '拉黑',
-                            );
-                          },
-                          style: TextButton.styleFrom(
-                            foregroundColor: AppColors.brandBlue,
-                          ),
-                          child: const Text('取消拉黑'),
-                        ),
-                      );
-                    },
-                  );
-                },
-              ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Padding(
+                  padding: const EdgeInsets.only(top: 2),
+                  child: Icon(
+                    Icons.chevron_right,
+                    size: 20,
+                    color: isDanger ? AppColors.error : AppColors.textTertiary,
+                  ),
+                ),
+              ],
             ),
-          ],
+          ),
         ),
       ),
     );
@@ -2782,7 +3166,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                                 final thread = chatProvider.getThread(userId);
                                 final avatar = friend?.user.avatar ??
                                     thread?.otherUser.avatar ??
-                                    '馃懁';
+                                    '🙂';
                                 final displayName = friend?.displayName ??
                                     thread?.otherUser.nickname ??
                                     userId;
@@ -3129,26 +3513,11 @@ class _SettingsScreenState extends State<SettingsScreen>
   Future<void> _updateInvisibleMode(bool enabled) async {
     await context.read<SettingsProvider>().updateInvisibleMode(enabled);
     if (!mounted) return;
-    _showInlineFeedback(
-      enabled
-          ? const _SettingsInlineFeedbackState(
-              icon: Icons.visibility_off_outlined,
-              title: '已切到隐身模式',
-              badgeLabel: '低曝光',
-              description: '你的在线曝光会更低，更适合短时观察；如果准备正常匹配，可以随时切回。',
-            )
-          : const _SettingsInlineFeedbackState(
-              icon: Icons.visibility_outlined,
-              title: '已恢复正常展示',
-              badgeLabel: '可见中',
-              description: '别人会更容易感知到你在线，当前更适合作为正常匹配和聊天入口。',
-              isHealthy: true,
-            ),
-    );
+    _showInlineFeedback(_buildInvisibleModeFeedback(enabled));
     AppFeedback.showToast(
       context,
       enabled ? AppToastCode.enabled : AppToastCode.disabled,
-      subject: '隐身模式',
+      subject: '闅愯韩妯″紡',
     );
   }
 
@@ -3189,22 +3558,7 @@ class _SettingsScreenState extends State<SettingsScreen>
   Future<void> _updateVibrationEnabled(bool enabled) async {
     await context.read<SettingsProvider>().updateVibrationEnabled(enabled);
     if (!mounted) return;
-    _showInlineFeedback(
-      enabled
-          ? const _SettingsInlineFeedbackState(
-              icon: Icons.vibration_outlined,
-              title: '提醒会更及时',
-              badgeLabel: '更及时',
-              description: '弱网和锁屏场景下更不容易错过关键消息，适合把这台设备当主聊天入口。',
-              isHealthy: true,
-            )
-          : const _SettingsInlineFeedbackState(
-              icon: Icons.do_not_disturb_on_outlined,
-              title: '提醒已切到更安静',
-              badgeLabel: '更安静',
-              description: '震动已经收起，适合会议或通勤场景；建议配合通知状态一起观察是否会漏消息。',
-            ),
-    );
+    _showInlineFeedback(_buildVibrationFeedback(enabled));
     AppFeedback.showToast(
       context,
       enabled ? AppToastCode.enabled : AppToastCode.disabled,
@@ -3230,32 +3584,7 @@ class _SettingsScreenState extends State<SettingsScreen>
     await settingsProvider.applyExperiencePreset(preset);
     if (!mounted) return;
 
-    _showInlineFeedback(
-      switch (preset) {
-        SettingsExperiencePreset.responsive =>
-          const _SettingsInlineFeedbackState(
-            icon: Icons.flash_on_outlined,
-            title: '已切到在线回复',
-            badgeLabel: '推荐',
-            description: '通知、振动和正常展示都已打开，这台设备现在更适合作为主聊天入口。',
-            isHealthy: true,
-          ),
-        SettingsExperiencePreset.balanced => const _SettingsInlineFeedbackState(
-            icon: Icons.tune_outlined,
-            title: '已切到低干扰',
-            badgeLabel: '通勤',
-            description: '你会继续在线接收消息，但提醒频率更克制，适合不想被频繁打断的时候使用。',
-            isHealthy: true,
-          ),
-        SettingsExperiencePreset.quietObserve =>
-          const _SettingsInlineFeedbackState(
-            icon: Icons.nightlight_round_outlined,
-            title: '已切到安静观察',
-            badgeLabel: '低曝光',
-            description: '通知和振动已经关闭，并同步切到了隐身状态，适合短时离线或先观察环境。',
-          ),
-      },
-    );
+    _showInlineFeedback(_buildExperiencePresetFeedback(preset));
     final subject = switch (preset) {
       SettingsExperiencePreset.responsive => '在线回复',
       SettingsExperiencePreset.balanced => '低干扰',
@@ -3285,7 +3614,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                 icon: Icons.settings_outlined,
                 title: '未能打开系统设置',
                 badgeLabel: '请手动处理',
-                description: '如果这次没有成功跳到系统设置，请稍后手动打开系统通知权限，再回到应用确认状态。',
+                description: '如果这次没有成功跳到系统设置，请稍后手动打开系统通知权限，再回到应用刷新状态。',
               ),
             );
             return;
@@ -3329,14 +3658,14 @@ class _SettingsScreenState extends State<SettingsScreen>
         const _SettingsInlineFeedbackState(
           icon: Icons.sync_outlined,
           title: '通知通道正在同步',
-          badgeLabel: '同步中',
+          badgeLabel: '通道同步中',
           description: '系统权限已开启，当前正在等待这台设备的通知通道重新就绪，稍后可以再次刷新确认。',
         ),
       _SettingsNotificationAction.disableNotifications =>
         const _SettingsInlineFeedbackState(
           icon: Icons.notifications_active_outlined,
           title: '通知已经恢复在线',
-          badgeLabel: '已就绪',
+          badgeLabel: '通道已就绪',
           description: '系统权限和设备通道都可用，这台设备现在更适合作为主聊天入口。',
           isHealthy: true,
         ),
@@ -3344,7 +3673,7 @@ class _SettingsScreenState extends State<SettingsScreen>
         const _SettingsInlineFeedbackState(
           icon: Icons.notifications_off_outlined,
           title: '通知已切到静默',
-          badgeLabel: '已关闭',
+          badgeLabel: '提醒已收起',
           description: '新消息还会保存在通知中心，但锁屏和后台提醒已经收起，适合主动查看型使用。',
         ),
     };
@@ -3366,23 +3695,23 @@ class _SettingsScreenState extends State<SettingsScreen>
         const _SettingsInlineFeedbackState(
           icon: Icons.sync_outlined,
           title: '通知通道正在恢复',
-          badgeLabel: '同步中',
+          badgeLabel: '通道同步中',
           description: '系统通知权限已经打开，当前正在等待这台设备的通知通道重新就绪。',
         ),
       _SettingsNotificationAction.disableNotifications =>
         const _SettingsInlineFeedbackState(
           icon: Icons.notifications_active_outlined,
           title: '通知已经恢复在线',
-          badgeLabel: '已就绪',
-          description: '检测到系统通知权限已恢复，这台设备现在更适合作为主聊天入口。',
+          badgeLabel: '通道已就绪',
+          description: '已检测到系统通知权限已恢复，这台设备现在更适合作为主聊天入口。',
           isHealthy: true,
         ),
       _SettingsNotificationAction.enableNotifications =>
         const _SettingsInlineFeedbackState(
           icon: Icons.notifications_off_outlined,
           title: '通知仍处于静默',
-          badgeLabel: '已关闭',
-          description: '系统通知权限虽然可能已恢复，但应用内通知开关当前仍是关闭状态，新的提醒会继续留在通知中心。',
+          badgeLabel: '提醒已收起',
+          description: '系统通知权限虽然已经恢复，但应用内通知开关当前仍是关闭状态，新的提醒会继续留在通知中心。',
         ),
     };
   }
@@ -3484,11 +3813,11 @@ class _SettingsScreenState extends State<SettingsScreen>
   String _buildNotificationCenterPreview(AppNotification item) {
     final title = item.title.trim();
     final body = item.body.replaceAll(RegExp(r'\s+'), ' ').trim();
-    final preview = body.isEmpty ? title : '$title · $body';
+    final preview = body.isEmpty ? title : '$title / $body';
     if (preview.length <= 36) {
       return preview;
     }
-    return '${preview.substring(0, 35)}…';
+    return '${preview.substring(0, 35)}...';
   }
 
   void _showInlineFeedback(_SettingsInlineFeedbackState state) {
@@ -3496,6 +3825,95 @@ class _SettingsScreenState extends State<SettingsScreen>
     setState(() {
       _inlineFeedback = state;
     });
+  }
+
+  void _disposeTextControllersWithDelay(
+    Iterable<TextEditingController> controllers,
+  ) {
+    unawaited(
+      Future<void>.delayed(const Duration(milliseconds: 280), () {
+        for (final controller in controllers) {
+          controller.dispose();
+        }
+      }),
+    );
+  }
+
+  _SettingsInlineFeedbackState _buildAccountSavedFeedback({
+    required IconData icon,
+    required String title,
+    required String badgeLabel,
+    required String description,
+  }) {
+    return _SettingsInlineFeedbackState(
+      icon: icon,
+      title: title,
+      badgeLabel: badgeLabel,
+      description: description,
+      isHealthy: true,
+    );
+  }
+
+  _SettingsInlineFeedbackState _buildInvisibleModeFeedback(bool enabled) {
+    return enabled
+        ? const _SettingsInlineFeedbackState(
+            icon: Icons.visibility_off_outlined,
+            title: '展示已切到隐身',
+            badgeLabel: '展示已收起',
+            description: '在线可见和匹配曝光会更克制，适合短时观察；准备正常匹配时再切回。',
+          )
+        : const _SettingsInlineFeedbackState(
+            icon: Icons.visibility_outlined,
+            title: '展示已经恢复正常',
+            badgeLabel: '展示已恢复',
+            description: '在线可见和匹配曝光已恢复，当前更适合作为正常匹配和聊天入口。',
+            isHealthy: true,
+          );
+  }
+
+  _SettingsInlineFeedbackState _buildVibrationFeedback(bool enabled) {
+    return enabled
+        ? const _SettingsInlineFeedbackState(
+            icon: Icons.vibration_outlined,
+            title: '震动提醒已经恢复',
+            badgeLabel: '提醒已恢复',
+            description: '弱网和锁屏场景下更不容易错过关键消息，适合把这台设备当主聊天入口。',
+            isHealthy: true,
+          )
+        : const _SettingsInlineFeedbackState(
+            icon: Icons.do_not_disturb_on_outlined,
+            title: '震动提醒已经收起',
+            badgeLabel: '提醒已收起',
+            description: '震动已经关闭，适合会议或通勤场景；建议配合通知状态一起观察是否会漏消息。',
+          );
+  }
+
+  _SettingsInlineFeedbackState _buildExperiencePresetFeedback(
+    SettingsExperiencePreset preset,
+  ) {
+    return switch (preset) {
+      SettingsExperiencePreset.responsive => const _SettingsInlineFeedbackState(
+          icon: Icons.flash_on_outlined,
+          title: '体验预设已切到在线回复',
+          badgeLabel: '主入口',
+          description: '通知、振动和正常展示都已打开，这台设备现在更适合作为主聊天入口。',
+          isHealthy: true,
+        ),
+      SettingsExperiencePreset.balanced => const _SettingsInlineFeedbackState(
+          icon: Icons.tune_outlined,
+          title: '体验预设已切到低干扰',
+          badgeLabel: '提醒更克制',
+          description: '你会继续在线接收消息，但提醒频率更克制，适合不想被频繁打断的时候使用。',
+          isHealthy: true,
+        ),
+      SettingsExperiencePreset.quietObserve =>
+        const _SettingsInlineFeedbackState(
+          icon: Icons.nightlight_round_outlined,
+          title: '体验预设已切到安静观察',
+          badgeLabel: '展示已收起',
+          description: '通知和振动已经关闭，并同步切到了隐身状态，适合短时离线或先观察环境。',
+        ),
+    };
   }
 
   Future<void> _copyUid(BuildContext context) async {
@@ -3641,9 +4059,122 @@ class _SettingsScreenState extends State<SettingsScreen>
     );
   }
 
+  _SettingsSheetValidationState _resolvePhoneEditorValidation({
+    required String currentPhone,
+    required String nextPhone,
+  }) {
+    final normalizedNextPhone = nextPhone.trim();
+    if (normalizedNextPhone.isEmpty) {
+      return const _SettingsSheetValidationState(
+        icon: Icons.phone_outlined,
+        title: '输入新的手机号后再保存',
+        description: '需要先输入 11 位手机号，本次修改才会同步到登录、验证码接收和账号找回。',
+      );
+    }
+
+    final isValidPhone = RegExp(r'^\d{11}$').hasMatch(normalizedNextPhone);
+    if (!isValidPhone) {
+      return const _SettingsSheetValidationState(
+        icon: Icons.phone_outlined,
+        title: '还需要完整的 11 位手机号',
+        description: '当前号码格式还不完整，先补齐后再保存，现有绑定号码不会被覆盖。',
+      );
+    }
+
+    if (currentPhone.isNotEmpty && normalizedNextPhone == currentPhone) {
+      return const _SettingsSheetValidationState(
+        icon: Icons.info_outline,
+        title: '当前号码未发生变化',
+        description: '如果只是确认当前信息，无需重复保存；需要修改时换成新的常用号码即可。',
+      );
+    }
+
+    return const _SettingsSheetValidationState(
+      icon: Icons.check_circle_outline,
+      title: '可以保存新手机号',
+      description: '保存后会立即更新这台设备的登录、验证码接收和账号找回号码。',
+      isReady: true,
+    );
+  }
+
+  _SettingsSheetValidationState _resolvePasswordEditorValidation({
+    required String currentPassword,
+    required String oldPassword,
+    required String newPassword,
+    required String confirmPassword,
+  }) {
+    final normalizedOldPassword = oldPassword.trim();
+    final normalizedNewPassword = newPassword.trim();
+    final normalizedConfirmPassword = confirmPassword.trim();
+
+    if (normalizedOldPassword.isEmpty &&
+        normalizedNewPassword.isEmpty &&
+        normalizedConfirmPassword.isEmpty) {
+      return const _SettingsSheetValidationState(
+        icon: Icons.lock_outline,
+        title: '先完成旧密码校验',
+        description: '需要先输入当前密码，再设置新的密码和确认内容，本次修改才会生效。',
+      );
+    }
+
+    if (normalizedOldPassword != currentPassword) {
+      return const _SettingsSheetValidationState(
+        icon: Icons.lock_outline,
+        title: '旧密码还未校验通过',
+        description: '请先输入当前正确密码，再继续保存新密码，避免把这次修改误存进错误账号。',
+      );
+    }
+
+    if (normalizedNewPassword.length < 6) {
+      return const _SettingsSheetValidationState(
+        icon: Icons.password_outlined,
+        title: '新密码至少需要 6 位',
+        description: '建议重新设置一个更稳妥的新密码，再继续保存。',
+      );
+    }
+
+    if (normalizedNewPassword == currentPassword) {
+      return const _SettingsSheetValidationState(
+        icon: Icons.lock_reset_outlined,
+        title: '新密码还没有变化',
+        description: '如果要提升安全性，建议换成一个和当前不同的新密码。',
+      );
+    }
+
+    if (normalizedConfirmPassword != normalizedNewPassword) {
+      return const _SettingsSheetValidationState(
+        icon: Icons.rule_folder_outlined,
+        title: '两次输入的新密码还不一致',
+        description: '再确认一次新密码，保持两次输入一致后才会允许保存。',
+      );
+    }
+
+    return const _SettingsSheetValidationState(
+      icon: Icons.check_circle_outline,
+      title: '可以保存新密码',
+      description: '保存后这台设备会立即改用新密码作为本地登录校验。',
+      isReady: true,
+    );
+  }
+
   Future<void> _presentPhoneEditorSheet(BuildContext context) async {
     final authProvider = context.read<AuthProvider>();
     final controller = TextEditingController(text: authProvider.phone ?? '');
+    final currentPhone = (authProvider.phone ?? '').trim();
+    final phoneValidation = ValueNotifier<_SettingsSheetValidationState>(
+      _resolvePhoneEditorValidation(
+        currentPhone: currentPhone,
+        nextPhone: controller.text,
+      ),
+    );
+    void syncPhoneValidation() {
+      phoneValidation.value = _resolvePhoneEditorValidation(
+        currentPhone: currentPhone,
+        nextPhone: controller.text,
+      );
+    }
+
+    controller.addListener(syncPhoneValidation);
     final result = await showModalBottomSheet<bool>(
       context: context,
       backgroundColor: Colors.transparent,
@@ -3659,140 +4190,171 @@ class _SettingsScreenState extends State<SettingsScreen>
             padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
             child: SafeArea(
               top: false,
-              child: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _buildAccountSheetHeader(
-                      title: '修改手机号',
-                      description: '手机号会影响登录找回、验证码接收和账号确认，建议保持为当前常用号码。',
-                      badgeLabel: '登录与找回',
-                    ),
-                    const SizedBox(height: 14),
-                    _buildAccountHintCard(
-                      key: const Key('settings-phone-hint-card'),
-                      icon: Icons.sim_card_outlined,
-                      title: authProvider.phone?.trim().isNotEmpty == true
-                          ? '当前已绑定手机号'
-                          : '当前还未绑定手机号',
-                      description: authProvider.phone?.trim().isNotEmpty == true
-                          ? '更新后，这台设备后续登录和排障都会以新号码为准。'
-                          : '补全后会更方便账号找回和后续联调确认。',
-                    ),
-                    const SizedBox(height: 16),
-                    TextField(
-                      key: const Key('settings-phone-input'),
-                      controller: controller,
-                      keyboardType: TextInputType.phone,
-                      maxLength: 11,
-                      autofocus: false,
-                      decoration: const InputDecoration(
-                        hintText: '请输入新的 11 位手机号',
-                        counterText: '',
-                      ),
-                    ),
-                    const SizedBox(height: 20),
-                    Row(
+              child: ValueListenableBuilder<_SettingsSheetValidationState>(
+                valueListenable: phoneValidation,
+                builder: (context, validation, child) {
+                  return SingleChildScrollView(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Expanded(
-                          child: TextButton(
-                            key: const Key('settings-phone-cancel'),
-                            onPressed: () {
-                              FocusScope.of(sheetContext).unfocus();
-                              Navigator.pop(sheetContext, false);
-                            },
-                            style: TextButton.styleFrom(
-                              padding: const EdgeInsets.symmetric(vertical: 14),
-                              backgroundColor: AppColors.white05,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                            ),
-                            child: const Text(
-                              '取消',
-                              style: TextStyle(
-                                fontSize: 15,
-                                fontWeight: FontWeight.w300,
-                                color: AppColors.textSecondary,
-                              ),
-                            ),
+                        _buildAccountSheetHeader(
+                          title: '修改手机号',
+                          description: '手机号会影响登录找回、验证码接收和账号确认，建议保持为当前常用号码。',
+                          badgeLabel: '登录与找回',
+                        ),
+                        const SizedBox(height: 14),
+                        _buildAccountHintCard(
+                          key: const Key('settings-phone-hint-card'),
+                          icon: Icons.sim_card_outlined,
+                          title: authProvider.phone?.trim().isNotEmpty == true
+                              ? '当前已绑定手机号'
+                              : '当前还未绑定手机号',
+                          description:
+                              authProvider.phone?.trim().isNotEmpty == true
+                                  ? '更新后，这台设备后续登录和排障都会以新号码为准。'
+                                  : '补全后会更方便账号找回和后续联调确认。',
+                        ),
+                        const SizedBox(height: 16),
+                        TextField(
+                          key: const Key('settings-phone-input'),
+                          controller: controller,
+                          keyboardType: TextInputType.phone,
+                          maxLength: 11,
+                          autofocus: false,
+                          decoration: const InputDecoration(
+                            hintText: '请输入新的 11 位手机号',
+                            counterText: '',
                           ),
                         ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: TextButton(
-                            key: const Key('settings-phone-save'),
-                            onPressed: () {
-                              FocusScope.of(sheetContext).unfocus();
-                              Navigator.pop(sheetContext, true);
-                            },
-                            style: TextButton.styleFrom(
-                              padding: const EdgeInsets.symmetric(vertical: 14),
-                              backgroundColor: AppColors.white12,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
+                        const SizedBox(height: 12),
+                        _buildAccountHintCard(
+                          key: const Key('settings-phone-validation-card'),
+                          icon: validation.icon,
+                          title: validation.title,
+                          description: validation.description,
+                        ),
+                        const SizedBox(height: 20),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: TextButton(
+                                key: const Key('settings-phone-cancel'),
+                                onPressed: () {
+                                  FocusScope.of(sheetContext).unfocus();
+                                  Navigator.pop(sheetContext, false);
+                                },
+                                style: TextButton.styleFrom(
+                                  padding:
+                                      const EdgeInsets.symmetric(vertical: 14),
+                                  backgroundColor: AppColors.white05,
+                                  disabledBackgroundColor: AppColors.white05,
+                                  disabledForegroundColor:
+                                      AppColors.textDisabled,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                ),
+                                child: const Text(
+                                  '取消',
+                                  style: TextStyle(
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w300,
+                                    color: AppColors.textSecondary,
+                                  ),
+                                ),
                               ),
                             ),
-                            child: const Text(
-                              '保存',
-                              style: TextStyle(
-                                fontSize: 15,
-                                fontWeight: FontWeight.w300,
-                                color: AppColors.textPrimary,
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: TextButton(
+                                key: const Key('settings-phone-save'),
+                                onPressed: validation.isReady
+                                    ? () {
+                                        FocusScope.of(sheetContext).unfocus();
+                                        Navigator.pop(sheetContext, true);
+                                      }
+                                    : null,
+                                style: TextButton.styleFrom(
+                                  padding:
+                                      const EdgeInsets.symmetric(vertical: 14),
+                                  backgroundColor: AppColors.white12,
+                                  disabledBackgroundColor: AppColors.white05,
+                                  disabledForegroundColor:
+                                      AppColors.textDisabled,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                ),
+                                child: Text(
+                                  '保存',
+                                  style: TextStyle(
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w300,
+                                    color: validation.isReady
+                                        ? AppColors.textPrimary
+                                        : AppColors.textDisabled,
+                                  ),
+                                ),
                               ),
                             ),
-                          ),
+                          ],
                         ),
                       ],
                     ),
-                  ],
-                ),
+                  );
+                },
               ),
             ),
           ),
         ),
       ),
     );
+    controller.removeListener(syncPhoneValidation);
+    phoneValidation.dispose();
 
     if (result == true && context.mounted) {
       final phone = controller.text.trim();
-      final valid = RegExp(r'^\d{11}$').hasMatch(phone);
-      if (!valid) {
-        _showInlineFeedback(
-          const _SettingsInlineFeedbackState(
-            icon: Icons.phone_outlined,
-            title: '手机号格式有误',
-            badgeLabel: '未保存',
-            description: '请输入 11 位手机号后再保存，本次不会覆盖当前绑定号码。',
-          ),
-        );
-        AppFeedback.showError(
-          context,
-          AppErrorCode.invalidInput,
-          detail: '请输入 11 位手机号后重试',
-        );
-      } else {
-        await authProvider.updatePhone(phone);
-        if (!context.mounted) return;
-        _showInlineFeedback(
-          const _SettingsInlineFeedbackState(
-            icon: Icons.phone_outlined,
-            title: '手机号已经更新',
-            badgeLabel: '登录与找回',
-            description: '后续登录、验证码接收和账号找回都会以新的手机号为准。',
-            isHealthy: true,
-          ),
-        );
-        AppFeedback.showToast(context, AppToastCode.saved, subject: '手机号');
-      }
+      await authProvider.updatePhone(phone);
+      if (!context.mounted) return;
+      _showInlineFeedback(
+        _buildAccountSavedFeedback(
+          icon: Icons.phone_outlined,
+          title: '手机号已经更新',
+          badgeLabel: '账号已刷新',
+          description: '新的手机号已经写回当前账号资料，后续登录、验证码接收和账号找回都会以它为准。',
+        ),
+      );
+      AppFeedback.showToast(context, AppToastCode.saved, subject: '手机号');
     }
+    _disposeTextControllersWithDelay([controller]);
   }
 
   Future<void> _presentPasswordEditorSheet(BuildContext context) async {
     final oldController = TextEditingController();
     final newController = TextEditingController();
     final confirmController = TextEditingController();
+    final currentPassword = StorageService.getLocalPassword();
+    final passwordValidation = ValueNotifier<_SettingsSheetValidationState>(
+      _resolvePasswordEditorValidation(
+        currentPassword: currentPassword,
+        oldPassword: oldController.text,
+        newPassword: newController.text,
+        confirmPassword: confirmController.text,
+      ),
+    );
+    void syncPasswordValidation() {
+      passwordValidation.value = _resolvePasswordEditorValidation(
+        currentPassword: currentPassword,
+        oldPassword: oldController.text,
+        newPassword: newController.text,
+        confirmPassword: confirmController.text,
+      );
+    }
+
+    oldController.addListener(syncPasswordValidation);
+    newController.addListener(syncPasswordValidation);
+    confirmController.addListener(syncPasswordValidation);
 
     final result = await showModalBottomSheet<bool>(
       context: context,
@@ -3809,427 +4371,169 @@ class _SettingsScreenState extends State<SettingsScreen>
             padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
             child: SafeArea(
               top: false,
-              child: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _buildAccountSheetHeader(
-                      title: '修改密码',
-                      description: '建议定期更换密码，并避免和其他账号复用，减少测试环境和正式环境串用风险。',
-                      badgeLabel: '账号安全',
-                    ),
-                    const SizedBox(height: 14),
-                    _buildAccountHintCard(
-                      key: const Key('settings-password-hint-card'),
-                      icon: Icons.lock_clock_outlined,
-                      title: '本地安全校验',
-                      description: '先确认旧密码，再保存新密码。新的登录密码至少 6 位，并保持两次输入一致。',
-                    ),
-                    const SizedBox(height: 16),
-                    TextField(
-                      key: const Key('settings-password-old-input'),
-                      controller: oldController,
-                      obscureText: true,
-                      autofocus: false,
-                      decoration: const InputDecoration(hintText: '输入当前密码'),
-                    ),
-                    const SizedBox(height: 10),
-                    TextField(
-                      key: const Key('settings-password-new-input'),
-                      controller: newController,
-                      obscureText: true,
-                      decoration:
-                          const InputDecoration(hintText: '输入新的密码，至少 6 位'),
-                    ),
-                    const SizedBox(height: 10),
-                    TextField(
-                      key: const Key('settings-password-confirm-input'),
-                      controller: confirmController,
-                      obscureText: true,
-                      decoration: const InputDecoration(hintText: '再次确认新密码'),
-                    ),
-                    const SizedBox(height: 20),
-                    Row(
+              child: ValueListenableBuilder<_SettingsSheetValidationState>(
+                valueListenable: passwordValidation,
+                builder: (context, validation, child) {
+                  return SingleChildScrollView(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Expanded(
-                          child: TextButton(
-                            key: const Key('settings-password-cancel'),
-                            onPressed: () {
-                              FocusScope.of(sheetContext).unfocus();
-                              Navigator.pop(sheetContext, false);
-                            },
-                            style: TextButton.styleFrom(
-                              padding: const EdgeInsets.symmetric(vertical: 14),
-                              backgroundColor: AppColors.white05,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                            ),
-                            child: const Text(
-                              '取消',
-                              style: TextStyle(
-                                fontSize: 15,
-                                fontWeight: FontWeight.w300,
-                                color: AppColors.textSecondary,
-                              ),
-                            ),
+                        _buildAccountSheetHeader(
+                          title: '修改密码',
+                          description: '建议定期更换密码，并避免和其他账号复用，减少测试环境和正式环境串用风险。',
+                          badgeLabel: '账号安全',
+                        ),
+                        const SizedBox(height: 14),
+                        _buildAccountHintCard(
+                          key: const Key('settings-password-hint-card'),
+                          icon: Icons.lock_clock_outlined,
+                          title: '本地安全校验',
+                          description: '先确认旧密码，再保存新密码。新的登录密码至少 6 位，并保持两次输入一致。',
+                        ),
+                        const SizedBox(height: 16),
+                        TextField(
+                          key: const Key('settings-password-old-input'),
+                          controller: oldController,
+                          obscureText: true,
+                          autofocus: false,
+                          decoration: const InputDecoration(hintText: '输入当前密码'),
+                        ),
+                        const SizedBox(height: 10),
+                        TextField(
+                          key: const Key('settings-password-new-input'),
+                          controller: newController,
+                          obscureText: true,
+                          decoration: const InputDecoration(
+                            hintText: '输入新的密码，至少 6 位',
                           ),
                         ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: TextButton(
-                            key: const Key('settings-password-save'),
-                            onPressed: () {
-                              FocusScope.of(sheetContext).unfocus();
-                              Navigator.pop(sheetContext, true);
-                            },
-                            style: TextButton.styleFrom(
-                              padding: const EdgeInsets.symmetric(vertical: 14),
-                              backgroundColor: AppColors.white12,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
+                        const SizedBox(height: 10),
+                        TextField(
+                          key: const Key('settings-password-confirm-input'),
+                          controller: confirmController,
+                          obscureText: true,
+                          decoration:
+                              const InputDecoration(hintText: '再次确认新密码'),
+                        ),
+                        const SizedBox(height: 12),
+                        _buildAccountHintCard(
+                          key: const Key('settings-password-validation-card'),
+                          icon: validation.icon,
+                          title: validation.title,
+                          description: validation.description,
+                        ),
+                        const SizedBox(height: 20),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: TextButton(
+                                key: const Key('settings-password-cancel'),
+                                onPressed: () {
+                                  FocusScope.of(sheetContext).unfocus();
+                                  Navigator.pop(sheetContext, false);
+                                },
+                                style: TextButton.styleFrom(
+                                  padding:
+                                      const EdgeInsets.symmetric(vertical: 14),
+                                  backgroundColor: AppColors.white05,
+                                  disabledBackgroundColor: AppColors.white05,
+                                  disabledForegroundColor:
+                                      AppColors.textDisabled,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                ),
+                                child: const Text(
+                                  '取消',
+                                  style: TextStyle(
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w300,
+                                    color: AppColors.textSecondary,
+                                  ),
+                                ),
                               ),
                             ),
-                            child: const Text(
-                              '确认',
-                              style: TextStyle(
-                                fontSize: 15,
-                                fontWeight: FontWeight.w300,
-                                color: AppColors.textPrimary,
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: TextButton(
+                                key: const Key('settings-password-save'),
+                                onPressed: validation.isReady
+                                    ? () {
+                                        FocusScope.of(sheetContext).unfocus();
+                                        Navigator.pop(sheetContext, true);
+                                      }
+                                    : null,
+                                style: TextButton.styleFrom(
+                                  padding:
+                                      const EdgeInsets.symmetric(vertical: 14),
+                                  backgroundColor: AppColors.white12,
+                                  disabledBackgroundColor: AppColors.white05,
+                                  disabledForegroundColor:
+                                      AppColors.textDisabled,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                ),
+                                child: Text(
+                                  '确认',
+                                  style: TextStyle(
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w300,
+                                    color: validation.isReady
+                                        ? AppColors.textPrimary
+                                        : AppColors.textDisabled,
+                                  ),
+                                ),
                               ),
                             ),
-                          ),
+                          ],
                         ),
                       ],
                     ),
-                  ],
-                ),
+                  );
+                },
               ),
             ),
           ),
         ),
       ),
     );
+    oldController.removeListener(syncPasswordValidation);
+    newController.removeListener(syncPasswordValidation);
+    confirmController.removeListener(syncPasswordValidation);
+    passwordValidation.dispose();
 
     if (result == true && context.mounted) {
       final oldPassword = oldController.text.trim();
       final newPassword = newController.text.trim();
-      final confirmPassword = confirmController.text.trim();
-      final currentPassword = StorageService.getLocalPassword();
-
-      if (oldPassword != currentPassword) {
-        _showInlineFeedback(
-          const _SettingsInlineFeedbackState(
-            icon: Icons.lock_outline,
-            title: '旧密码不正确',
-            badgeLabel: '未保存',
-            description: '请先确认当前密码，再继续保存新密码，本次修改还没有生效。',
-          ),
-        );
-        AppFeedback.showError(
-          context,
-          AppErrorCode.invalidInput,
-          detail: '旧密码不正确，请重新输入',
-        );
-      } else if (newPassword.length < 6) {
-        _showInlineFeedback(
-          const _SettingsInlineFeedbackState(
-            icon: Icons.lock_outline,
-            title: '新密码长度不够',
-            badgeLabel: '未保存',
-            description: '新的密码至少需要 6 位，建议重新设置后再保存。',
-          ),
-        );
-        AppFeedback.showError(
-          context,
-          AppErrorCode.invalidInput,
-          detail: '新密码至少 6 位，请重新设置',
-        );
-      } else if (newPassword != confirmPassword) {
-        _showInlineFeedback(
-          const _SettingsInlineFeedbackState(
-            icon: Icons.lock_outline,
-            title: '两次输入不一致',
-            badgeLabel: '待确认',
-            description: '请重新确认两次输入的新密码一致后再保存，本次修改不会生效。',
-          ),
-        );
-        AppFeedback.showError(
-          context,
-          AppErrorCode.invalidInput,
-          detail: '两次输入不一致，请重新确认',
-        );
-      } else {
+      if (oldPassword == currentPassword && newPassword.length >= 6) {
         await StorageService.saveLocalPassword(newPassword);
         if (!context.mounted) return;
         _showInlineFeedback(
-          const _SettingsInlineFeedbackState(
+          _buildAccountSavedFeedback(
             icon: Icons.lock_outlined,
             title: '密码已经更新',
-            badgeLabel: '安全已加强',
-            description: '新的本地密码已经生效，后续请优先使用新密码，避免和其他环境复用。',
-            isHealthy: true,
+            badgeLabel: '安全已刷新',
+            description: '新的本地密码已经写回当前安全设置，后续请优先使用新密码，避免和其他环境复用。',
           ),
         );
         AppFeedback.showToast(context, AppToastCode.saved, subject: '密码');
       }
     }
-  }
-
-  // ignore: unused_element
-  Future<void> _showUpdatePhoneDialog(BuildContext context) async {
-    final authProvider = context.read<AuthProvider>();
-    final controller = TextEditingController(text: authProvider.phone ?? '');
-    final result = await showModalBottomSheet<bool>(
-      context: context,
-      backgroundColor: Colors.transparent,
-      isScrollControlled: true,
-      sheetAnimationStyle: AppDialog.sheetAnimationStyle,
-      builder: (sheetContext) => Padding(
-        padding: EdgeInsets.only(
-          bottom: MediaQuery.of(sheetContext).viewInsets.bottom,
-        ),
-        child: Container(
-          decoration: AppDialog.sheetDecoration(),
-          padding: const EdgeInsets.all(24),
-          child: SafeArea(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  '修改手机号',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w400,
-                    color: AppColors.textPrimary,
-                  ),
-                ),
-                const SizedBox(height: 18),
-                TextField(
-                  controller: controller,
-                  keyboardType: TextInputType.phone,
-                  maxLength: 11,
-                  decoration: const InputDecoration(
-                    hintText: '请输入新手机号',
-                    counterText: '',
-                  ),
-                ),
-                const SizedBox(height: 20),
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextButton(
-                        onPressed: () => Navigator.pop(sheetContext, false),
-                        style: TextButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(vertical: 14),
-                          backgroundColor: AppColors.white05,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                        ),
-                        child: const Text(
-                          '取消',
-                          style: TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w300,
-                            color: AppColors.textSecondary,
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: TextButton(
-                        onPressed: () => Navigator.pop(sheetContext, true),
-                        style: TextButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(vertical: 14),
-                          backgroundColor: AppColors.white12,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                        ),
-                        child: const Text(
-                          '保存',
-                          style: TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w300,
-                            color: AppColors.textPrimary,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-
-    if (result == true && context.mounted) {
-      final phone = controller.text.trim();
-      final valid = RegExp(r'^\d{11}$').hasMatch(phone);
-      if (!valid) {
-        AppFeedback.showError(
-          context,
-          AppErrorCode.invalidInput,
-          detail: '请输入11位手机号后重试',
-        );
-      } else {
-        await authProvider.updatePhone(phone);
-        if (!context.mounted) return;
-        AppFeedback.showToast(context, AppToastCode.saved, subject: '手机号');
-      }
-    }
-    controller.dispose();
-  }
-
-  // ignore: unused_element
-  Future<void> _showChangePasswordDialog(BuildContext context) async {
-    final oldController = TextEditingController();
-    final newController = TextEditingController();
-    final confirmController = TextEditingController();
-
-    final result = await showModalBottomSheet<bool>(
-      context: context,
-      backgroundColor: Colors.transparent,
-      isScrollControlled: true,
-      sheetAnimationStyle: AppDialog.sheetAnimationStyle,
-      builder: (sheetContext) => Padding(
-        padding: EdgeInsets.only(
-          bottom: MediaQuery.of(sheetContext).viewInsets.bottom,
-        ),
-        child: Container(
-          decoration: AppDialog.sheetDecoration(),
-          padding: const EdgeInsets.all(24),
-          child: SafeArea(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Text(
-                  '修改密码',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w400,
-                    color: AppColors.textPrimary,
-                  ),
-                ),
-                const SizedBox(height: 16),
-                TextField(
-                  controller: oldController,
-                  obscureText: true,
-                  decoration: const InputDecoration(hintText: '输入旧密码'),
-                ),
-                const SizedBox(height: 10),
-                TextField(
-                  controller: newController,
-                  obscureText: true,
-                  decoration: const InputDecoration(hintText: '输入新密码（至少6位）'),
-                ),
-                const SizedBox(height: 10),
-                TextField(
-                  controller: confirmController,
-                  obscureText: true,
-                  decoration: const InputDecoration(hintText: '确认新密码'),
-                ),
-                const SizedBox(height: 20),
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextButton(
-                        onPressed: () => Navigator.pop(sheetContext, false),
-                        style: TextButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(vertical: 14),
-                          backgroundColor: AppColors.white05,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                        ),
-                        child: const Text(
-                          '取消',
-                          style: TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w300,
-                            color: AppColors.textSecondary,
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: TextButton(
-                        onPressed: () => Navigator.pop(sheetContext, true),
-                        style: TextButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(vertical: 14),
-                          backgroundColor: AppColors.white12,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                        ),
-                        child: const Text(
-                          '确认',
-                          style: TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w300,
-                            color: AppColors.textPrimary,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-
-    if (result == true && context.mounted) {
-      final oldPassword = oldController.text.trim();
-      final newPassword = newController.text.trim();
-      final confirmPassword = confirmController.text.trim();
-      final currentPassword = StorageService.getLocalPassword();
-
-      if (oldPassword != currentPassword) {
-        AppFeedback.showError(
-          context,
-          AppErrorCode.invalidInput,
-          detail: '旧密码不正确，请重新输入',
-        );
-      } else if (newPassword.length < 6) {
-        AppFeedback.showError(
-          context,
-          AppErrorCode.invalidInput,
-          detail: '新密码至少6位，请重新设置',
-        );
-      } else if (newPassword != confirmPassword) {
-        AppFeedback.showError(
-          context,
-          AppErrorCode.invalidInput,
-          detail: '两次输入不一致，请重新确认',
-        );
-      } else {
-        await StorageService.saveLocalPassword(newPassword);
-        if (!context.mounted) return;
-        AppFeedback.showToast(context, AppToastCode.saved, subject: '密码');
-      }
-    }
-
-    oldController.dispose();
-    newController.dispose();
-    confirmController.dispose();
+    _disposeTextControllersWithDelay([
+      oldController,
+      newController,
+      confirmController,
+    ]);
   }
 
   void _showLogoutDialog(BuildContext context) async {
     final confirm = await AppDialog.showConfirm(
       context,
       title: '退出登录',
-      content: '确定要退出登录吗？',
-      confirmText: '退出',
+      content: '这只会退出当前设备上的登录状态。\n你的账号资料、好友关系和聊天记录仍会保留，之后可以重新登录。',
+      confirmText: '退出当前设备',
       isDanger: true,
     );
 
@@ -4243,8 +4547,8 @@ class _SettingsScreenState extends State<SettingsScreen>
     final confirm = await AppDialog.showConfirm(
       context,
       title: '注销账号',
-      content: '注销后账号数据将被清除且无法恢复，确定继续吗？',
-      confirmText: '注销',
+      content: '注销后将清除账号资料与会话数据，且无法恢复。\n如果只是暂时离开，建议使用“退出登录”。',
+      confirmText: '确认注销',
       isDanger: true,
     );
 
@@ -4329,6 +4633,46 @@ class _SettingsExperiencePresetOption {
   final String title;
   final String badgeLabel;
   final String description;
+}
+
+class _SettingsMediaPreviewState {
+  const _SettingsMediaPreviewState({
+    this.mediaPath,
+    this.hasMedia = false,
+  });
+
+  final String? mediaPath;
+  final bool hasMedia;
+}
+
+class _SettingsSheetValidationState {
+  const _SettingsSheetValidationState({
+    required this.icon,
+    required this.title,
+    required this.description,
+    this.isReady = false,
+  });
+
+  final IconData icon;
+  final String title;
+  final String description;
+  final bool isReady;
+}
+
+class _SettingsMediaManagementSummary {
+  const _SettingsMediaManagementSummary({
+    required this.itemSubtitle,
+    required this.itemBadgeLabel,
+    required this.previewStatusLabel,
+    required this.previewBadgeLabel,
+    required this.replaceActionLabel,
+  });
+
+  final String itemSubtitle;
+  final String itemBadgeLabel;
+  final String previewStatusLabel;
+  final String previewBadgeLabel;
+  final String replaceActionLabel;
 }
 
 class _SettingsInlineFeedbackState {

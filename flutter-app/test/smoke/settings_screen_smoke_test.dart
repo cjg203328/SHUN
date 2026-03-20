@@ -16,8 +16,10 @@ import 'package:sunliao/repositories/app_data_repository.dart';
 import 'package:sunliao/screens/notification_center_screen.dart';
 import 'package:sunliao/screens/settings_screen.dart';
 import 'package:sunliao/services/image_upload_service.dart';
+import 'package:sunliao/services/media_upload_service.dart';
 import 'package:sunliao/services/push_notification_service.dart';
 import 'package:sunliao/services/storage_service.dart';
+import 'package:sunliao/config/app_env.dart';
 
 import '../helpers/test_bootstrap.dart';
 
@@ -57,6 +59,27 @@ class _TestPushNotificationService implements PushNotificationService {
   @override
   void debugSetState(PushRuntimeState state) {
     _state = state;
+  }
+}
+
+class _FakeMediaUploadService extends MediaUploadService {
+  _FakeMediaUploadService({
+    this.avatarResult,
+    this.backgroundResult,
+  });
+
+  final String? avatarResult;
+  final String? backgroundResult;
+
+  @override
+  Future<String> uploadUserMedia(String type, File imageFile) async {
+    if (type == 'avatar') {
+      return avatarResult ?? imageFile.path;
+    }
+    if (type == 'background') {
+      return backgroundResult ?? imageFile.path;
+    }
+    return imageFile.path;
   }
 }
 
@@ -335,6 +358,7 @@ void main() {
       );
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));
+      await tester.pump(const Duration(milliseconds: 700));
 
       expect(find.text('暂无发送反馈统计'), findsOneWidget);
       expect(find.text('暂无最近发送轨迹'), findsOneWidget);
@@ -514,15 +538,43 @@ void main() {
         scrollable: find.byType(Scrollable).first,
       );
       await tester.pumpAndSettle();
+      expect(
+        find.descendant(
+          of: avatarManagementFinder,
+          matching: find.text('待补充'),
+        ),
+        findsOneWidget,
+      );
       await tester.tap(avatarManagementFinder, warnIfMissed: false);
       await tester.pump(const Duration(milliseconds: 400));
       await tester.pumpAndSettle();
 
+      expect(
+        find.byKey(const Key('settings-avatar-management-preview')),
+        findsOneWidget,
+      );
       expect(find.byKey(const Key('settings-avatar-sheet')), findsOneWidget);
+      expect(
+        find.byKey(const Key('settings-avatar-sheet-preview')),
+        findsOneWidget,
+      );
       expect(
         find.byKey(const Key('settings-avatar-replace-action')),
         findsOneWidget,
       );
+      expect(
+        tester
+            .widget<Text>(find.byKey(const Key('settings-avatar-sheet-status')))
+            .data,
+        '当前还在使用默认头像',
+      );
+      expect(
+        tester
+            .widget<Text>(find.byKey(const Key('settings-avatar-sheet-badge')))
+            .data,
+        '待补充',
+      );
+      expect(find.text('补一个头像'), findsOneWidget);
     },
   );
 
@@ -534,6 +586,7 @@ void main() {
         enableRemoteHydration: false,
       );
       final authProvider = AuthProvider();
+      await authProvider.updatePhone('13800138000');
       final friendProvider = FriendProvider(enableRemoteHydration: false);
       final settingsProvider = SettingsProvider(enableRemoteHydration: false);
       await settingsProvider.updateInvisibleMode(true);
@@ -559,6 +612,43 @@ void main() {
       );
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));
+
+      expect(
+        find.descendant(
+          of: find.byKey(const Key('settings-overview-focus-card')),
+          matching: find.text('消息提醒当前已收起'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: find.byKey(const Key('settings-overview-focus-card')),
+          matching: find.text('提醒已收起'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: find.byKey(const Key('settings-device-status-notification')),
+          matching: find.text('提醒已收起'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: find.byKey(const Key('settings-device-status-presence')),
+          matching: find.text('展示已收起'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: find.byKey(const Key('settings-device-status-vibration')),
+          matching: find.text('提醒已收起'),
+        ),
+        findsOneWidget,
+      );
+
       await tester.scrollUntilVisible(
         find.byKey(const Key('settings-invisible-mode-item')),
         120,
@@ -607,9 +697,9 @@ void main() {
           .single
           .data;
 
-      expect(invisibleBadgeText, '低曝光');
-      expect(notificationBadgeText, '易漏消息');
-      expect(vibrationBadgeText, '更安静');
+      expect(invisibleBadgeText, '展示已收起');
+      expect(notificationBadgeText, '提醒已收起');
+      expect(vibrationBadgeText, '提醒已收起');
     },
   );
 
@@ -670,7 +760,7 @@ void main() {
               find.byKey(const Key('settings-inline-feedback-title')),
             )
             .data,
-        '\u5df2\u5207\u5230\u9690\u8eab\u6a21\u5f0f',
+        '\u5c55\u793a\u5df2\u5207\u5230\u9690\u8eab',
       );
       expect(
         tester
@@ -678,7 +768,7 @@ void main() {
               find.byKey(const Key('settings-inline-feedback-badge')),
             )
             .data,
-        '\u4f4e\u66dd\u5149',
+        '\u5c55\u793a\u5df2\u6536\u8d77',
       );
 
       final notificationSwitch = find.descendant(
@@ -715,7 +805,7 @@ void main() {
               find.byKey(const Key('settings-inline-feedback-badge')),
             )
             .data,
-        '\u5df2\u5173\u95ed',
+        '\u63d0\u9192\u5df2\u6536\u8d77',
       );
 
       final vibrationSwitch = find.descendant(
@@ -744,7 +834,7 @@ void main() {
               find.byKey(const Key('settings-inline-feedback-title')),
             )
             .data,
-        '\u63d0\u9192\u5df2\u5207\u5230\u66f4\u5b89\u9759',
+        '\u9707\u52a8\u63d0\u9192\u5df2\u7ecf\u6536\u8d77',
       );
       expect(
         tester
@@ -752,7 +842,7 @@ void main() {
               find.byKey(const Key('settings-inline-feedback-badge')),
             )
             .data,
-        '\u66f4\u5b89\u9759',
+        '\u63d0\u9192\u5df2\u6536\u8d77',
       );
     },
   );
@@ -817,12 +907,20 @@ void main() {
           .single
           .data;
 
-      expect(currentBadgeText, '安静观察');
+      expect(currentBadgeText, '展示已收起');
       expect(
         find.byKey(const Key('settings-inline-feedback-card')),
         findsOneWidget,
       );
-      expect(find.text('已切到安静观察'), findsOneWidget);
+      expect(find.text('体验预设已切到安静观察'), findsOneWidget);
+      expect(
+        tester
+            .widget<Text>(
+              find.byKey(const Key('settings-inline-feedback-badge')),
+            )
+            .data,
+        '\u5c55\u793a\u5df2\u6536\u8d77',
+      );
       await tester.scrollUntilVisible(
         find.byKey(const Key('settings-invisible-mode-item')),
         120,
@@ -878,7 +976,7 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));
 
-      expect(find.text('建议开启系统通知权限'), findsOneWidget);
+      expect(find.text('系统通知权限还没打开'), findsOneWidget);
       expect(
         find.byKey(const Key('settings-notification-runtime-card')),
         findsOneWidget,
@@ -905,6 +1003,60 @@ void main() {
       );
       expect(find.text('去系统设置'), findsWidgets);
       expect(find.text('通知待授权'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'settings screen should surface syncing notification channel in overview focus',
+    (tester) async {
+      PushNotificationService.instance.debugSetState(
+        const PushRuntimeState(
+          notificationsEnabled: true,
+          permissionGranted: true,
+        ),
+      );
+      final chatProvider = ChatProvider(
+        enableRealtime: false,
+        enableRemoteHydration: false,
+      );
+      final authProvider = AuthProvider();
+      await authProvider.updatePhone('13800138000');
+      final friendProvider = FriendProvider(enableRemoteHydration: false);
+      final settingsProvider = SettingsProvider(enableRemoteHydration: false);
+      addTearDown(chatProvider.dispose);
+      addTearDown(authProvider.dispose);
+      addTearDown(friendProvider.dispose);
+      addTearDown(settingsProvider.dispose);
+
+      await tester.pumpWidget(
+        MultiProvider(
+          providers: [
+            ChangeNotifierProvider<AuthProvider>.value(value: authProvider),
+            ChangeNotifierProvider<ChatProvider>.value(value: chatProvider),
+            ChangeNotifierProvider<FriendProvider>.value(value: friendProvider),
+            ChangeNotifierProvider<SettingsProvider>.value(
+              value: settingsProvider,
+            ),
+          ],
+          child: const MaterialApp(home: SettingsScreen()),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+
+      expect(find.text('通知通道正在同步'), findsOneWidget);
+      final runtimeBadgeText = tester
+          .widgetList<Text>(
+            find.descendant(
+              of: find.byKey(const Key('settings-notification-runtime-badge')),
+              matching: find.byType(Text),
+            ),
+          )
+          .single
+          .data;
+
+      expect(runtimeBadgeText, '通道同步中');
+      expect(find.text('刷新状态'), findsWidgets);
     },
   );
 
@@ -1559,7 +1711,7 @@ void main() {
               find.byKey(const Key('settings-inline-feedback-badge')),
             )
             .data,
-        '\u5df2\u5c31\u7eea',
+        '\u901a\u9053\u5df2\u5c31\u7eea',
       );
       expect(
         tester
@@ -1657,7 +1809,7 @@ void main() {
               find.byKey(const Key('settings-inline-feedback-badge')),
             )
             .data,
-        '\u5df2\u5c31\u7eea',
+        '\u901a\u9053\u5df2\u5c31\u7eea',
       );
       expect(
         tester
@@ -1842,14 +1994,42 @@ void main() {
         scrollable: find.byType(Scrollable).first,
       );
       await tester.pumpAndSettle();
+      expect(
+        find.descendant(
+          of: avatarManagementItem,
+          matching: find.text('已同步'),
+        ),
+        findsOneWidget,
+      );
       await tester.tap(avatarManagementItem, warnIfMissed: false);
       await tester.pumpAndSettle();
 
+      expect(
+        find.byKey(const Key('settings-avatar-management-preview')),
+        findsOneWidget,
+      );
       expect(find.byKey(const Key('settings-avatar-sheet')), findsOneWidget);
+      expect(
+        find.byKey(const Key('settings-avatar-sheet-preview')),
+        findsOneWidget,
+      );
       expect(
         find.byKey(const Key('settings-avatar-delete-action')),
         findsOneWidget,
       );
+      expect(
+        tester
+            .widget<Text>(find.byKey(const Key('settings-avatar-sheet-status')))
+            .data,
+        '当前头像已经同步',
+      );
+      expect(
+        tester
+            .widget<Text>(find.byKey(const Key('settings-avatar-sheet-badge')))
+            .data,
+        '展示中',
+      );
+      expect(find.text('重新上传头像'), findsOneWidget);
 
       await tester.tap(
         find.byKey(const Key('settings-avatar-delete-action')),
@@ -1895,6 +2075,17 @@ void main() {
         scrollable: find.byType(Scrollable).first,
       );
       await tester.pumpAndSettle();
+      expect(
+        find.descendant(
+          of: backgroundManagementItem,
+          matching: find.text('首屏已生效'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const Key('settings-background-management-preview')),
+        findsOneWidget,
+      );
       await tester.tap(backgroundManagementItem, warnIfMissed: false);
       await tester.pumpAndSettle();
 
@@ -1903,9 +2094,30 @@ void main() {
         findsOneWidget,
       );
       expect(
+        find.byKey(const Key('settings-background-sheet-preview')),
+        findsOneWidget,
+      );
+      expect(
         find.byKey(const Key('settings-background-delete-action')),
         findsOneWidget,
       );
+      expect(
+        tester
+            .widget<Text>(
+              find.byKey(const Key('settings-background-sheet-status')),
+            )
+            .data,
+        '当前背景已经生效',
+      );
+      expect(
+        tester
+            .widget<Text>(
+              find.byKey(const Key('settings-background-sheet-badge')),
+            )
+            .data,
+        '首屏展示中',
+      );
+      expect(find.text('重新上传背景'), findsOneWidget);
 
       await tester.tap(
         find.byKey(const Key('settings-background-delete-action')),
@@ -1948,16 +2160,17 @@ void main() {
     'settings screen should show inline feedback after avatar and background update succeeds',
     (tester) async {
       ImageUploadService.debugAvatarPickOverride = (_) async {
-        await ImageUploadService.saveAvatarReference(
-            'avatar/mock_uploaded.png');
-        return File(r'C:\mock\sunliao_avatar.jpg');
+        return File('avatar/mock_local_pick.jpg');
       };
       ImageUploadService.debugBackgroundPickOverride = (_) async {
-        await ImageUploadService.saveBackgroundReference(
-          'background/mock_uploaded.png',
-        );
-        return File(r'C:\mock\sunliao_background.jpg');
+        return File('background/mock_local_pick.jpg');
       };
+
+      final mediaUploadService = _FakeMediaUploadService(
+        avatarResult: AppEnv.resolveMediaUrl('avatar/mock_uploaded.png'),
+        backgroundResult:
+            AppEnv.resolveMediaUrl('background/mock_uploaded.png'),
+      );
 
       final chatProvider = ChatProvider(
         enableRealtime: false,
@@ -1981,7 +2194,9 @@ void main() {
               value: settingsProvider,
             ),
           ],
-          child: const MaterialApp(home: SettingsScreen()),
+          child: MaterialApp(
+            home: SettingsScreen(mediaUploadService: mediaUploadService),
+          ),
         ),
       );
       await tester.pump();
@@ -1995,25 +2210,33 @@ void main() {
         120,
         scrollable: find.byType(Scrollable).first,
       );
-      await tester.pumpAndSettle();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
       await tester.tap(avatarManagementItem, warnIfMissed: false);
-      await tester.pumpAndSettle();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(find.text('补一个头像'), findsOneWidget);
 
       await tester.tap(
         find.byKey(const Key('settings-avatar-replace-action')),
         warnIfMissed: false,
       );
-      await tester.pumpAndSettle();
-      await tester.scrollUntilVisible(
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      await tester.pump(const Duration(milliseconds: 80));
+      await tester.pump(const Duration(milliseconds: 300));
+      await tester.fling(find.byType(ListView), const Offset(0, 1800), 3000);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+
+      expect(
         find.byKey(const Key('settings-inline-feedback-card')),
-        -120,
-        scrollable: find.byType(Scrollable).first,
+        findsOneWidget,
       );
-      await tester.pumpAndSettle();
 
       expect(
         await ImageUploadService.getAvatarPath(),
-        'avatar/mock_uploaded.png',
+        AppEnv.resolveMediaUrl('avatar/mock_uploaded.png'),
       );
       expect(
         tester
@@ -2031,6 +2254,19 @@ void main() {
             .data,
         '\u8d44\u6599\u5df2\u5237\u65b0',
       );
+      await tester.scrollUntilVisible(
+        avatarManagementItem,
+        120,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.descendant(
+          of: avatarManagementItem,
+          matching: find.text('已同步'),
+        ),
+        findsOneWidget,
+      );
 
       final backgroundManagementItem = find.byKey(
         const Key('settings-background-management-item'),
@@ -2040,25 +2276,33 @@ void main() {
         120,
         scrollable: find.byType(Scrollable).first,
       );
-      await tester.pumpAndSettle();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
       await tester.tap(backgroundManagementItem, warnIfMissed: false);
-      await tester.pumpAndSettle();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(find.text('补一张背景'), findsOneWidget);
 
       await tester.tap(
         find.byKey(const Key('settings-background-replace-action')),
         warnIfMissed: false,
       );
-      await tester.pumpAndSettle();
-      await tester.scrollUntilVisible(
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      await tester.pump(const Duration(milliseconds: 80));
+      await tester.pump(const Duration(milliseconds: 300));
+      await tester.fling(find.byType(ListView), const Offset(0, 1800), 3000);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+
+      expect(
         find.byKey(const Key('settings-inline-feedback-card')),
-        -120,
-        scrollable: find.byType(Scrollable).first,
+        findsOneWidget,
       );
-      await tester.pumpAndSettle();
 
       expect(
         await ImageUploadService.getBackgroundPath(),
-        'background/mock_uploaded.png',
+        AppEnv.resolveMediaUrl('background/mock_uploaded.png'),
       );
       expect(
         tester
@@ -2075,6 +2319,19 @@ void main() {
             )
             .data,
         '\u6c1b\u56f4\u5df2\u5237\u65b0',
+      );
+      await tester.scrollUntilVisible(
+        backgroundManagementItem,
+        120,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.descendant(
+          of: backgroundManagementItem,
+          matching: find.text('首屏已生效'),
+        ),
+        findsOneWidget,
       );
     },
   );
@@ -2130,6 +2387,13 @@ void main() {
         find.byKey(const Key('settings-phone-input')),
         '13900139000',
       );
+      await tester.pump();
+      expect(
+        tester
+            .widget<TextButton>(find.byKey(const Key('settings-phone-save')))
+            .onPressed,
+        isNotNull,
+      );
       await tester.tap(find.byKey(const Key('settings-phone-save')));
       await tester.pumpAndSettle();
 
@@ -2145,6 +2409,23 @@ void main() {
                 find.byKey(const Key('settings-inline-feedback-title')))
             .data,
         '\u624b\u673a\u53f7\u5df2\u7ecf\u66f4\u65b0',
+      );
+      expect(
+        tester
+            .widget<Text>(
+              find.byKey(const Key('settings-inline-feedback-badge')),
+            )
+            .data,
+        '\u8d26\u53f7\u5df2\u5237\u65b0',
+      );
+      expect(
+        tester
+            .widget<Text>(
+              find.byKey(const Key('settings-inline-feedback-description')),
+            )
+            .data,
+        contains(
+            '\u65b0\u7684\u624b\u673a\u53f7\u5df2\u7ecf\u5199\u56de\u5f53\u524d\u8d26\u53f7\u8d44\u6599'),
       );
 
       final passwordItem = find.byKey(const Key('settings-password-item'));
@@ -2187,6 +2468,13 @@ void main() {
         find.byKey(const Key('settings-password-confirm-input')),
         '654321',
       );
+      await tester.pump();
+      expect(
+        tester
+            .widget<TextButton>(find.byKey(const Key('settings-password-save')))
+            .onPressed,
+        isNotNull,
+      );
       await tester.tap(find.byKey(const Key('settings-password-save')));
       await tester.pumpAndSettle();
 
@@ -2208,11 +2496,28 @@ void main() {
             .data,
         '\u5bc6\u7801\u5df2\u7ecf\u66f4\u65b0',
       );
+      expect(
+        tester
+            .widget<Text>(
+              find.byKey(const Key('settings-inline-feedback-badge')),
+            )
+            .data,
+        '\u5b89\u5168\u5df2\u5237\u65b0',
+      );
+      expect(
+        tester
+            .widget<Text>(
+              find.byKey(const Key('settings-inline-feedback-description')),
+            )
+            .data,
+        contains(
+            '\u65b0\u7684\u672c\u5730\u5bc6\u7801\u5df2\u7ecf\u5199\u56de\u5f53\u524d\u5b89\u5168\u8bbe\u7f6e'),
+      );
     },
   );
 
   testWidgets(
-    'settings screen should surface inline feedback for invalid phone and password input',
+    'settings screen should keep account sheets open until inputs are valid',
     (tester) async {
       final chatProvider = ChatProvider(
         enableRealtime: false,
@@ -2259,30 +2564,35 @@ void main() {
         find.byKey(const Key('settings-phone-input')),
         '12345',
       );
+      await tester.pump();
+      expect(
+        tester
+            .widget<TextButton>(find.byKey(const Key('settings-phone-save')))
+            .onPressed,
+        isNull,
+      );
       await tester.tap(find.byKey(const Key('settings-phone-save')));
-      await tester.pumpAndSettle();
+      await tester.pump();
 
       expect(authProvider.phone, isNull);
+      expect(find.byKey(const Key('settings-phone-sheet')), findsOneWidget);
       expect(
-        find.byKey(const Key('settings-inline-feedback-card')),
+        find.byKey(const Key('settings-phone-validation-card')),
         findsOneWidget,
       );
       expect(
-        tester
-            .widget<Text>(
-              find.byKey(const Key('settings-inline-feedback-title')),
-            )
-            .data,
-        '\u624b\u673a\u53f7\u683c\u5f0f\u6709\u8bef',
+        find.descendant(
+          of: find.byKey(const Key('settings-phone-validation-card')),
+          matching: find.text('还需要完整的 11 位手机号'),
+        ),
+        findsOneWidget,
       );
       expect(
-        tester
-            .widget<Text>(
-              find.byKey(const Key('settings-inline-feedback-badge')),
-            )
-            .data,
-        '\u672a\u4fdd\u5b58',
+        find.byKey(const Key('settings-inline-feedback-card')),
+        findsNothing,
       );
+      await tester.tap(find.byKey(const Key('settings-phone-cancel')));
+      await tester.pumpAndSettle();
 
       final passwordItem = find.byKey(const Key('settings-password-item'));
       await tester.scrollUntilVisible(
@@ -2306,31 +2616,32 @@ void main() {
         find.byKey(const Key('settings-password-confirm-input')),
         '654321',
       );
-      await tester.tap(find.byKey(const Key('settings-password-save')));
-      await tester.pumpAndSettle();
-      await tester.scrollUntilVisible(
-        find.byKey(const Key('settings-inline-feedback-card')),
-        -120,
-        scrollable: find.byType(Scrollable).first,
+      await tester.pump();
+      expect(
+        tester
+            .widget<TextButton>(find.byKey(const Key('settings-password-save')))
+            .onPressed,
+        isNull,
       );
-      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('settings-password-save')));
+      await tester.pump();
 
       expect(StorageService.getLocalPassword(), '123456');
+      expect(find.byKey(const Key('settings-password-sheet')), findsOneWidget);
       expect(
-        tester
-            .widget<Text>(
-              find.byKey(const Key('settings-inline-feedback-title')),
-            )
-            .data,
-        '\u65e7\u5bc6\u7801\u4e0d\u6b63\u786e',
+        find.byKey(const Key('settings-password-validation-card')),
+        findsOneWidget,
       );
       expect(
-        tester
-            .widget<Text>(
-              find.byKey(const Key('settings-inline-feedback-badge')),
-            )
-            .data,
-        '\u672a\u4fdd\u5b58',
+        find.descendant(
+          of: find.byKey(const Key('settings-password-validation-card')),
+          matching: find.text('旧密码还未校验通过'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const Key('settings-inline-feedback-card')),
+        findsNothing,
       );
     },
   );
@@ -2407,11 +2718,105 @@ void main() {
 
       final responsiveRect = tester.getRect(responsivePreset);
       final balancedRect = tester.getRect(balancedPreset);
+      final quietObserveRect = tester.getRect(quietObservePreset);
       expect(responsiveRect.width, lessThanOrEqualTo(148.5));
       expect(balancedRect.width, lessThanOrEqualTo(148.5));
+      expect(responsiveRect.height, lessThanOrEqualTo(60));
+      expect(balancedRect.height, lessThanOrEqualTo(60));
+      expect(quietObserveRect.height, lessThanOrEqualTo(60));
 
       final actionRect = tester.getRect(notificationAction);
+      expect(actionRect.width, greaterThanOrEqualTo(220));
       expect(actionRect.bottom, lessThanOrEqualTo(640));
+
+      final deleteAccountCard = find.byKey(
+        const Key('settings-delete-account-card'),
+      );
+      await tester.scrollUntilVisible(
+        deleteAccountCard,
+        120,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const Key('settings-account-actions-card')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const Key('settings-logout-card')),
+        findsOneWidget,
+      );
+      expect(deleteAccountCard, findsOneWidget);
+
+      final deleteCardRect = tester.getRect(deleteAccountCard);
+      expect(deleteCardRect.width, greaterThanOrEqualTo(280));
+      expect(deleteCardRect.bottom, lessThanOrEqualTo(640));
+    },
+  );
+
+  testWidgets(
+    'settings screen should keep overview and toggles stable on tight size',
+    (tester) async {
+      tester.view.physicalSize = const Size(320, 568);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+      });
+
+      final chatProvider = ChatProvider(
+        enableRealtime: false,
+        enableRemoteHydration: false,
+      );
+      final authProvider = AuthProvider();
+      final friendProvider = FriendProvider(enableRemoteHydration: false);
+      final settingsProvider = SettingsProvider(enableRemoteHydration: false);
+      addTearDown(chatProvider.dispose);
+      addTearDown(authProvider.dispose);
+      addTearDown(friendProvider.dispose);
+      addTearDown(settingsProvider.dispose);
+
+      await tester.pumpWidget(
+        MultiProvider(
+          providers: [
+            ChangeNotifierProvider<AuthProvider>.value(value: authProvider),
+            ChangeNotifierProvider<ChatProvider>.value(value: chatProvider),
+            ChangeNotifierProvider<FriendProvider>.value(value: friendProvider),
+            ChangeNotifierProvider<SettingsProvider>.value(
+              value: settingsProvider,
+            ),
+          ],
+          child: const MaterialApp(home: SettingsScreen()),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+
+      final phoneAction = find.byKey(
+        const Key('settings-overview-phone-action'),
+      );
+      final presetResponsive = find.byKey(
+        const Key('settings-preset-responsive'),
+      );
+
+      await tester.scrollUntilVisible(
+        presetResponsive,
+        100,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.pumpAndSettle();
+
+      expect(phoneAction, findsOneWidget);
+      expect(presetResponsive, findsOneWidget);
+      expect(tester.takeException(), isNull);
+
+      final phoneActionRect = tester.getRect(phoneAction);
+      final presetRect = tester.getRect(presetResponsive);
+
+      expect(phoneActionRect.width, greaterThanOrEqualTo(240));
+      expect(presetRect.width, greaterThanOrEqualTo(240));
+      expect(presetRect.height, lessThanOrEqualTo(60));
     },
   );
 }

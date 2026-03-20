@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
@@ -8,6 +9,8 @@ import '../models/models.dart';
 import '../services/storage_service.dart';
 
 class NotificationCenterProvider extends ChangeNotifier {
+  static const Duration _persistDebounce = Duration(milliseconds: 320);
+
   NotificationCenterProvider._() {
     _loadFromStorage();
   }
@@ -16,27 +19,30 @@ class NotificationCenterProvider extends ChangeNotifier {
       NotificationCenterProvider._();
 
   final List<AppNotification> _items = <AppNotification>[];
+  Timer? _persistTimer;
 
   List<AppNotification> get items => List.unmodifiable(_items);
 
   int get unreadCount => _items.where((item) => !item.isRead).length;
 
   Future<void> reloadFromStorage() async {
+    _cancelScheduledPersist();
     _loadFromStorage();
     notifyListeners();
   }
 
   Future<void> clearSession() async {
+    _cancelScheduledPersist();
     _items.clear();
-    await StorageService.clearNotificationCenterState();
     notifyListeners();
+    await StorageService.clearNotificationCenterState();
   }
 
   Future<void> markRead(String id) async {
     final index = _items.indexWhere((item) => item.id == id);
     if (index == -1) return;
     _items[index] = _items[index].copyWith(isRead: true);
-    await _persist();
+    _schedulePersist();
     notifyListeners();
   }
 
@@ -48,7 +54,7 @@ class NotificationCenterProvider extends ChangeNotifier {
       changed = true;
     }
     if (!changed) return;
-    await _persist();
+    _schedulePersist();
     notifyListeners();
   }
 
@@ -65,7 +71,7 @@ class NotificationCenterProvider extends ChangeNotifier {
       changed = true;
     }
     if (!changed) return;
-    await _persist();
+    _schedulePersist();
     notifyListeners();
   }
 
@@ -93,7 +99,7 @@ class NotificationCenterProvider extends ChangeNotifier {
       changed = true;
     }
     if (!changed) return;
-    await _persist();
+    _schedulePersist();
     notifyListeners();
   }
 
@@ -104,7 +110,7 @@ class NotificationCenterProvider extends ChangeNotifier {
           item.type == AppNotificationType.message && item.threadId == threadId,
     );
     if (_items.length == originalLength) return;
-    await _persist();
+    _schedulePersist();
     notifyListeners();
   }
 
@@ -116,7 +122,7 @@ class NotificationCenterProvider extends ChangeNotifier {
           item.requestId == requestId,
     );
     if (_items.length == originalLength) return;
-    await _persist();
+    _schedulePersist();
     notifyListeners();
   }
 
@@ -130,7 +136,7 @@ class NotificationCenterProvider extends ChangeNotifier {
           item.userId == userId && (types == null || types.contains(item.type)),
     );
     if (_items.length == originalLength) return;
-    await _persist();
+    _schedulePersist();
     notifyListeners();
   }
 
@@ -181,20 +187,21 @@ class NotificationCenterProvider extends ChangeNotifier {
       ..clear()
       ..addAll(remappedItems);
     _sort();
-    await _persist();
+    _schedulePersist();
     notifyListeners();
   }
 
   Future<void> remove(String id) async {
     _items.removeWhere((item) => item.id == id);
-    await _persist();
+    _schedulePersist();
     notifyListeners();
   }
 
   Future<void> clearAll() async {
+    _cancelScheduledPersist();
     _items.clear();
-    await _persist();
     notifyListeners();
+    await _persist();
   }
 
   Future<void> addChatMessageNotification({
@@ -224,7 +231,7 @@ class NotificationCenterProvider extends ChangeNotifier {
       _items[index] = notification;
       _sort();
     }
-    await _persist();
+    _schedulePersist();
     notifyListeners();
   }
 
@@ -249,7 +256,7 @@ class NotificationCenterProvider extends ChangeNotifier {
       _items[index] = notification;
       _sort();
     }
-    await _persist();
+    _schedulePersist();
     notifyListeners();
   }
 
@@ -312,7 +319,7 @@ class NotificationCenterProvider extends ChangeNotifier {
     if (_items.length > 100) {
       _items.removeRange(100, _items.length);
     }
-    await _persist();
+    _schedulePersist();
     notifyListeners();
   }
 
@@ -320,6 +327,18 @@ class NotificationCenterProvider extends ChangeNotifier {
     await StorageService.saveNotificationCenterState(
       jsonEncode(_items.map((item) => item.toJson()).toList(growable: false)),
     );
+  }
+
+  void _schedulePersist() {
+    _persistTimer?.cancel();
+    _persistTimer = Timer(_persistDebounce, () {
+      unawaited(_persist());
+    });
+  }
+
+  void _cancelScheduledPersist() {
+    _persistTimer?.cancel();
+    _persistTimer = null;
   }
 
   String? _remapMessageSourceKey(

@@ -14,6 +14,17 @@ export interface ReportRecord {
   status: 'pending' | 'reviewed' | 'dismissed';
 }
 
+export type ReportCreateStatus =
+  | 'accepted'
+  | 'duplicate'
+  | 'rate_limited'
+  | 'ignored_self';
+
+export interface ReportCreateResult {
+  reportId: string | null;
+  status: ReportCreateStatus;
+}
+
 const REPORT_DEDUP_MS = 24 * 60 * 60_000; // 24h dedup window per target
 const REPORT_HOURLY_LIMIT = 10;           // max reports per user per hour
 const REPORT_HOURLY_WINDOW_MS = 60 * 60_000;
@@ -30,10 +41,10 @@ export class ReportService {
   async createReport(
     actor: TokenUser,
     dto: CreateReportDto,
-  ): Promise<{ reportId: string }> {
+  ): Promise<ReportCreateResult> {
     // Prevent self-reporting
     if (dto.targetType === 'user' && dto.targetId === actor.userId) {
-      return { reportId: 'noop' };
+      return { reportId: null, status: 'ignored_self' };
     }
 
     // Hourly rate limit: max 10 reports per user per hour
@@ -42,7 +53,7 @@ export class ReportService {
       (t) => now - t < REPORT_HOURLY_WINDOW_MS,
     );
     if (hourlyTimes.length >= REPORT_HOURLY_LIMIT) {
-      return { reportId: 'rate_limited' };
+      return { reportId: null, status: 'rate_limited' };
     }
     hourlyTimes.push(now);
     this.hourlyReportTimes.set(actor.userId, hourlyTimes);
@@ -51,7 +62,7 @@ export class ReportService {
     const dedupKey = `${actor.userId}:${dto.targetType}:${dto.targetId}`;
     const lastReport = this.recentReports.get(dedupKey) ?? 0;
     if (now - lastReport < REPORT_DEDUP_MS) {
-      return { reportId: 'dedup' };
+      return { reportId: null, status: 'duplicate' };
     }
     this.recentReports.set(dedupKey, now);
 
@@ -74,6 +85,6 @@ export class ReportService {
       );
     }
 
-    return { reportId };
+    return { reportId, status: 'accepted' };
   }
 }

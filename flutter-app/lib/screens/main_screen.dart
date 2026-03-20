@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
@@ -5,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
 import '../config/theme.dart';
+import '../providers/auth_provider.dart';
 import '../providers/chat_provider.dart';
 import '../providers/friend_provider.dart';
 import '../widgets/friends_tab.dart';
@@ -23,14 +25,25 @@ class MainScreen extends StatefulWidget {
 
 class _MainScreenState extends State<MainScreen> {
   late int _currentIndex;
+  late final List<Widget> _tabChildren;
   String _lastFriendSyncKey = '';
   bool _friendSyncQueued = false;
+  Timer? _routeHintTimer;
+  bool _showRouteSyncHint = false;
+  String? _lastHandledEntryHintKey;
+  int _lastHandledAuthEntryHintVersion = 0;
   static const int _tabCount = 4;
 
   @override
   void initState() {
     super.initState();
     _currentIndex = _sanitizeIndex(widget.initialIndex);
+    _tabChildren = const <Widget>[
+      MessagesTab(),
+      MatchTab(),
+      FriendsTab(),
+      ProfileTab(),
+    ];
   }
 
   @override
@@ -48,16 +61,13 @@ class _MainScreenState extends State<MainScreen> {
     }
   }
 
-  int _sanitizeIndex(int index) => index.clamp(0, _tabCount - 1);
-
-  Widget _buildTab(int index) {
-    return switch (index) {
-      0 => const MessagesTab(),
-      1 => const MatchTab(),
-      2 => const FriendsTab(),
-      _ => const ProfileTab(),
-    };
+  @override
+  void dispose() {
+    _routeHintTimer?.cancel();
+    super.dispose();
   }
+
+  int _sanitizeIndex(int index) => index.clamp(0, _tabCount - 1);
 
   void _syncCurrentIndexFromRoute() {
     final routeIndex = _resolveRouteIndex();
@@ -73,6 +83,14 @@ class _MainScreenState extends State<MainScreen> {
         return null;
       }
       return _sanitizeIndex(int.tryParse(tab) ?? widget.initialIndex);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  String? _resolveRouteEntrySource() {
+    try {
+      return GoRouterState.of(context).uri.queryParameters['entry'];
     } catch (_) {
       return null;
     }
@@ -107,11 +125,74 @@ class _MainScreenState extends State<MainScreen> {
     });
   }
 
+  ({String key, String source})? _resolveEntryHintRequest({
+    required String? routeEntrySource,
+    required int authEntryHintVersion,
+  }) {
+    if (routeEntrySource != null && routeEntrySource.isNotEmpty) {
+      if (authEntryHintVersion > _lastHandledAuthEntryHintVersion) {
+        _lastHandledAuthEntryHintVersion = authEntryHintVersion;
+        context.read<AuthProvider>().consumePendingEntryHintSource();
+      }
+      return (key: 'route:$routeEntrySource', source: routeEntrySource);
+    }
+
+    if (authEntryHintVersion <= _lastHandledAuthEntryHintVersion) {
+      return null;
+    }
+
+    _lastHandledAuthEntryHintVersion = authEntryHintVersion;
+    final pendingSource =
+        context.read<AuthProvider>().consumePendingEntryHintSource();
+    if (pendingSource == null || pendingSource.isEmpty) {
+      return null;
+    }
+
+    return (
+      key: 'auth:$authEntryHintVersion:$pendingSource',
+      source: pendingSource,
+    );
+  }
+
+  void _scheduleRouteEntryHint({
+    required String? routeEntrySource,
+    required int authEntryHintVersion,
+  }) {
+    final request = _resolveEntryHintRequest(
+      routeEntrySource: routeEntrySource,
+      authEntryHintVersion: authEntryHintVersion,
+    );
+    if (request == null || request.key == _lastHandledEntryHintKey) {
+      return;
+    }
+    _lastHandledEntryHintKey = request.key;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (request.source == 'login') {
+        _showPostLoginSyncHint();
+      }
+    });
+  }
+
+  void _showPostLoginSyncHint() {
+    _routeHintTimer?.cancel();
+    setState(() {
+      _showRouteSyncHint = true;
+    });
+    _routeHintTimer = Timer(const Duration(milliseconds: 1800), () {
+      if (!mounted) return;
+      setState(() {
+        _showRouteSyncHint = false;
+      });
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final mediaQuery = MediaQuery.of(context);
     final screenSize = mediaQuery.size;
     final compactNav = screenSize.height < 760 || screenSize.width < 390;
+    final navBlurSigma = compactNav ? 10.0 : 13.0;
     final iconSize = compactNav ? 21.0 : 23.0;
     final labelSize = compactNav ? 11.0 : 12.0;
 
@@ -124,11 +205,18 @@ class _MainScreenState extends State<MainScreen> {
     final pendingCount = context.select<FriendProvider, int>(
       (provider) => provider.pendingRequestCount,
     );
+    final pendingEntryHintVersion = context.select<AuthProvider, int>(
+      (provider) => provider.pendingEntryHintVersion,
+    );
     final friendSyncKey = context.select<FriendProvider, String>((provider) {
       final friendIds = provider.friends.keys.toList()..sort();
       return friendIds.join('|');
     });
     _scheduleFriendSync(friendSyncKey);
+    _scheduleRouteEntryHint(
+      routeEntrySource: _resolveRouteEntrySource(),
+      authEntryHintVersion: pendingEntryHintVersion,
+    );
 
     return PopScope<void>(
       canPop: _currentIndex == 0,
@@ -141,37 +229,82 @@ class _MainScreenState extends State<MainScreen> {
         body: Column(
           children: [
             Expanded(
-              child: RepaintBoundary(
-                child: Stack(
-                  key: const Key('main-tab-stack'),
-                  children: List<Widget>.generate(
-                    _tabCount,
-                    (index) => Positioned.fill(
-                      child: Visibility(
-                        visible: _currentIndex == index,
-                        maintainAnimation: true,
-                        maintainState: true,
-                        child: TickerMode(
-                          enabled: _currentIndex == index,
-                          child: RepaintBoundary(
-                            child: AnimatedOpacity(
-                              opacity: _currentIndex == index ? 1.0 : 0.0,
-                              duration: const Duration(milliseconds: 180),
-                              curve: Curves.easeOut,
-                              child: _buildTab(index),
-                            ),
-                          ),
-                        ),
-                      ),
+              child: Stack(
+                children: [
+                  RepaintBoundary(
+                    child: IndexedStack(
+                      key: const Key('main-tab-stack'),
+                      index: _currentIndex,
+                      children: _tabChildren,
                     ),
                   ),
-                ),
+                  Positioned(
+                    top: mediaQuery.padding.top + 12,
+                    left: 14,
+                    right: 14,
+                    child: !_showRouteSyncHint
+                        ? const SizedBox.shrink()
+                        : IgnorePointer(
+                            child: Container(
+                              key: const Key('main-entry-sync-hint'),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 14,
+                                vertical: 12,
+                              ),
+                              decoration: BoxDecoration(
+                                color:
+                                    AppColors.pureBlack.withValues(alpha: 0.76),
+                                borderRadius: BorderRadius.circular(18),
+                                border: Border.all(color: AppColors.white12),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: AppColors.pureBlack
+                                        .withValues(alpha: 0.18),
+                                    blurRadius: 12,
+                                    offset: const Offset(0, 8),
+                                  ),
+                                ],
+                              ),
+                              child: Row(
+                                children: [
+                                  const SizedBox(
+                                    width: 16,
+                                    height: 16,
+                                    child: CircularProgressIndicator(
+                                      key: Key('main-entry-sync-spinner'),
+                                      strokeWidth: 2,
+                                      valueColor: AlwaysStoppedAnimation<Color>(
+                                        AppColors.brandBlue,
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: Text(
+                                      '已登录，首页正在同步资料、消息和通知',
+                                      style: const TextStyle(
+                                        fontSize: 12.5,
+                                        fontWeight: FontWeight.w300,
+                                        color: AppColors.textPrimary,
+                                        height: 1.35,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                  ),
+                ],
               ),
             ),
             RepaintBoundary(
               child: ClipRect(
                 child: BackdropFilter(
-                  filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
+                  filter: ImageFilter.blur(
+                    sigmaX: navBlurSigma,
+                    sigmaY: navBlurSigma,
+                  ),
                   child: Container(
                     decoration: BoxDecoration(
                       color: AppColors.pureBlack.withValues(alpha: 0.82),
@@ -254,104 +387,89 @@ class _MainScreenState extends State<MainScreen> {
     required double labelSize,
   }) {
     final isSelected = _currentIndex == index;
+    final iconColor =
+        isSelected ? AppColors.textPrimary : AppColors.textTertiary;
+    final labelColor =
+        isSelected ? AppColors.textSecondary : AppColors.textTertiary;
 
     return GestureDetector(
       onTap: () => _selectTab(index),
       behavior: HitTestBehavior.opaque,
-      child: TweenAnimationBuilder<double>(
-        tween: Tween(begin: 0.0, end: isSelected ? 1.0 : 0.0),
-        duration: const Duration(milliseconds: 240),
-        curve: Curves.easeOutCubic,
-        builder: (context, t, _) {
-          final dy = -4.0 * t;
-          final iconColor = Color.lerp(
-            AppColors.textTertiary,
-            AppColors.textPrimary,
-            t,
-          )!;
-          final labelColor = Color.lerp(
-            AppColors.textTertiary,
-            AppColors.textSecondary,
-            t,
-          )!;
-          return Column(
-            mainAxisSize: MainAxisSize.min,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Stack(
+            clipBehavior: Clip.none,
+            alignment: Alignment.center,
             children: [
-              Transform.translate(
-                offset: Offset(0, dy),
-                child: Stack(
-                  clipBehavior: Clip.none,
-                  alignment: Alignment.center,
-                  children: [
-                    // glow behind icon when selected
-                    if (t > 0.01)
-                      Container(
-                        width: iconSize * 1.8,
-                        height: iconSize * 1.8,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color:
-                              AppColors.brandBlue.withValues(alpha: 0.08 * t),
-                        ),
-                      ),
-                    Icon(
-                      isSelected ? filledIcon : outlineIcon,
-                      color: iconColor,
-                      size: iconSize,
+              if (isSelected)
+                Container(
+                  width: iconSize * 1.8,
+                  height: iconSize * 1.8,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: AppColors.brandBlue.withValues(alpha: 0.08),
+                  ),
+                ),
+              Icon(
+                isSelected ? filledIcon : outlineIcon,
+                color: iconColor,
+                size: iconSize,
+              ),
+              if (badgeCount > 0)
+                Positioned(
+                  right: -10,
+                  top: -6,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 5,
+                      vertical: 1,
                     ),
-                    if (badgeCount > 0)
-                      Positioned(
-                        right: -10,
-                        top: -6,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 5,
-                            vertical: 1,
-                          ),
-                          decoration: const BoxDecoration(
-                            color: AppColors.error,
-                            borderRadius: BorderRadius.all(Radius.circular(10)),
-                          ),
-                          constraints: const BoxConstraints(minWidth: 16),
-                          child: Text(
-                            badgeCount > 99 ? '99+' : '$badgeCount',
-                            textAlign: TextAlign.center,
-                            style: const TextStyle(
-                              fontSize: 9,
-                              color: Colors.white,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
+                    decoration: const BoxDecoration(
+                      color: AppColors.error,
+                      borderRadius: BorderRadius.all(Radius.circular(10)),
+                    ),
+                    constraints: const BoxConstraints(minWidth: 16),
+                    child: Text(
+                      badgeCount > 99 ? '99+' : '$badgeCount',
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        fontSize: 9,
+                        color: Colors.white,
+                        fontWeight: FontWeight.w600,
                       ),
-                  ],
+                    ),
+                  ),
                 ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                label,
-                style: TextStyle(
-                  fontSize: labelSize,
-                  fontWeight: isSelected ? FontWeight.w500 : FontWeight.w300,
-                  color: labelColor,
-                  letterSpacing: 0.2,
-                ),
-              ),
-              const SizedBox(height: 2),
-              // liquid dot indicator
-              AnimatedContainer(
-                duration: const Duration(milliseconds: 300),
-                curve: Curves.easeOutCubic,
-                width: isSelected ? 4 : 0,
-                height: isSelected ? 4 : 0,
-                decoration: BoxDecoration(
-                  color: AppColors.brandBlue,
-                  shape: BoxShape.circle,
-                ),
-              ),
             ],
-          );
-        },
+          ),
+          const SizedBox(height: 4),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: labelSize,
+              fontWeight: isSelected ? FontWeight.w500 : FontWeight.w300,
+              color: labelColor,
+              letterSpacing: 0.2,
+            ),
+          ),
+          const SizedBox(height: 2),
+          SizedBox(
+            height: 4,
+            child: Center(
+              child: isSelected
+                  ? Container(
+                      width: 4,
+                      height: 4,
+                      decoration: const BoxDecoration(
+                        color: AppColors.brandBlue,
+                        shape: BoxShape.circle,
+                      ),
+                    )
+                  : const SizedBox.shrink(),
+            ),
+          ),
+        ],
       ),
     );
   }

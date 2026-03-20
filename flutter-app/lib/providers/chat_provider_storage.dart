@@ -3,16 +3,23 @@ part of 'chat_provider.dart';
 const Duration _remoteSyncGracePeriod = Duration(minutes: 10);
 const Duration _pendingRemoteMatchWindow = Duration(minutes: 2);
 const Duration _recentRemoteMessageSyncWindow = Duration(seconds: 3);
+const Duration _chatStatePersistDebounce = Duration(milliseconds: 650);
 
 extension ChatProviderStorage on ChatProvider {
   void _schedulePersist() {
     _persistTimer?.cancel();
-    _persistTimer = Timer(const Duration(milliseconds: 180), () {
-      _persistState();
+    _persistTimer = Timer(_chatStatePersistDebounce, () {
+      unawaited(_persistState());
     });
   }
 
   Future<void> _persistState() async {
+    if (_persistInFlight) {
+      _persistRequestedWhileInFlight = true;
+      return;
+    }
+
+    _persistInFlight = true;
     final snapshot = <String, dynamic>{
       'threads': _threads.map((key, value) => MapEntry(key, value.toJson())),
       'messages': _messages.map(
@@ -30,7 +37,15 @@ extension ChatProviderStorage on ChatProvider {
       'deletedThreads': _deletedThreads,
       'deliveryStats': _deliveryStatsService.toJson(),
     };
-    await _repository.saveChatState(snapshot);
+    try {
+      await _repository.saveChatState(snapshot);
+    } finally {
+      _persistInFlight = false;
+      if (_persistRequestedWhileInFlight) {
+        _persistRequestedWhileInFlight = false;
+        _schedulePersist();
+      }
+    }
   }
 
   void _restoreFromStorage() {

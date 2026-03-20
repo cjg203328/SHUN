@@ -50,6 +50,8 @@ class ChatProvider extends ChangeNotifier {
   final bool _enableRemoteHydration;
   String? _activeThreadId;
   Timer? _persistTimer;
+  bool _persistInFlight = false;
+  bool _persistRequestedWhileInFlight = false;
   bool _isRestoring = false;
   bool _isDisposed = false;
 

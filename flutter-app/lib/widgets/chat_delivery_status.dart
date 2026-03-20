@@ -305,8 +305,8 @@ class ChatDeliveryBadge extends StatelessWidget {
             ? [
                 BoxShadow(
                   color: color.withValues(alpha: 0.12),
-                  blurRadius: 12,
-                  spreadRadius: 0.4,
+                  blurRadius: 8,
+                  spreadRadius: 0.2,
                 ),
               ]
             : null,
@@ -335,13 +335,8 @@ class ChatDeliveryBadge extends StatelessWidget {
       duration: const Duration(milliseconds: 220),
       switchInCurve: Curves.easeOutCubic,
       switchOutCurve: Curves.easeInCubic,
-      transitionBuilder: (child, animation) {
-        final scale = Tween<double>(begin: 0.94, end: 1).animate(animation);
-        return FadeTransition(
-          opacity: animation,
-          child: ScaleTransition(scale: scale, child: child),
-        );
-      },
+      transitionBuilder: (child, animation) =>
+          FadeTransition(opacity: animation, child: child),
       child: child,
     );
   }
@@ -378,8 +373,8 @@ class ChatDeliveryStatusCard extends StatelessWidget {
             ? [
                 BoxShadow(
                   color: color.withValues(alpha: 0.1),
-                  blurRadius: 16,
-                  spreadRadius: 0.5,
+                  blurRadius: 10,
+                  spreadRadius: 0.2,
                 ),
               ]
             : null,
@@ -446,13 +441,8 @@ class ChatDeliveryStatusCard extends StatelessWidget {
       duration: const Duration(milliseconds: 240),
       switchInCurve: Curves.easeOutCubic,
       switchOutCurve: Curves.easeInCubic,
-      transitionBuilder: (child, animation) {
-        final scale = Tween<double>(begin: 0.96, end: 1).animate(animation);
-        return FadeTransition(
-          opacity: animation,
-          child: ScaleTransition(scale: scale, child: child),
-        );
-      },
+      transitionBuilder: (child, animation) =>
+          FadeTransition(opacity: animation, child: child),
       child: child,
     );
   }

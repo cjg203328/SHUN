@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import '../services/auth_service.dart';
 import '../services/analytics_service.dart';
@@ -16,12 +18,15 @@ class AuthProvider extends ChangeNotifier {
   bool _isInitialized = false;
   String? _pendingOtpRequestId;
   String? _lastError;
+  String? _pendingEntryHintSource;
+  int _pendingEntryHintVersion = 0;
 
   bool get isLoggedIn => _isLoggedIn;
   bool get isInitialized => _isInitialized;
   String? get phone => _phone;
   String? get uid => _uid;
   String? get lastError => _lastError;
+  int get pendingEntryHintVersion => _pendingEntryHintVersion;
 
   AuthProvider({AuthService? authService})
       : _authService = authService ?? AuthService() {
@@ -91,20 +96,10 @@ class AuthProvider extends ChangeNotifier {
       );
 
       await NotificationCenterProvider.instance.reloadFromStorage();
-      await PushNotificationService.instance.initialize(
-        notificationsEnabled: true,
-      );
-      await AnalyticsService.instance.track(
-        'login_success',
-        properties: {
-          'uid': result.uid,
-          'phoneTail': result.phone.length >= 4
-              ? result.phone.substring(result.phone.length - 4)
-              : result.phone,
-        },
-      );
-
+      _pendingEntryHintSource = 'login';
+      _pendingEntryHintVersion++;
       notifyListeners();
+      unawaited(_runPostLoginWarmup(result));
       return true;
     } catch (error) {
       await AnalyticsService.instance.track(
@@ -119,22 +114,24 @@ class AuthProvider extends ChangeNotifier {
   }
 
   Future<bool> deleteAccount() async {
-    try {
-      await _authService.deleteAccount();
-    } catch (_) {}
     _phone = null;
     _token = null;
     _uid = null;
     _isLoggedIn = false;
     _pendingOtpRequestId = null;
     _lastError = null;
+    _pendingEntryHintSource = null;
+    notifyListeners();
     ChatSocketService.instance.disconnect();
+
+    try {
+      await _authService.deleteAccount();
+    } catch (_) {}
     await NotificationCenterProvider.instance.clearSession();
     await PushNotificationService.instance.clearSession();
     await AnalyticsService.instance.track('account_deleted');
     await AnalyticsService.instance.clearSession();
     PermissionManager.clearSessionCache();
-    notifyListeners();
     return true;
   }
 
@@ -145,9 +142,12 @@ class AuthProvider extends ChangeNotifier {
     _isLoggedIn = false;
     _pendingOtpRequestId = null;
     _lastError = null;
+    _pendingEntryHintSource = null;
 
-    await _authService.clearLoginState();
+    notifyListeners();
+
     ChatSocketService.instance.disconnect();
+    await _authService.clearLoginState();
     await NotificationCenterProvider.instance.clearSession();
     await PushNotificationService.instance.clearSession();
     await AnalyticsService.instance.track('logout');
@@ -164,5 +164,41 @@ class AuthProvider extends ChangeNotifier {
       return error.userMessage;
     }
     return '操作失败，请稍后重试';
+  }
+
+  String? consumePendingEntryHintSource() {
+    final source = _pendingEntryHintSource;
+    _pendingEntryHintSource = null;
+    return source;
+  }
+
+  @visibleForTesting
+  void debugPrimePendingEntryHintSource(String source) {
+    _pendingEntryHintSource = source;
+    _pendingEntryHintVersion++;
+  }
+
+  Future<void> _runPostLoginWarmup(LoginResult result) async {
+    try {
+      await PushNotificationService.instance.initialize(
+        notificationsEnabled: true,
+      );
+    } catch (error, stackTrace) {
+      await AnalyticsService.instance.captureError(
+        error,
+        stackTrace,
+        hint: 'auth_login_push_initialize',
+      );
+    }
+
+    await AnalyticsService.instance.track(
+      'login_success',
+      properties: {
+        'uid': result.uid,
+        'phoneTail': result.phone.length >= 4
+            ? result.phone.substring(result.phone.length - 4)
+            : result.phone,
+      },
+    );
   }
 }

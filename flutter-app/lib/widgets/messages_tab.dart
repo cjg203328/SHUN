@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
@@ -16,7 +17,10 @@ import 'app_toast.dart';
 import 'chat_delivery_status.dart';
 
 class MessagesTab extends StatefulWidget {
-  const MessagesTab({super.key});
+  const MessagesTab({super.key, DateTime Function()? nowProvider})
+      : nowProvider = nowProvider ?? DateTime.now;
+
+  final DateTime Function() nowProvider;
 
   @override
   State<MessagesTab> createState() => _MessagesTabState();
@@ -100,13 +104,15 @@ class _MessagesTabState extends State<MessagesTab> {
 
   Timer? _timer;
   final TextEditingController _searchController = TextEditingController();
+  final ValueNotifier<int> _relativeTimeTick = ValueNotifier<int>(0);
   String _searchQuery = '';
 
   @override
   void initState() {
     super.initState();
     _timer = Timer.periodic(_threadRefreshInterval, (_) {
-      if (mounted) setState(() {});
+      if (!mounted) return;
+      _relativeTimeTick.value++;
     });
     _searchController.addListener(() {
       final q = _searchController.text.trim();
@@ -117,6 +123,7 @@ class _MessagesTabState extends State<MessagesTab> {
   @override
   void dispose() {
     _timer?.cancel();
+    _relativeTimeTick.dispose();
     _searchController.dispose();
     super.dispose();
   }
@@ -321,6 +328,8 @@ class _MessagesTabState extends State<MessagesTab> {
                                     isFriend: isFriend,
                                     deliveryFailureState: deliveryFailureState,
                                     deliveryState: deliveryState,
+                                    relativeTimeListenable: _relativeTimeTick,
+                                    nowProvider: widget.nowProvider,
                                     isPinned: chatProvider.isThreadPinned(
                                       thread.id,
                                     ),
@@ -463,7 +472,6 @@ class _AnimatedThreadEntryState extends State<_AnimatedThreadEntry>
     with SingleTickerProviderStateMixin {
   late final AnimationController _ctrl;
   late final Animation<double> _opacity;
-  late final Animation<Offset> _slide;
 
   @override
   void initState() {
@@ -473,10 +481,6 @@ class _AnimatedThreadEntryState extends State<_AnimatedThreadEntry>
       vsync: this,
     );
     _opacity = CurvedAnimation(parent: _ctrl, curve: Curves.easeOut);
-    _slide = Tween<Offset>(
-      begin: const Offset(0, 0.06),
-      end: Offset.zero,
-    ).animate(CurvedAnimation(parent: _ctrl, curve: Curves.easeOutCubic));
 
     // Stagger: max 8 items × 30ms = 240ms cap
     final delay = Duration(milliseconds: (widget.index.clamp(0, 8) * 30));
@@ -493,10 +497,7 @@ class _AnimatedThreadEntryState extends State<_AnimatedThreadEntry>
 
   @override
   Widget build(BuildContext context) {
-    return FadeTransition(
-      opacity: _opacity,
-      child: SlideTransition(position: _slide, child: widget.child),
-    );
+    return FadeTransition(opacity: _opacity, child: widget.child);
   }
 }
 
@@ -538,6 +539,8 @@ class _ThreadItem extends StatelessWidget {
     required this.isFriend,
     required this.deliveryFailureState,
     required this.deliveryState,
+    required this.relativeTimeListenable,
+    required this.nowProvider,
     required this.onTap,
     this.onLongPress,
     this.isPinned = false,
@@ -549,6 +552,8 @@ class _ThreadItem extends StatelessWidget {
   final bool isFriend;
   final ChatDeliveryFailureState? deliveryFailureState;
   final ChatDeliveryStatusSpec deliveryState;
+  final ValueListenable<int> relativeTimeListenable;
+  final DateTime Function() nowProvider;
   final VoidCallback onTap;
   final VoidCallback? onLongPress;
   final bool isPinned;
@@ -567,9 +572,6 @@ class _ThreadItem extends StatelessWidget {
       deliveryFailureState: deliveryFailureState,
       deliveryState: deliveryState,
     );
-    final showUrgencyHint = !isFriend &&
-        thread.timeRemaining.inMinutes > 0 &&
-        thread.timeRemaining.inMinutes <= 120;
     final accentColor = priority?.color ??
         (thread.unreadCount > 0
             ? AppColors.brandBlue.withValues(alpha: 0.2)
@@ -648,11 +650,22 @@ class _ThreadItem extends StatelessWidget {
                           ],
                         ),
                       ),
-                      Text(
-                        _formatTime(lastMessage?.timestamp),
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              fontSize: layout.metaSize,
+                      ValueListenableBuilder<int>(
+                        valueListenable: relativeTimeListenable,
+                        builder: (context, _, __) {
+                          final currentTime = nowProvider();
+                          return Text(
+                            _formatTime(
+                              lastMessage?.timestamp,
+                              currentTime: currentTime,
                             ),
+                            key: Key('messages-thread-last-time-${thread.id}'),
+                            style:
+                                Theme.of(context).textTheme.bodySmall?.copyWith(
+                                      fontSize: layout.metaSize,
+                                    ),
+                          );
+                        },
                       ),
                     ],
                   ),
@@ -742,90 +755,120 @@ class _ThreadItem extends StatelessWidget {
                       ],
                     ],
                   ),
-                  if (priority != null || showUrgencyHint) ...[
-                    SizedBox(height: layout.priorityTopSpacing),
-                    Wrap(
-                      spacing: layout.tagSpacing,
-                      runSpacing: 6,
-                      children: [
-                        if (priority != null)
-                          _TinyTag(
-                            key: Key('messages-thread-priority-${thread.id}'),
-                            label: priority.label,
-                            background: priority.color.withValues(alpha: 0.14),
-                            foreground: priority.color,
-                          ),
-                        if (showUrgencyHint)
-                          _TinyTag(
-                            key: Key('messages-thread-expiring-${thread.id}'),
-                            label: '即将到期',
-                            background: AppColors.error.withValues(alpha: 0.12),
-                            foreground: AppColors.error,
-                          ),
-                      ],
-                    ),
-                  ],
+                  ValueListenableBuilder<int>(
+                    valueListenable: relativeTimeListenable,
+                    builder: (context, _, __) {
+                      final currentTime = nowProvider();
+                      final timeRemaining =
+                          thread.expiresAt.difference(currentTime);
+                      final showUrgencyHint = !isFriend &&
+                          timeRemaining.inMinutes > 0 &&
+                          timeRemaining.inMinutes <= 120;
+                      if (priority == null && !showUrgencyHint) {
+                        return const SizedBox.shrink();
+                      }
+                      return Padding(
+                        padding:
+                            EdgeInsets.only(top: layout.priorityTopSpacing),
+                        child: Wrap(
+                          spacing: layout.tagSpacing,
+                          runSpacing: 6,
+                          children: [
+                            if (priority != null)
+                              _TinyTag(
+                                key: Key(
+                                    'messages-thread-priority-${thread.id}'),
+                                label: priority.label,
+                                background:
+                                    priority.color.withValues(alpha: 0.14),
+                                foreground: priority.color,
+                              ),
+                            if (showUrgencyHint)
+                              _TinyTag(
+                                key: Key(
+                                    'messages-thread-expiring-${thread.id}'),
+                                label: '即将到期',
+                                background:
+                                    AppColors.error.withValues(alpha: 0.12),
+                                foreground: AppColors.error,
+                              ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
                   if (!isFriend) ...[
                     SizedBox(height: layout.previewGap),
-                    Row(
-                      children: [
-                        Icon(
-                          Icons.access_time,
-                          size: layout.metaSize,
-                          color: thread.timeRemaining.inHours < 2
-                              ? AppColors.error
-                              : AppColors.textTertiary,
-                        ),
-                        const SizedBox(width: 4),
-                        Expanded(
-                          child: Text(
-                            _formatTimeRemaining(
-                              thread.timeRemaining,
-                              compact: layout.isCompact,
+                    ValueListenableBuilder<int>(
+                      valueListenable: relativeTimeListenable,
+                      builder: (context, _, __) {
+                        final currentTime = nowProvider();
+                        final timeRemaining =
+                            thread.expiresAt.difference(currentTime);
+                        final isNearExpiry = timeRemaining.inHours < 2;
+                        final timeColor = isNearExpiry
+                            ? AppColors.error
+                            : AppColors.textTertiary;
+                        return Row(
+                          children: [
+                            Icon(
+                              Icons.access_time,
+                              size: layout.metaSize,
+                              color: timeColor,
                             ),
-                            style: TextStyle(
-                              fontSize: layout.metaSize,
-                              fontWeight: FontWeight.w300,
-                              color: thread.timeRemaining.inHours < 2
-                                  ? AppColors.error
-                                  : AppColors.textTertiary,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                        if (moveUnreadBadgeToMetaRow) ...[
-                          const SizedBox(width: 8),
-                          Container(
-                            key: Key('messages-thread-unread-${thread.id}'),
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 5,
-                              vertical: 2,
-                            ),
-                            constraints: const BoxConstraints(minWidth: 18),
-                            decoration: const BoxDecoration(
-                              color: AppColors.brandBlue,
-                              borderRadius:
-                                  BorderRadius.all(Radius.circular(10)),
-                            ),
-                            child: Text(
-                              thread.unreadCount > 99
-                                  ? '99+'
-                                  : '${thread.unreadCount}',
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                fontSize: layout.metaSize - 1,
-                                fontWeight: FontWeight.w600,
-                                color: AppColors.pureBlack,
+                            const SizedBox(width: 4),
+                            Expanded(
+                              child: Text(
+                                _formatTimeRemaining(
+                                  timeRemaining,
+                                  compact: layout.isCompact,
+                                ),
+                                key: Key(
+                                  'messages-thread-remaining-time-${thread.id}',
+                                ),
+                                style: TextStyle(
+                                  fontSize: layout.metaSize,
+                                  fontWeight: FontWeight.w300,
+                                  color: timeColor,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
                               ),
                             ),
-                          ),
-                        ],
-                        if (showTrailingIntimacy) ...[
-                          const SizedBox(width: 8),
-                          _buildIntimacyChip(layout),
-                        ],
-                      ],
+                            if (moveUnreadBadgeToMetaRow) ...[
+                              const SizedBox(width: 8),
+                              Container(
+                                key: Key('messages-thread-unread-${thread.id}'),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 5,
+                                  vertical: 2,
+                                ),
+                                constraints: const BoxConstraints(minWidth: 18),
+                                decoration: const BoxDecoration(
+                                  color: AppColors.brandBlue,
+                                  borderRadius:
+                                      BorderRadius.all(Radius.circular(10)),
+                                ),
+                                child: Text(
+                                  thread.unreadCount > 99
+                                      ? '99+'
+                                      : '${thread.unreadCount}',
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                    fontSize: layout.metaSize - 1,
+                                    fontWeight: FontWeight.w600,
+                                    color: AppColors.pureBlack,
+                                  ),
+                                ),
+                              ),
+                            ],
+                            if (showTrailingIntimacy) ...[
+                              const SizedBox(width: 8),
+                              _buildIntimacyChip(layout),
+                            ],
+                          ],
+                        );
+                      },
                     ),
                   ],
                 ],
@@ -942,10 +985,12 @@ class _ThreadItem extends StatelessWidget {
     return null;
   }
 
-  String _formatTime(DateTime? time) {
+  String _formatTime(
+    DateTime? time, {
+    required DateTime currentTime,
+  }) {
     if (time == null) return '';
-    final now = DateTime.now();
-    final diff = now.difference(time);
+    final diff = currentTime.difference(time);
 
     if (diff.inMinutes < 1) return '刚刚';
     if (diff.inHours < 1) return '${diff.inMinutes}分钟前';
