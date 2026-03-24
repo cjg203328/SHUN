@@ -105,6 +105,10 @@ class _MessagesTabState extends State<MessagesTab> {
   Timer? _timer;
   final TextEditingController _searchController = TextEditingController();
   final ValueNotifier<int> _relativeTimeTick = ValueNotifier<int>(0);
+  int _cachedThreadListRevision = -1;
+  _MessagesThreadListViewData? _cachedThreadListViewData;
+  final Map<String, _MessagesThreadSummaryCacheEntry> _threadSummaryViewCache =
+      <String, _MessagesThreadSummaryCacheEntry>{};
   String _searchQuery = '';
 
   @override
@@ -128,8 +132,70 @@ class _MessagesTabState extends State<MessagesTab> {
     super.dispose();
   }
 
+  _MessagesThreadListViewData _selectThreadListViewData(
+    ChatProvider chatProvider,
+  ) {
+    final revision = chatProvider.threadListPresentationRevision;
+    final cachedState = _cachedThreadListViewData;
+    if (cachedState != null && _cachedThreadListRevision == revision) {
+      return cachedState;
+    }
+
+    final viewData = _MessagesThreadListViewData(
+      entries: chatProvider.sortedThreads
+          .map(
+            (thread) => _MessagesThreadListEntryViewData(
+              threadId: thread.id,
+              userId: thread.otherUser.id,
+              nickname: thread.otherUser.nickname,
+            ),
+          )
+          .toList(growable: false),
+    );
+    if (_threadSummaryViewCache.isNotEmpty) {
+      final visibleThreadIds =
+          viewData.entries.map((entry) => entry.threadId).toSet();
+      _threadSummaryViewCache.removeWhere(
+        (threadId, _) => !visibleThreadIds.contains(threadId),
+      );
+    }
+    _cachedThreadListRevision = revision;
+    _cachedThreadListViewData = viewData;
+    return viewData;
+  }
+
+  _MessagesThreadSummaryViewData? _selectThreadSummaryViewData(
+    ChatProvider chatProvider,
+    String threadId,
+    bool isFriend,
+  ) {
+    final snapshot = chatProvider.threadSummarySnapshot(threadId);
+    if (snapshot == null) {
+      _threadSummaryViewCache.remove(threadId);
+      return null;
+    }
+    final cachedState = _threadSummaryViewCache[threadId];
+    if (cachedState != null &&
+        identical(cachedState.snapshot, snapshot) &&
+        cachedState.isFriend == isFriend) {
+      return cachedState.viewData;
+    }
+
+    final viewData = _MessagesThreadSummaryViewData.fromSnapshot(
+      snapshot,
+      isFriend: isFriend,
+    );
+    _threadSummaryViewCache[threadId] = _MessagesThreadSummaryCacheEntry(
+      snapshot: snapshot,
+      isFriend: isFriend,
+      viewData: viewData,
+    );
+    return viewData;
+  }
+
   @override
   Widget build(BuildContext context) {
+    final layout = _MessagesLayoutSpec.fromSize(MediaQuery.of(context).size);
     return Scaffold(
       appBar: AppBar(
         backgroundColor: AppColors.pureBlack,
@@ -145,15 +211,13 @@ class _MessagesTabState extends State<MessagesTab> {
         ),
         centerTitle: false,
         actions: [
-          Consumer<NotificationCenterProvider>(
-            builder: (context, provider, child) {
+          Selector<NotificationCenterProvider, int>(
+            selector: (context, provider) => provider.unreadCount,
+            builder: (context, unreadCount, child) {
               return Stack(
                 children: [
-                  IconButton(
-                    icon: const Icon(Icons.notifications_none),
-                    onPressed: () => context.push('/notifications'),
-                  ),
-                  if (provider.unreadCount > 0)
+                  child!,
+                  if (unreadCount > 0)
                     Positioned(
                       right: 8,
                       top: 8,
@@ -168,9 +232,7 @@ class _MessagesTabState extends State<MessagesTab> {
                           minHeight: 16,
                         ),
                         child: Text(
-                          provider.unreadCount > 99
-                              ? '99+'
-                              : '${provider.unreadCount}',
+                          unreadCount > 99 ? '99+' : '$unreadCount',
                           style: const TextStyle(
                             fontSize: 10,
                             fontWeight: FontWeight.w500,
@@ -183,197 +245,118 @@ class _MessagesTabState extends State<MessagesTab> {
                 ],
               );
             },
+            child: IconButton(
+              icon: const Icon(Icons.notifications_none),
+              onPressed: () => context.push('/notifications'),
+            ),
           ),
         ],
       ),
-      body: Consumer2<ChatProvider, FriendProvider>(
-        builder: (context, chatProvider, friendProvider, child) {
-          final layout =
-              _MessagesLayoutSpec.fromSize(MediaQuery.of(context).size);
-          final allThreads = chatProvider.sortedThreads;
-          final threads = _searchQuery.isEmpty
-              ? allThreads
-              : allThreads
-                  .where((t) => t.otherUser.nickname
-                      .toLowerCase()
-                      .contains(_searchQuery.toLowerCase()))
-                  .toList();
-
-          return Column(
-            children: [
-              Padding(
-                padding: layout.searchOuterPadding,
-                child: TextField(
-                  controller: _searchController,
-                  style: const TextStyle(
-                    fontSize: 14,
-                    color: AppColors.textPrimary,
-                  ),
-                  decoration: InputDecoration(
-                    hintText: '搜索',
-                    hintStyle: const TextStyle(
-                      fontSize: 14,
-                      color: AppColors.textTertiary,
-                    ),
-                    prefixIcon: Icon(
-                      Icons.search,
-                      size: layout.searchIconSize,
-                      color: AppColors.textTertiary,
-                    ),
-                    suffixIcon: _searchQuery.isNotEmpty
-                        ? GestureDetector(
-                            onTap: () => _searchController.clear(),
-                            child: const Icon(
-                              Icons.close,
-                              size: 16,
-                              color: AppColors.textTertiary,
-                            ),
-                          )
-                        : null,
-                    filled: true,
-                    fillColor: AppColors.white08,
-                    contentPadding: layout.searchContentPadding,
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide.none,
-                    ),
-                  ),
+      body: Column(
+        children: [
+          Padding(
+            padding: layout.searchOuterPadding,
+            child: TextField(
+              controller: _searchController,
+              style: const TextStyle(
+                fontSize: 14,
+                color: AppColors.textPrimary,
+              ),
+              decoration: InputDecoration(
+                hintText: '搜索',
+                hintStyle: const TextStyle(
+                  fontSize: 14,
+                  color: AppColors.textTertiary,
+                ),
+                prefixIcon: Icon(
+                  Icons.search,
+                  size: layout.searchIconSize,
+                  color: AppColors.textTertiary,
+                ),
+                suffixIcon: _searchQuery.isNotEmpty
+                    ? GestureDetector(
+                        onTap: () => _searchController.clear(),
+                        child: const Icon(
+                          Icons.close,
+                          size: 16,
+                          color: AppColors.textTertiary,
+                        ),
+                      )
+                    : null,
+                filled: true,
+                fillColor: AppColors.white08,
+                contentPadding: layout.searchContentPadding,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide.none,
                 ),
               ),
-              Expanded(
-                child: allThreads.isEmpty
-                    ? _EmptyMessagesState()
-                    : threads.isEmpty
-                        ? const Center(
-                            child: Text(
-                              '没有匹配的对话',
-                              style: TextStyle(
-                                fontSize: 14,
-                                color: AppColors.textTertiary,
-                              ),
-                            ),
-                          )
-                        : ListView.builder(
-                            itemCount: threads.length,
-                            itemBuilder: (context, index) {
-                              final thread = threads[index];
-                              final messages =
-                                  chatProvider.getMessages(thread.id);
-                              final lastMessage =
-                                  messages.isNotEmpty ? messages.last : null;
-                              final draft = chatProvider.draftForThread(
-                                thread.id,
-                              );
-                              final isFriend = friendProvider
-                                      .isFriend(thread.otherUser.id) &&
-                                  !friendProvider.isBlocked(
-                                    thread.otherUser.id,
-                                  );
-                              final deliveryFailureState = lastMessage !=
-                                          null &&
-                                      lastMessage.status == MessageStatus.failed
-                                  ? chatProvider.deliveryFailureStateFor(
-                                      thread.id,
-                                      lastMessage.id,
-                                    )
-                                  : null;
-                              final deliveryState = lastMessage == null
-                                  ? const ChatDeliveryStatusSpec()
-                                  : (resolveChatDeliveryStatus(
-                                        lastMessage,
-                                        failureState: deliveryFailureState ??
-                                            ChatDeliveryFailureState.retryable,
-                                      ) ??
-                                      const ChatDeliveryStatusSpec());
+            ),
+          ),
+          Expanded(
+            child: Selector<ChatProvider, int>(
+              selector: (context, chatProvider) =>
+                  chatProvider.threadListPresentationRevision,
+              builder: (context, _, child) {
+                final listViewData = _selectThreadListViewData(
+                  context.read<ChatProvider>(),
+                );
+                final normalizedQuery = _searchQuery.toLowerCase();
+                final threads = _searchQuery.isEmpty
+                    ? listViewData.entries
+                    : listViewData.entries
+                        .where(
+                          (entry) => entry.nickname
+                              .toLowerCase()
+                              .contains(normalizedQuery),
+                        )
+                        .toList(growable: false);
 
-                              return _AnimatedThreadEntry(
-                                index: index,
-                                child: Dismissible(
-                                  key: Key(thread.id),
-                                  direction: DismissDirection.endToStart,
-                                  confirmDismiss: (_) async {
-                                    final confirm = await AppDialog.showConfirm(
-                                      context,
-                                      title: '确定要删除这段对话吗？',
-                                      content: '删除后将无法恢复',
-                                      confirmText: '删除',
-                                      isDanger: true,
-                                    );
-                                    return confirm == true;
-                                  },
-                                  background: Container(
-                                    color: Colors.transparent,
-                                    alignment: Alignment.centerRight,
-                                    padding: const EdgeInsets.only(right: 20),
-                                    child: Icon(
-                                      Icons.delete_outline,
-                                      color: AppColors.error.withValues(
-                                        alpha: 0.5,
-                                      ),
-                                      size: 28,
-                                    ),
-                                  ),
-                                  onDismissed: (_) {
-                                    chatProvider.deleteThread(thread.id);
-                                    AppFeedback.showToast(
-                                      context,
-                                      AppToastCode.deleted,
-                                      subject: '对话',
-                                    );
-                                  },
-                                  child: _ThreadItem(
-                                    thread: thread,
-                                    lastMessage: lastMessage,
-                                    draft: draft,
-                                    isFriend: isFriend,
-                                    deliveryFailureState: deliveryFailureState,
-                                    deliveryState: deliveryState,
-                                    relativeTimeListenable: _relativeTimeTick,
-                                    nowProvider: widget.nowProvider,
-                                    isPinned: chatProvider.isThreadPinned(
-                                      thread.id,
-                                    ),
-                                    onTap: () {
-                                      final routeThreadId =
-                                          chatProvider.routeThreadId(
-                                                threadId: thread.id,
-                                                userId: thread.otherUser.id,
-                                              ) ??
-                                              thread.id;
-                                      context
-                                          .push('/chat/$routeThreadId')
-                                          .then((
-                                        _,
-                                      ) {
-                                        if (context.mounted) {
-                                          context.go('/main?tab=0');
-                                        }
-                                      });
-                                    },
-                                    onLongPress: () => _showThreadOptions(
-                                      context,
-                                      thread,
-                                      chatProvider,
-                                    ),
-                                  ),
-                                ),
-                              );
-                            },
-                          ),
-              ),
-            ],
-          );
-        },
+                if (listViewData.isEmpty) {
+                  return _EmptyMessagesState();
+                }
+
+                if (threads.isEmpty) {
+                  return const Center(
+                    child: Text(
+                      '没有匹配的对话',
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: AppColors.textTertiary,
+                      ),
+                    ),
+                  );
+                }
+
+                return ListView.builder(
+                  itemCount: threads.length,
+                  itemBuilder: (context, index) {
+                    final entry = threads[index];
+                    return _ThreadListEntry(
+                      index: index,
+                      threadId: entry.threadId,
+                      userId: entry.userId,
+                      relativeTimeListenable: _relativeTimeTick,
+                      nowProvider: widget.nowProvider,
+                      selectSummary: _selectThreadSummaryViewData,
+                      onShowThreadOptions: _showThreadOptions,
+                    );
+                  },
+                );
+              },
+            ),
+          ),
+        ],
       ),
     );
   }
 
   void _showThreadOptions(
     BuildContext context,
-    ChatThread thread,
-    ChatProvider chatProvider,
+    String threadId,
+    bool isPinned,
   ) {
-    final isPinned = chatProvider.isThreadPinned(thread.id);
+    final chatProvider = context.read<ChatProvider>();
     showModalBottomSheet<void>(
       context: context,
       backgroundColor: Colors.transparent,
@@ -413,9 +396,9 @@ class _MessagesTabState extends State<MessagesTab> {
               onTap: () {
                 Navigator.of(context).pop();
                 if (isPinned) {
-                  chatProvider.unpinThread(thread.id);
+                  chatProvider.unpinThread(threadId);
                 } else {
-                  chatProvider.pinThread(thread.id);
+                  chatProvider.pinThread(threadId);
                 }
               },
             ),
@@ -443,7 +426,7 @@ class _MessagesTabState extends State<MessagesTab> {
                   isDanger: true,
                 );
                 if (confirm == true && context.mounted) {
-                  chatProvider.deleteThread(thread.id);
+                  chatProvider.deleteThread(threadId);
                   AppFeedback.showToast(
                     context,
                     AppToastCode.deleted,
@@ -531,49 +514,431 @@ class _EmptyMessagesState extends StatelessWidget {
   }
 }
 
-class _ThreadItem extends StatelessWidget {
-  const _ThreadItem({
-    required this.thread,
-    required this.lastMessage,
+class _MessagesThreadListViewData {
+  const _MessagesThreadListViewData({
+    required this.entries,
+  });
+
+  final List<_MessagesThreadListEntryViewData> entries;
+
+  bool get isEmpty => entries.isEmpty;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is _MessagesThreadListViewData &&
+          listEquals(other.entries, entries);
+
+  @override
+  int get hashCode => Object.hashAll(entries);
+}
+
+class _MessagesThreadListEntryViewData {
+  const _MessagesThreadListEntryViewData({
+    required this.threadId,
+    required this.userId,
+    required this.nickname,
+  });
+
+  final String threadId;
+  final String userId;
+  final String nickname;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is _MessagesThreadListEntryViewData &&
+          other.threadId == threadId &&
+          other.userId == userId &&
+          other.nickname == nickname;
+
+  @override
+  int get hashCode => Object.hash(threadId, userId, nickname);
+}
+
+class _MessagesThreadSummaryCacheEntry {
+  const _MessagesThreadSummaryCacheEntry({
+    required this.snapshot,
+    required this.isFriend,
+    required this.viewData,
+  });
+
+  final ChatThreadSummarySnapshot snapshot;
+  final bool isFriend;
+  final _MessagesThreadSummaryViewData viewData;
+}
+
+class _MessagesThreadSummarySelectorState {
+  const _MessagesThreadSummarySelectorState({
+    required this.summaryRevision,
+    required this.isFriend,
+  });
+
+  final int summaryRevision;
+  final bool isFriend;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is _MessagesThreadSummarySelectorState &&
+          other.summaryRevision == summaryRevision &&
+          other.isFriend == isFriend;
+
+  @override
+  int get hashCode => Object.hash(summaryRevision, isFriend);
+}
+
+class _MessagesMessageSummaryViewData {
+  const _MessagesMessageSummaryViewData({
+    required this.id,
+    required this.content,
+    required this.isMe,
+    required this.timestamp,
+    required this.status,
+    required this.type,
+    required this.imagePath,
+    required this.isBurnAfterReading,
+    required this.isRead,
+    required this.imageQuality,
+    required this.failureState,
+  });
+
+  factory _MessagesMessageSummaryViewData.fromSnapshot(
+    ChatMessagePreviewSnapshot snapshot,
+  ) {
+    return _MessagesMessageSummaryViewData(
+      id: snapshot.id,
+      content: snapshot.content,
+      isMe: snapshot.isMe,
+      timestamp: snapshot.timestamp,
+      status: snapshot.status,
+      type: snapshot.type,
+      imagePath: snapshot.imagePath,
+      isBurnAfterReading: snapshot.isBurnAfterReading,
+      isRead: snapshot.isRead,
+      imageQuality: snapshot.imageQuality,
+      failureState: snapshot.failureState,
+    );
+  }
+
+  final String id;
+  final String content;
+  final bool isMe;
+  final DateTime timestamp;
+  final MessageStatus status;
+  final MessageType type;
+  final String? imagePath;
+  final bool isBurnAfterReading;
+  final bool isRead;
+  final ImageQuality? imageQuality;
+  final ChatDeliveryFailureState? failureState;
+
+  Message toMessage() {
+    return Message(
+      id: id,
+      content: content,
+      isMe: isMe,
+      timestamp: timestamp,
+      status: status,
+      type: type,
+      imagePath: imagePath,
+      isBurnAfterReading: isBurnAfterReading,
+      isRead: isRead,
+      imageQuality: imageQuality,
+    );
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is _MessagesMessageSummaryViewData &&
+          other.id == id &&
+          other.content == content &&
+          other.isMe == isMe &&
+          other.timestamp == timestamp &&
+          other.status == status &&
+          other.type == type &&
+          other.imagePath == imagePath &&
+          other.isBurnAfterReading == isBurnAfterReading &&
+          other.isRead == isRead &&
+          other.imageQuality == imageQuality &&
+          other.failureState == failureState;
+
+  @override
+  int get hashCode => Object.hash(
+        id,
+        content,
+        isMe,
+        timestamp,
+        status,
+        type,
+        imagePath,
+        isBurnAfterReading,
+        isRead,
+        imageQuality,
+        failureState,
+      );
+}
+
+class _MessagesThreadSummaryViewData {
+  const _MessagesThreadSummaryViewData({
+    required this.threadId,
+    required this.userId,
+    required this.nickname,
+    required this.avatar,
+    required this.isOnline,
+    required this.unreadCount,
+    required this.createdAt,
+    required this.expiresAt,
+    required this.intimacyPoints,
     required this.draft,
     required this.isFriend,
-    required this.deliveryFailureState,
+    required this.isPinned,
+    required this.lastMessage,
     required this.deliveryState,
+  });
+
+  static _MessagesMessageSummaryViewData? _resolveLastMessage(
+    ChatThreadSummarySnapshot snapshot,
+  ) {
+    final lastMessage = snapshot.lastMessage;
+    if (lastMessage == null) {
+      return null;
+    }
+    return _MessagesMessageSummaryViewData.fromSnapshot(lastMessage);
+  }
+
+  static ChatDeliveryStatusSpec _resolveDeliveryState(
+    _MessagesMessageSummaryViewData? lastMessage,
+  ) {
+    if (lastMessage == null) {
+      return const ChatDeliveryStatusSpec();
+    }
+    return resolveChatDeliveryStatus(
+          lastMessage.toMessage(),
+          failureState:
+              lastMessage.failureState ?? ChatDeliveryFailureState.retryable,
+        ) ??
+        const ChatDeliveryStatusSpec();
+  }
+
+  factory _MessagesThreadSummaryViewData.fromSnapshot(
+    ChatThreadSummarySnapshot snapshot, {
+    required bool isFriend,
+  }) {
+    final lastMessage = _resolveLastMessage(snapshot);
+    final deliveryState = _resolveDeliveryState(lastMessage);
+    return _MessagesThreadSummaryViewData(
+      threadId: snapshot.threadId,
+      userId: snapshot.userId,
+      nickname: snapshot.nickname,
+      avatar: snapshot.avatar,
+      isOnline: snapshot.isOnline,
+      unreadCount: snapshot.unreadCount,
+      createdAt: snapshot.createdAt,
+      expiresAt: snapshot.expiresAt,
+      intimacyPoints: snapshot.intimacyPoints,
+      draft: snapshot.draft,
+      isFriend: isFriend,
+      isPinned: snapshot.isPinned,
+      lastMessage: lastMessage,
+      deliveryState: deliveryState,
+    );
+  }
+
+  final String threadId;
+  final String userId;
+  final String nickname;
+  final String? avatar;
+  final bool isOnline;
+  final int unreadCount;
+  final DateTime createdAt;
+  final DateTime expiresAt;
+  final int intimacyPoints;
+  final String draft;
+  final bool isFriend;
+  final bool isPinned;
+  final _MessagesMessageSummaryViewData? lastMessage;
+  final ChatDeliveryStatusSpec deliveryState;
+
+  bool get hasDraft => draft.trim().isNotEmpty;
+
+  ChatDeliveryFailureState? get deliveryFailureState =>
+      lastMessage?.failureState;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is _MessagesThreadSummaryViewData &&
+          other.threadId == threadId &&
+          other.userId == userId &&
+          other.nickname == nickname &&
+          other.avatar == avatar &&
+          other.isOnline == isOnline &&
+          other.unreadCount == unreadCount &&
+          other.createdAt == createdAt &&
+          other.expiresAt == expiresAt &&
+          other.intimacyPoints == intimacyPoints &&
+          other.draft == draft &&
+          other.isFriend == isFriend &&
+          other.isPinned == isPinned &&
+          other.lastMessage == lastMessage;
+
+  @override
+  int get hashCode => Object.hash(
+        threadId,
+        userId,
+        nickname,
+        avatar,
+        isOnline,
+        unreadCount,
+        createdAt,
+        expiresAt,
+        intimacyPoints,
+        draft,
+        isFriend,
+        isPinned,
+        lastMessage,
+      );
+}
+
+class _ThreadListEntry extends StatelessWidget {
+  const _ThreadListEntry({
+    required this.index,
+    required this.threadId,
+    required this.userId,
+    required this.relativeTimeListenable,
+    required this.nowProvider,
+    required this.selectSummary,
+    required this.onShowThreadOptions,
+  });
+
+  final int index;
+  final String threadId;
+  final String userId;
+  final ValueListenable<int> relativeTimeListenable;
+  final DateTime Function() nowProvider;
+  final _MessagesThreadSummaryViewData? Function(
+    ChatProvider chatProvider,
+    String threadId,
+    bool isFriend,
+  ) selectSummary;
+  final void Function(
+    BuildContext context,
+    String threadId,
+    bool isPinned,
+  ) onShowThreadOptions;
+
+  @override
+  Widget build(BuildContext context) {
+    return Selector2<ChatProvider, FriendProvider,
+        _MessagesThreadSummarySelectorState>(
+      selector: (context, chatProvider, friendProvider) =>
+          _MessagesThreadSummarySelectorState(
+        summaryRevision: chatProvider.threadSummaryRevision(threadId),
+        isFriend: friendProvider.isFriend(userId) &&
+            !friendProvider.isBlocked(userId),
+      ),
+      builder: (context, selection, child) {
+        final viewData = selectSummary(
+          context.read<ChatProvider>(),
+          threadId,
+          selection.isFriend,
+        );
+        if (viewData == null) {
+          return const SizedBox.shrink();
+        }
+
+        return _AnimatedThreadEntry(
+          index: index,
+          child: Dismissible(
+            key: Key(viewData.threadId),
+            direction: DismissDirection.endToStart,
+            confirmDismiss: (_) async {
+              final confirm = await AppDialog.showConfirm(
+                context,
+                title: '确定要删除这段对话吗？',
+                content: '删除后将无法恢复',
+                confirmText: '删除',
+                isDanger: true,
+              );
+              return confirm == true;
+            },
+            background: Container(
+              color: Colors.transparent,
+              alignment: Alignment.centerRight,
+              padding: const EdgeInsets.only(right: 20),
+              child: Icon(
+                Icons.delete_outline,
+                color: AppColors.error.withValues(alpha: 0.5),
+                size: 28,
+              ),
+            ),
+            onDismissed: (_) {
+              context.read<ChatProvider>().deleteThread(viewData.threadId);
+              AppFeedback.showToast(
+                context,
+                AppToastCode.deleted,
+                subject: '对话',
+              );
+            },
+            child: _ThreadItem(
+              viewData: viewData,
+              relativeTimeListenable: relativeTimeListenable,
+              nowProvider: nowProvider,
+              onTap: () {
+                final routeThreadId =
+                    context.read<ChatProvider>().routeThreadId(
+                              threadId: viewData.threadId,
+                              userId: viewData.userId,
+                            ) ??
+                        viewData.threadId;
+                context.push('/chat/$routeThreadId').then((_) {
+                  if (context.mounted) {
+                    context.go('/main?tab=0');
+                  }
+                });
+              },
+              onLongPress: () => onShowThreadOptions(
+                context,
+                viewData.threadId,
+                viewData.isPinned,
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _ThreadItem extends StatelessWidget {
+  const _ThreadItem({
+    required this.viewData,
     required this.relativeTimeListenable,
     required this.nowProvider,
     required this.onTap,
     this.onLongPress,
-    this.isPinned = false,
   });
 
-  final ChatThread thread;
-  final Message? lastMessage;
-  final String draft;
-  final bool isFriend;
-  final ChatDeliveryFailureState? deliveryFailureState;
-  final ChatDeliveryStatusSpec deliveryState;
+  final _MessagesThreadSummaryViewData viewData;
   final ValueListenable<int> relativeTimeListenable;
   final DateTime Function() nowProvider;
   final VoidCallback onTap;
   final VoidCallback? onLongPress;
-  final bool isPinned;
 
   @override
   Widget build(BuildContext context) {
-    final isOnline = thread.otherUser.isOnline;
-    final hasDraft = draft.trim().isNotEmpty;
     final layout = _MessagesLayoutSpec.fromSize(MediaQuery.of(context).size);
-    final showInlineIntimacy = !isFriend && !layout.isCompact;
-    final showTrailingIntimacy = !isFriend && layout.isCompact;
-    final moveUnreadBadgeToMetaRow = layout.isCompact && thread.unreadCount > 0;
-    final priority = _resolvePriorityState(
-      hasDraft: hasDraft,
-      isFriend: isFriend,
-      deliveryFailureState: deliveryFailureState,
-      deliveryState: deliveryState,
-    );
+    final showInlineIntimacy = !viewData.isFriend && !layout.isCompact;
+    final showTrailingIntimacy = !viewData.isFriend && layout.isCompact;
+    final moveUnreadBadgeToMetaRow =
+        layout.isCompact && viewData.unreadCount > 0;
+    final deliveryState = viewData.deliveryState;
+    final lastMessage = viewData.lastMessage;
+    final priority = _resolvePriorityState(viewData: viewData);
     final accentColor = priority?.color ??
-        (thread.unreadCount > 0
+        (viewData.unreadCount > 0
             ? AppColors.brandBlue.withValues(alpha: 0.2)
             : AppColors.white05);
 
@@ -581,17 +946,17 @@ class _ThreadItem extends StatelessWidget {
       onTap: onTap,
       onLongPress: onLongPress,
       child: Container(
-        key: Key('messages-thread-item-${thread.id}'),
+        key: Key('messages-thread-item-${viewData.threadId}'),
         padding: layout.itemPadding,
         decoration: BoxDecoration(
-          color: isPinned
+          color: viewData.isPinned
               ? AppColors.white05
-              : hasDraft
+              : viewData.hasDraft
                   ? AppColors.warning.withValues(alpha: 0.04)
-                  : (thread.unreadCount > 0
+                  : (viewData.unreadCount > 0
                       ? AppColors.brandBlue.withValues(alpha: 0.035)
                       : null),
-          gradient: isOnline && !isFriend
+          gradient: viewData.isOnline && !viewData.isFriend
               ? LinearGradient(
                   colors: [
                     AppColors.brandBlue.withValues(alpha: 0.03),
@@ -608,9 +973,7 @@ class _ThreadItem extends StatelessWidget {
         child: Row(
           children: [
             _ThreadAvatar(
-              thread: thread,
-              isFriend: isFriend,
-              isOnline: isOnline,
+              viewData: viewData,
               layout: layout,
             ),
             SizedBox(width: layout.avatarGap),
@@ -627,21 +990,21 @@ class _ThreadItem extends StatelessWidget {
                           crossAxisAlignment: WrapCrossAlignment.center,
                           children: [
                             Text(
-                              thread.otherUser.nickname,
+                              viewData.nickname,
                               style: TextStyle(
                                 fontSize: layout.titleSize,
                                 fontWeight: FontWeight.w400,
                                 color: AppColors.textPrimary,
                               ),
                             ),
-                            if (isFriend)
+                            if (viewData.isFriend)
                               _TinyTag(
                                 label: '好友',
                                 background:
                                     AppColors.brandBlue.withValues(alpha: 0.15),
                                 foreground: AppColors.brandBlue,
                               ),
-                            if (isPinned)
+                            if (viewData.isPinned)
                               const Icon(
                                 Icons.push_pin,
                                 size: 12,
@@ -656,10 +1019,12 @@ class _ThreadItem extends StatelessWidget {
                           final currentTime = nowProvider();
                           return Text(
                             _formatTime(
-                              lastMessage?.timestamp,
+                              viewData.lastMessage?.timestamp,
                               currentTime: currentTime,
                             ),
-                            key: Key('messages-thread-last-time-${thread.id}'),
+                            key: Key(
+                              'messages-thread-last-time-${viewData.threadId}',
+                            ),
                             style:
                                 Theme.of(context).textTheme.bodySmall?.copyWith(
                                       fontSize: layout.metaSize,
@@ -673,7 +1038,7 @@ class _ThreadItem extends StatelessWidget {
                   Row(
                     children: [
                       Expanded(
-                        child: hasDraft
+                        child: viewData.hasDraft
                             ? Row(
                                 children: [
                                   _TinyTag(
@@ -685,7 +1050,7 @@ class _ThreadItem extends StatelessWidget {
                                   const SizedBox(width: 8),
                                   Expanded(
                                     child: Text(
-                                      draft,
+                                      viewData.draft,
                                       style: TextStyle(
                                         fontSize: layout.previewSize,
                                         fontWeight: FontWeight.w300,
@@ -705,7 +1070,7 @@ class _ThreadItem extends StatelessWidget {
                                   fontSize: layout.previewSize,
                                   fontWeight: FontWeight.w300,
                                   color: deliveryState.previewColor ??
-                                      (thread.unreadCount > 0
+                                      (viewData.unreadCount > 0
                                           ? AppColors.textSecondary
                                           : AppColors.textTertiary),
                                 ),
@@ -713,7 +1078,7 @@ class _ThreadItem extends StatelessWidget {
                                 overflow: TextOverflow.ellipsis,
                               ),
                       ),
-                      if (!hasDraft && deliveryState.hasBadge) ...[
+                      if (!viewData.hasDraft && deliveryState.hasBadge) ...[
                         const SizedBox(width: 8),
                         ChatDeliveryBadge(
                           label: deliveryState.badgeLabel!,
@@ -727,30 +1092,12 @@ class _ThreadItem extends StatelessWidget {
                         _buildIntimacyChip(layout),
                       ],
                       if (!moveUnreadBadgeToMetaRow &&
-                          thread.unreadCount > 0) ...[
+                          viewData.unreadCount > 0) ...[
                         const SizedBox(width: 8),
-                        Container(
-                          key: Key('messages-thread-unread-${thread.id}'),
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 5,
-                            vertical: 2,
-                          ),
-                          constraints: const BoxConstraints(minWidth: 18),
-                          decoration: const BoxDecoration(
-                            color: AppColors.brandBlue,
-                            borderRadius: BorderRadius.all(Radius.circular(10)),
-                          ),
-                          child: Text(
-                            thread.unreadCount > 99
-                                ? '99+'
-                                : '${thread.unreadCount}',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              fontSize: layout.metaSize - 1,
-                              fontWeight: FontWeight.w600,
-                              color: AppColors.pureBlack,
-                            ),
-                          ),
+                        _UnreadBadge(
+                          threadId: viewData.threadId,
+                          unreadCount: viewData.unreadCount,
+                          fontSize: layout.metaSize - 1,
                         ),
                       ],
                     ],
@@ -760,8 +1107,8 @@ class _ThreadItem extends StatelessWidget {
                     builder: (context, _, __) {
                       final currentTime = nowProvider();
                       final timeRemaining =
-                          thread.expiresAt.difference(currentTime);
-                      final showUrgencyHint = !isFriend &&
+                          viewData.expiresAt.difference(currentTime);
+                      final showUrgencyHint = !viewData.isFriend &&
                           timeRemaining.inMinutes > 0 &&
                           timeRemaining.inMinutes <= 120;
                       if (priority == null && !showUrgencyHint) {
@@ -777,7 +1124,8 @@ class _ThreadItem extends StatelessWidget {
                             if (priority != null)
                               _TinyTag(
                                 key: Key(
-                                    'messages-thread-priority-${thread.id}'),
+                                  'messages-thread-priority-${viewData.threadId}',
+                                ),
                                 label: priority.label,
                                 background:
                                     priority.color.withValues(alpha: 0.14),
@@ -786,7 +1134,8 @@ class _ThreadItem extends StatelessWidget {
                             if (showUrgencyHint)
                               _TinyTag(
                                 key: Key(
-                                    'messages-thread-expiring-${thread.id}'),
+                                  'messages-thread-expiring-${viewData.threadId}',
+                                ),
                                 label: '即将到期',
                                 background:
                                     AppColors.error.withValues(alpha: 0.12),
@@ -797,14 +1146,14 @@ class _ThreadItem extends StatelessWidget {
                       );
                     },
                   ),
-                  if (!isFriend) ...[
+                  if (!viewData.isFriend) ...[
                     SizedBox(height: layout.previewGap),
                     ValueListenableBuilder<int>(
                       valueListenable: relativeTimeListenable,
                       builder: (context, _, __) {
                         final currentTime = nowProvider();
                         final timeRemaining =
-                            thread.expiresAt.difference(currentTime);
+                            viewData.expiresAt.difference(currentTime);
                         final isNearExpiry = timeRemaining.inHours < 2;
                         final timeColor = isNearExpiry
                             ? AppColors.error
@@ -824,7 +1173,7 @@ class _ThreadItem extends StatelessWidget {
                                   compact: layout.isCompact,
                                 ),
                                 key: Key(
-                                  'messages-thread-remaining-time-${thread.id}',
+                                  'messages-thread-remaining-time-${viewData.threadId}',
                                 ),
                                 style: TextStyle(
                                   fontSize: layout.metaSize,
@@ -837,29 +1186,10 @@ class _ThreadItem extends StatelessWidget {
                             ),
                             if (moveUnreadBadgeToMetaRow) ...[
                               const SizedBox(width: 8),
-                              Container(
-                                key: Key('messages-thread-unread-${thread.id}'),
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 5,
-                                  vertical: 2,
-                                ),
-                                constraints: const BoxConstraints(minWidth: 18),
-                                decoration: const BoxDecoration(
-                                  color: AppColors.brandBlue,
-                                  borderRadius:
-                                      BorderRadius.all(Radius.circular(10)),
-                                ),
-                                child: Text(
-                                  thread.unreadCount > 99
-                                      ? '99+'
-                                      : '${thread.unreadCount}',
-                                  textAlign: TextAlign.center,
-                                  style: TextStyle(
-                                    fontSize: layout.metaSize - 1,
-                                    fontWeight: FontWeight.w600,
-                                    color: AppColors.pureBlack,
-                                  ),
-                                ),
+                              _UnreadBadge(
+                                threadId: viewData.threadId,
+                                unreadCount: viewData.unreadCount,
+                                fontSize: layout.metaSize - 1,
                               ),
                             ],
                             if (showTrailingIntimacy) ...[
@@ -881,84 +1211,85 @@ class _ThreadItem extends StatelessWidget {
   }
 
   _ThreadPriorityState? _resolvePriorityState({
-    required bool hasDraft,
-    required bool isFriend,
-    required ChatDeliveryFailureState? deliveryFailureState,
-    required ChatDeliveryStatusSpec deliveryState,
+    required _MessagesThreadSummaryViewData viewData,
   }) {
-    if (hasDraft) {
+    if (viewData.hasDraft) {
       return const _ThreadPriorityState(
-        label: '寰呭彂鑽夌',
+        label: '草稿待发送',
         color: AppColors.warning,
       );
     }
-    if (deliveryFailureState == ChatDeliveryFailureState.threadExpired) {
+    if (viewData.deliveryFailureState ==
+        ChatDeliveryFailureState.threadExpired) {
       return const _ThreadPriorityState(
         label: '会话过期',
         color: AppColors.warning,
       );
     }
-    if (deliveryFailureState == ChatDeliveryFailureState.blockedRelation) {
+    if (viewData.deliveryFailureState ==
+        ChatDeliveryFailureState.blockedRelation) {
       return const _ThreadPriorityState(
         label: '关系受限',
         color: AppColors.warning,
       );
     }
-    if (deliveryFailureState ==
+    if (viewData.deliveryFailureState ==
         ChatDeliveryFailureState.imageUploadTokenInvalid) {
       return const _ThreadPriorityState(
         label: '凭证失效',
         color: AppColors.warning,
       );
     }
-    if (deliveryFailureState == ChatDeliveryFailureState.networkIssue) {
+    if (viewData.deliveryFailureState ==
+        ChatDeliveryFailureState.networkIssue) {
       return const _ThreadPriorityState(
         label: '网络波动',
         color: AppColors.warning,
       );
     }
-    if (deliveryFailureState ==
+    if (viewData.deliveryFailureState ==
         ChatDeliveryFailureState.imageUploadPreparationFailed) {
       return const _ThreadPriorityState(
         label: '上传失败',
         color: AppColors.error,
       );
     }
-    if (deliveryFailureState ==
+    if (viewData.deliveryFailureState ==
         ChatDeliveryFailureState.imageUploadInterrupted) {
       return const _ThreadPriorityState(
         label: '上传中断',
         color: AppColors.error,
       );
     }
-    if (deliveryFailureState ==
+    if (viewData.deliveryFailureState ==
         ChatDeliveryFailureState.imageReselectRequired) {
       return const _ThreadPriorityState(
         label: '重选图片',
         color: AppColors.error,
       );
     }
-    if (deliveryFailureState == ChatDeliveryFailureState.retryUnavailable) {
+    if (viewData.deliveryFailureState ==
+        ChatDeliveryFailureState.retryUnavailable) {
       return const _ThreadPriorityState(
         label: '暂不可重试',
         color: AppColors.warning,
       );
     }
-    if (deliveryState.actionType == ChatDeliveryAction.retry) {
+    if (viewData.deliveryState.actionType == ChatDeliveryAction.retry) {
       return const _ThreadPriorityState(
-        label: '寤鸿浼樺厛澶勭悊',
+        label: '发送失败待处理',
         color: AppColors.error,
       );
     }
-    if (deliveryState.actionType == ChatDeliveryAction.showGuide) {
-      if (deliveryState.guideFailureState ==
+    if (viewData.deliveryState.actionType == ChatDeliveryAction.showGuide) {
+      if (viewData.deliveryState.guideFailureState ==
           ChatDeliveryFailureState.imageUploadFileTooLarge) {
         return const _ThreadPriorityState(
           label: '图片过大',
           color: AppColors.error,
         );
       }
-      if (deliveryState.guideFailureState ==
+      if (viewData.deliveryState.guideFailureState ==
           ChatDeliveryFailureState.imageUploadUnsupportedFormat) {
         return const _ThreadPriorityState(
           label: '格式异常',
@@ -966,19 +1297,19 @@ class _ThreadItem extends StatelessWidget {
         );
       }
       return const _ThreadPriorityState(
-        label: '鍥剧墖闇€閲嶆柊閫夋嫨',
+        label: '发送前需要处理',
         color: AppColors.error,
       );
     }
-    if (thread.unreadCount > 0) {
+    if (viewData.unreadCount > 0) {
       return const _ThreadPriorityState(
-        label: '鏈夋柊娑堟伅',
+        label: '有未读消息',
         color: AppColors.brandBlue,
       );
     }
-    if (!isFriend && thread.otherUser.isOnline) {
+    if (!viewData.isFriend && viewData.isOnline) {
       return const _ThreadPriorityState(
-        label: '鐜板湪閫傚悎鍥炲',
+        label: '对方在线可聊',
         color: AppColors.success,
       );
     }
@@ -1013,7 +1344,7 @@ class _ThreadItem extends StatelessWidget {
 
   Widget _buildIntimacyChip(_MessagesLayoutSpec layout) {
     return Container(
-      key: Key('messages-thread-intimacy-${thread.id}'),
+      key: Key('messages-thread-intimacy-${viewData.threadId}'),
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
       decoration: BoxDecoration(
         color: Colors.orange.withValues(alpha: 0.15),
@@ -1029,7 +1360,7 @@ class _ThreadItem extends StatelessWidget {
           ),
           const SizedBox(width: 3),
           Text(
-            '${thread.intimacyPoints}',
+            '${viewData.intimacyPoints}',
             style: TextStyle(
               fontSize: layout.metaSize - 1,
               fontWeight: FontWeight.w500,
@@ -1052,17 +1383,50 @@ class _ThreadPriorityState {
   final Color color;
 }
 
+class _UnreadBadge extends StatelessWidget {
+  const _UnreadBadge({
+    required this.threadId,
+    required this.unreadCount,
+    required this.fontSize,
+  });
+
+  final String threadId;
+  final int unreadCount;
+  final double fontSize;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      key: Key('messages-thread-unread-$threadId'),
+      padding: const EdgeInsets.symmetric(
+        horizontal: 5,
+        vertical: 2,
+      ),
+      constraints: const BoxConstraints(minWidth: 18),
+      decoration: const BoxDecoration(
+        color: AppColors.brandBlue,
+        borderRadius: BorderRadius.all(Radius.circular(10)),
+      ),
+      child: Text(
+        unreadCount > 99 ? '99+' : '$unreadCount',
+        textAlign: TextAlign.center,
+        style: TextStyle(
+          fontSize: fontSize,
+          fontWeight: FontWeight.w600,
+          color: AppColors.pureBlack,
+        ),
+      ),
+    );
+  }
+}
+
 class _ThreadAvatar extends StatelessWidget {
   const _ThreadAvatar({
-    required this.thread,
-    required this.isFriend,
-    required this.isOnline,
+    required this.viewData,
     required this.layout,
   });
 
-  final ChatThread thread;
-  final bool isFriend;
-  final bool isOnline;
+  final _MessagesThreadSummaryViewData viewData;
   final _MessagesLayoutSpec layout;
 
   @override
@@ -1076,7 +1440,7 @@ class _ThreadAvatar extends StatelessWidget {
             shape: BoxShape.circle,
             color: AppColors.white08,
             border: Border.all(
-              color: isFriend
+              color: viewData.isFriend
                   ? AppColors.brandBlue.withValues(alpha: 0.5)
                   : AppColors.white05,
               width: 2,
@@ -1084,7 +1448,7 @@ class _ThreadAvatar extends StatelessWidget {
           ),
           child: Center(
             child: Text(
-              thread.otherUser.avatar ?? '👤',
+              viewData.avatar ?? '👤',
               style: TextStyle(
                 fontSize: layout.avatarTextSize,
                 color: AppColors.pureBlack,
@@ -1092,7 +1456,7 @@ class _ThreadAvatar extends StatelessWidget {
             ),
           ),
         ),
-        if (isOnline)
+        if (viewData.isOnline)
           Positioned(
             right: 2,
             bottom: 2,
@@ -1116,7 +1480,7 @@ class _ThreadAvatar extends StatelessWidget {
               ),
             ),
           ),
-        if (thread.unreadCount > 0)
+        if (viewData.unreadCount > 0)
           Positioned(
             right: 0,
             top: 0,
@@ -1131,7 +1495,7 @@ class _ThreadAvatar extends StatelessWidget {
                 minHeight: 20,
               ),
               child: Text(
-                thread.unreadCount > 99 ? '99+' : '${thread.unreadCount}',
+                viewData.unreadCount > 99 ? '99+' : '${viewData.unreadCount}',
                 style: const TextStyle(
                   fontSize: 10,
                   fontWeight: FontWeight.w500,

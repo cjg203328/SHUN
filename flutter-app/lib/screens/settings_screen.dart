@@ -141,11 +141,17 @@ class _SettingsLayoutSpec {
 
 class _SettingsScreenState extends State<SettingsScreen>
     with WidgetsBindingObserver {
-  _SettingsInlineFeedbackState? _inlineFeedback;
-  _SettingsMediaPreviewState _avatarPreviewState =
-      const _SettingsMediaPreviewState();
-  _SettingsMediaPreviewState _backgroundPreviewState =
-      const _SettingsMediaPreviewState();
+  final ValueNotifier<_SettingsInlineFeedbackState?> _inlineFeedbackNotifier =
+      ValueNotifier<_SettingsInlineFeedbackState?>(null);
+  final ValueNotifier<_SettingsMediaPreviewState> _avatarPreviewStateNotifier =
+      ValueNotifier<_SettingsMediaPreviewState>(
+    const _SettingsMediaPreviewState(),
+  );
+  final ValueNotifier<_SettingsMediaPreviewState>
+      _backgroundPreviewStateNotifier =
+      ValueNotifier<_SettingsMediaPreviewState>(
+    const _SettingsMediaPreviewState(),
+  );
   late final MediaUploadService _mediaUploadService;
 
   @override
@@ -159,6 +165,9 @@ class _SettingsScreenState extends State<SettingsScreen>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _inlineFeedbackNotifier.dispose();
+    _avatarPreviewStateNotifier.dispose();
+    _backgroundPreviewStateNotifier.dispose();
     super.dispose();
   }
 
@@ -185,26 +194,20 @@ class _SettingsScreenState extends State<SettingsScreen>
     final avatarState = await _readAvatarPreviewState();
     final backgroundState = await _readBackgroundPreviewState();
     if (!mounted) return;
-    setState(() {
-      _avatarPreviewState = avatarState;
-      _backgroundPreviewState = backgroundState;
-    });
+    _avatarPreviewStateNotifier.value = avatarState;
+    _backgroundPreviewStateNotifier.value = backgroundState;
   }
 
   Future<void> _refreshAvatarPreviewState() async {
     final nextState = await _readAvatarPreviewState();
     if (!mounted) return;
-    setState(() {
-      _avatarPreviewState = nextState;
-    });
+    _avatarPreviewStateNotifier.value = nextState;
   }
 
   Future<void> _refreshBackgroundPreviewState() async {
     final nextState = await _readBackgroundPreviewState();
     if (!mounted) return;
-    setState(() {
-      _backgroundPreviewState = nextState;
-    });
+    _backgroundPreviewStateNotifier.value = nextState;
   }
 
   Future<_SettingsMediaPreviewState> _readAvatarPreviewState() {
@@ -241,8 +244,131 @@ class _SettingsScreenState extends State<SettingsScreen>
     );
   }
 
+  _SettingsViewData _selectSettingsViewData(SettingsProvider settingsProvider) {
+    final pushState = settingsProvider.pushRuntimeState;
+    return _SettingsViewData(
+      invisibleMode: settingsProvider.invisibleMode,
+      notificationEnabled: settingsProvider.notificationEnabled,
+      vibrationEnabled: settingsProvider.vibrationEnabled,
+      pushPermissionGranted: pushState.permissionGranted,
+      pushHasDeviceToken: pushState.deviceToken != null,
+    );
+  }
+
+  _SettingsInvisibleModeItemViewData _selectInvisibleModeItemViewData(
+    SettingsProvider settingsProvider,
+  ) {
+    final hint = _resolveInvisibleSettingHintForValue(
+      settingsProvider.invisibleMode,
+    );
+    return _SettingsInvisibleModeItemViewData(
+      invisibleMode: settingsProvider.invisibleMode,
+      badgeLabel: hint.badgeLabel,
+      description: hint.description,
+      isHealthy: hint.isHealthy,
+    );
+  }
+
+  _SettingsNotificationItemViewData _selectNotificationItemViewData(
+    SettingsProvider settingsProvider,
+  ) {
+    final pushState = settingsProvider.pushRuntimeState;
+    final runtimeState = _resolveNotificationRuntimeStateForValues(
+      notificationEnabled: settingsProvider.notificationEnabled,
+      pushPermissionGranted: pushState.permissionGranted,
+      pushHasDeviceToken: pushState.deviceToken != null,
+    );
+    return _SettingsNotificationItemViewData(
+      notificationEnabled: settingsProvider.notificationEnabled,
+      badgeLabel: runtimeState.badgeLabel,
+      description: runtimeState.description,
+      isHealthy: runtimeState.isHealthy,
+    );
+  }
+
+  _SettingsVibrationItemViewData _selectVibrationItemViewData(
+    SettingsProvider settingsProvider,
+  ) {
+    final hint = _resolveVibrationSettingHintForValue(
+      settingsProvider.vibrationEnabled,
+    );
+    return _SettingsVibrationItemViewData(
+      vibrationEnabled: settingsProvider.vibrationEnabled,
+      badgeLabel: hint.badgeLabel,
+      description: hint.description,
+      isHealthy: hint.isHealthy,
+    );
+  }
+
+  _SettingsBlockedUsersSheetViewData _selectBlockedUsersSheetViewData(
+    FriendProvider friendProvider,
+    ChatProvider chatProvider,
+  ) {
+    final blockedIds = friendProvider.blockedUserIds.toList()..sort();
+    return _SettingsBlockedUsersSheetViewData(
+      rows: blockedIds.map((userId) {
+        final friend = friendProvider.getFriend(userId);
+        final thread = chatProvider.getThread(userId);
+        return _SettingsBlockedUserRowViewData(
+          userId: userId,
+          displayName:
+              friend?.displayName ?? thread?.otherUser.nickname ?? userId,
+          avatar: friend?.user.avatar ?? thread?.otherUser.avatar ?? '🙂',
+        );
+      }).toList(growable: false),
+    );
+  }
+
+  _SettingsOverviewFocusViewData _selectOverviewFocusViewData(
+    AuthProvider authProvider,
+    SettingsProvider settingsProvider,
+  ) {
+    final pushState = settingsProvider.pushRuntimeState;
+    return _SettingsOverviewFocusViewData(
+      hasPhone: (authProvider.phone ?? '').trim().isNotEmpty,
+      invisibleMode: settingsProvider.invisibleMode,
+      notificationEnabled: settingsProvider.notificationEnabled,
+      pushPermissionGranted: pushState.permissionGranted,
+      pushHasDeviceToken: pushState.deviceToken != null,
+    );
+  }
+
+  _SettingsExperiencePresetViewData _selectExperiencePresetViewData(
+    SettingsProvider settingsProvider,
+  ) {
+    return _SettingsExperiencePresetViewData(
+      invisibleMode: settingsProvider.invisibleMode,
+      notificationEnabled: settingsProvider.notificationEnabled,
+      vibrationEnabled: settingsProvider.vibrationEnabled,
+    );
+  }
+
+  _SettingsOverviewNotificationRuntimeViewData
+      _selectOverviewNotificationRuntimeViewData(
+    SettingsProvider settingsProvider,
+  ) {
+    final pushState = settingsProvider.pushRuntimeState;
+    return _SettingsOverviewNotificationRuntimeViewData(
+      notificationEnabled: settingsProvider.notificationEnabled,
+      pushPermissionGranted: pushState.permissionGranted,
+      pushHasDeviceToken: pushState.deviceToken != null,
+    );
+  }
+
+  _SettingsAccountSecurityViewData _selectAccountSecurityViewData(
+    AuthProvider authProvider,
+  ) {
+    return _SettingsAccountSecurityViewData(
+      phone: authProvider.phone,
+      uid: authProvider.uid,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final layout = _SettingsLayoutSpec.fromSize(
+      MediaQuery.of(context).size,
+    );
     return Scaffold(
       appBar: AppBar(
         backgroundColor: AppColors.pureBlack,
@@ -261,35 +387,24 @@ class _SettingsScreenState extends State<SettingsScreen>
         ),
         centerTitle: false,
       ),
-      body: Consumer<SettingsProvider>(
-        builder: (context, settingsProvider, child) {
-          final layout = _SettingsLayoutSpec.fromSize(
-            MediaQuery.of(context).size,
-          );
-          final invisibleSettingHint = _resolveInvisibleSettingHint(
-            settingsProvider,
-          );
-          final notificationSettingHint = _resolveNotificationSettingHint(
-            settingsProvider,
-          );
-          final vibrationSettingHint = _resolveVibrationSettingHint(
-            settingsProvider,
-          );
-
-          return Stack(
+      body: Stack(
+        children: [
+          ListView(
+            padding: EdgeInsets.fromLTRB(
+              layout.pageHorizontalPadding,
+              layout.topPadding,
+              layout.pageHorizontalPadding,
+              layout.bottomPadding,
+            ),
             children: [
-              ListView(
-                padding: EdgeInsets.fromLTRB(
-                  layout.pageHorizontalPadding,
-                  layout.topPadding,
-                  layout.pageHorizontalPadding,
-                  layout.bottomPadding,
-                ),
-                children: [
-                  _buildSettingsOverviewCard(context, settingsProvider),
-                  SizedBox(height: layout.sectionSpacing),
-                  _buildSectionTitle('账号与安全', subtitle: '登录、身份标识与账号找回'),
-                  _buildSectionCard(
+              _buildSettingsOverviewCard(context),
+              SizedBox(height: layout.sectionSpacing),
+              _buildSectionTitle('账号与安全', subtitle: '登录、身份标识与账号找回'),
+              Selector<AuthProvider, _SettingsAccountSecurityViewData>(
+                selector: (context, authProvider) =>
+                    _selectAccountSecurityViewData(authProvider),
+                builder: (context, viewData, child) {
+                  return _buildSectionCard(
                     children: [
                       _buildSettingItem(
                         context,
@@ -297,13 +412,11 @@ class _SettingsScreenState extends State<SettingsScreen>
                         icon: Icons.phone_outlined,
                         title: '手机号',
                         subtitle: '用于登录、接收验证码和找回账号',
-                        trailing: Consumer<AuthProvider>(
-                          builder: (context, auth, child) => Text(
-                            auth.phone ?? '未绑定',
-                            style: const TextStyle(
-                              fontSize: 13,
-                              color: AppColors.textTertiary,
-                            ),
+                        trailing: Text(
+                          viewData.phone ?? '未绑定',
+                          style: const TextStyle(
+                            fontSize: 13,
+                            color: AppColors.textTertiary,
                           ),
                         ),
                         onTap: () => _presentPhoneEditorSheet(context),
@@ -314,13 +427,11 @@ class _SettingsScreenState extends State<SettingsScreen>
                         icon: Icons.badge_outlined,
                         title: '账号 UID',
                         subtitle: '点击即可复制，便于测试、加好友或排查问题',
-                        trailing: Consumer<AuthProvider>(
-                          builder: (context, auth, child) => Text(
-                            auth.uid ?? '生成中',
-                            style: const TextStyle(
-                              fontSize: 13,
-                              color: AppColors.textTertiary,
-                            ),
+                        trailing: Text(
+                          viewData.uid ?? '生成中',
+                          style: const TextStyle(
+                            fontSize: 13,
+                            color: AppColors.textTertiary,
                           ),
                         ),
                         onTap: () => _copyUid(context),
@@ -335,10 +446,16 @@ class _SettingsScreenState extends State<SettingsScreen>
                         onTap: () => _presentPasswordEditorSheet(context),
                       ),
                     ],
-                  ),
-                  SizedBox(height: layout.sectionSpacing),
-                  _buildSectionTitle('隐私与展示', subtitle: '优先保留影响曝光和关系边界的核心设置'),
-                  _buildSectionCard(
+                  );
+                },
+              ),
+              SizedBox(height: layout.sectionSpacing),
+              _buildSectionTitle('隐私与展示', subtitle: '优先保留影响曝光和关系边界的核心设置'),
+              Selector<SettingsProvider, _SettingsInvisibleModeItemViewData>(
+                selector: (context, settingsProvider) =>
+                    _selectInvisibleModeItemViewData(settingsProvider),
+                builder: (context, viewData, child) {
+                  return _buildSectionCard(
                     children: [
                       _buildSettingItem(
                         context,
@@ -346,22 +463,28 @@ class _SettingsScreenState extends State<SettingsScreen>
                         icon: Icons.visibility_off_outlined,
                         title: '隐身模式',
                         subtitle: '开启后，你的活跃状态和匹配曝光会更低调',
-                        helperText: invisibleSettingHint.description,
-                        badgeLabel: invisibleSettingHint.badgeLabel,
+                        helperText: viewData.description,
+                        badgeLabel: viewData.badgeLabel,
                         badgeKey: const Key('settings-invisible-mode-badge'),
-                        badgeHighlight: !invisibleSettingHint.isHealthy,
+                        badgeHighlight: !viewData.isHealthy,
                         trailing: Switch(
-                          value: settingsProvider.invisibleMode,
+                          value: viewData.invisibleMode,
                           onChanged: _updateInvisibleMode,
                           activeColor: AppColors.brandBlue,
                         ),
                         onTap: null,
                       ),
                     ],
-                  ),
-                  SizedBox(height: layout.sectionSpacing),
-                  _buildSectionTitle('通知与提醒', subtitle: '建议保持消息通知开启，避免错过新回复'),
-                  _buildSectionCard(
+                  );
+                },
+              ),
+              SizedBox(height: layout.sectionSpacing),
+              _buildSectionTitle('通知与提醒', subtitle: '建议保持消息通知开启，避免错过新回复'),
+              Selector<SettingsProvider, _SettingsNotificationItemViewData>(
+                selector: (context, settingsProvider) =>
+                    _selectNotificationItemViewData(settingsProvider),
+                builder: (context, viewData, child) {
+                  return _buildSectionCard(
                     children: [
                       _buildSettingItem(
                         context,
@@ -369,30 +492,35 @@ class _SettingsScreenState extends State<SettingsScreen>
                         icon: Icons.notifications_outlined,
                         title: '消息通知',
                         subtitle: '关闭后，将不再收到新消息提醒',
-                        helperText: notificationSettingHint.description,
-                        badgeLabel: notificationSettingHint.badgeLabel,
+                        helperText: viewData.description,
+                        badgeLabel: viewData.badgeLabel,
                         badgeKey: const Key('settings-notification-badge'),
-                        badgeHighlight: !notificationSettingHint.isHealthy,
+                        badgeHighlight: !viewData.isHealthy,
                         trailing: Switch(
-                          value: settingsProvider.notificationEnabled,
+                          value: viewData.notificationEnabled,
                           onChanged: _updateNotificationEnabled,
                           activeColor: AppColors.brandBlue,
                         ),
                         onTap: null,
                       ),
                     ],
-                  ),
-                  SizedBox(height: layout.sectionSpacing),
-                  _buildSectionTitle('资料与展示', subtitle: '优先维护头像，背景等低频内容可按需调整'),
-                  _buildSectionCard(
-                    children: [
-                      _buildAvatarManagementItem(context),
-                    ],
-                  ),
-                  SizedBox(height: layout.sectionSpacing),
-                  _buildSectionTitle('更多设置（低频）',
-                      subtitle: '这些内容通常不用频繁修改，需要时再进入即可'),
-                  _buildSectionCard(
+                  );
+                },
+              ),
+              SizedBox(height: layout.sectionSpacing),
+              _buildSectionTitle('资料与展示', subtitle: '优先维护头像，背景等低频内容可按需调整'),
+              _buildSectionCard(
+                children: [
+                  _buildAvatarManagementItem(context),
+                ],
+              ),
+              SizedBox(height: layout.sectionSpacing),
+              _buildSectionTitle('更多设置（低频）', subtitle: '这些内容通常不用频繁修改，需要时再进入即可'),
+              Selector<SettingsProvider, _SettingsVibrationItemViewData>(
+                selector: (context, settingsProvider) =>
+                    _selectVibrationItemViewData(settingsProvider),
+                builder: (context, viewData, child) {
+                  return _buildSectionCard(
                     children: [
                       _buildSettingItem(
                         context,
@@ -409,12 +537,12 @@ class _SettingsScreenState extends State<SettingsScreen>
                         icon: Icons.vibration_outlined,
                         title: '震动提醒',
                         subtitle: '收到消息时通过震动给予提示',
-                        helperText: vibrationSettingHint.description,
-                        badgeLabel: vibrationSettingHint.badgeLabel,
+                        helperText: viewData.description,
+                        badgeLabel: viewData.badgeLabel,
                         badgeKey: const Key('settings-vibration-badge'),
-                        badgeHighlight: !vibrationSettingHint.isHealthy,
+                        badgeHighlight: !viewData.isHealthy,
                         trailing: Switch(
-                          value: settingsProvider.vibrationEnabled,
+                          value: viewData.vibrationEnabled,
                           onChanged: _updateVibrationEnabled,
                           activeColor: AppColors.brandBlue,
                         ),
@@ -423,164 +551,186 @@ class _SettingsScreenState extends State<SettingsScreen>
                       _buildDivider(),
                       _buildBackgroundManagementItem(context),
                     ],
-                  ),
-                  SizedBox(height: layout.sectionSpacing),
-                  _buildSectionTitle('安全与举报', subtitle: '保护自己和他人的使用体验'),
-                  _buildSectionCard(
-                    children: [
-                      _buildSettingItem(
-                        context,
-                        icon: Icons.flag_outlined,
-                        title: '举报违规用户',
-                        subtitle: '在聊天页面点击右上角菜单，选择「举报」进行投诉',
-                        onTap: () => AppToast.show(
-                          context,
-                          '请在聊天页面通过右上角菜单举报对方',
-                        ),
-                      ),
-                      _buildDivider(),
-                      _buildSettingItem(
-                        context,
-                        icon: Icons.security_outlined,
-                        title: '账号安全提示',
-                        subtitle: '不要轻信陌生人的转账、链接等请求',
-                        onTap: () => context.push('/legal/safety-tips'),
-                      ),
-                    ],
-                  ),
-                  SizedBox(height: layout.sectionSpacing),
-                  _buildSectionTitle('关于与协议', subtitle: '查看产品说明、协议与隐私内容'),
-                  _buildSectionCard(
-                    children: [
-                      _buildSettingItem(
-                        context,
-                        key: const Key('settings-about-item'),
-                        icon: Icons.info_outlined,
-                        title: '关于瞬聊',
-                        subtitle: '查看产品介绍、版本信息与开发说明',
-                        onTap: () => context.push('/about'),
-                      ),
-                      _buildDivider(),
-                      _buildSettingItem(
-                        context,
-                        key: const Key('settings-privacy-policy-item'),
-                        icon: Icons.privacy_tip_outlined,
-                        title: '隐私政策',
-                        subtitle: '说明我们如何收集、使用和保护你的数据',
-                        onTap: () => context.push('/legal/privacy-policy'),
-                      ),
-                      _buildDivider(),
-                      _buildSettingItem(
-                        context,
-                        key: const Key('settings-user-agreement-item'),
-                        icon: Icons.description_outlined,
-                        title: '用户协议',
-                        subtitle: '查看使用规则、权责说明与服务条款',
-                        onTap: () => context.push('/legal/user-agreement'),
-                      ),
-                    ],
-                  ),
-                  SizedBox(height: layout.sectionSpacing + 4),
-                  _buildSectionTitle(
-                    '账号操作',
-                    subtitle: '先区分当前设备退出和不可恢复的账号注销，避免误触。',
-                  ),
-                  _buildAccountHintCard(
-                    key: const Key('settings-account-actions-card'),
-                    icon: Icons.manage_accounts_outlined,
-                    title: '先确认你要离开的是当前设备还是整个账号',
-                    description:
-                        '退出登录只会清除这台设备上的登录状态，账号资料和好友关系会保留；注销账号会清除账号与会话数据，操作后无法恢复。',
-                  ),
-                  SizedBox(height: layout.isCompact ? 10 : 12),
-                  _buildAccountActionCard(
-                    cardKey: const Key('settings-logout-card'),
-                    actionKey: const Key('settings-logout-button'),
-                    icon: Icons.logout_rounded,
-                    title: '退出登录',
-                    badgeLabel: '仅当前设备',
-                    description: '适合临时退出、换设备登录或排查问题使用，不会删除你的账号本身。',
-                    onTap: () => _showLogoutDialog(context),
-                  ),
-                  SizedBox(height: layout.isCompact ? 10 : 12),
-                  _buildAccountActionCard(
-                    cardKey: const Key('settings-delete-account-card'),
-                    actionKey: const Key('settings-delete-account-button'),
-                    icon: Icons.delete_forever_outlined,
-                    title: '注销账号',
-                    badgeLabel: '不可恢复',
-                    description: '仅在确认不再使用该账号时再操作，注销后资料与会话数据会一并清除。',
-                    onTap: () => _showDeleteAccountDialog(context),
-                    isDanger: true,
-                  ),
-                  SizedBox(height: layout.isCompact ? 12 : 14),
-                  Center(
-                    child: GestureDetector(
-                      key: const ValueKey<String>(
-                          'settings-debug-version-trigger'),
-                      onLongPress: kDebugMode
-                          ? () => showChatDeliveryStatsDebugSheet(context)
-                          : null,
-                      child: Text(
-                        'V1.0.3',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: AppColors.textDisabled,
-                        ),
-                      ),
+                  );
+                },
+              ),
+              SizedBox(height: layout.sectionSpacing),
+              _buildSectionTitle('安全与举报', subtitle: '保护自己和他人的使用体验'),
+              _buildSectionCard(
+                children: [
+                  _buildSettingItem(
+                    context,
+                    icon: Icons.flag_outlined,
+                    title: '举报违规用户',
+                    subtitle: '在聊天页面点击右上角菜单，选择「举报」进行投诉',
+                    onTap: () => AppToast.show(
+                      context,
+                      '请在聊天页面通过右上角菜单举报对方',
                     ),
+                  ),
+                  _buildDivider(),
+                  _buildSettingItem(
+                    context,
+                    icon: Icons.security_outlined,
+                    title: '账号安全提示',
+                    subtitle: '不要轻信陌生人的转账、链接等请求',
+                    onTap: () => context.push('/legal/safety-tips'),
                   ),
                 ],
               ),
-              if (_inlineFeedback != null)
-                Positioned(
-                  top: 8,
-                  left: layout.pageHorizontalPadding,
-                  right: layout.pageHorizontalPadding,
-                  child: IgnorePointer(
-                    ignoring: true,
-                    child: _buildInlineFeedbackCard(_inlineFeedback!),
+              SizedBox(height: layout.sectionSpacing),
+              _buildSectionTitle('关于与协议', subtitle: '查看产品说明、协议与隐私内容'),
+              _buildSectionCard(
+                children: [
+                  _buildSettingItem(
+                    context,
+                    key: const Key('settings-about-item'),
+                    icon: Icons.info_outlined,
+                    title: '关于瞬聊',
+                    subtitle: '查看产品介绍、版本信息与开发说明',
+                    onTap: () => context.push('/about'),
+                  ),
+                  _buildDivider(),
+                  _buildSettingItem(
+                    context,
+                    key: const Key('settings-privacy-policy-item'),
+                    icon: Icons.privacy_tip_outlined,
+                    title: '隐私政策',
+                    subtitle: '说明我们如何收集、使用和保护你的数据',
+                    onTap: () => context.push('/legal/privacy-policy'),
+                  ),
+                  _buildDivider(),
+                  _buildSettingItem(
+                    context,
+                    key: const Key('settings-user-agreement-item'),
+                    icon: Icons.description_outlined,
+                    title: '用户协议',
+                    subtitle: '查看使用规则、权责说明与服务条款',
+                    onTap: () => context.push('/legal/user-agreement'),
+                  ),
+                ],
+              ),
+              SizedBox(height: layout.sectionSpacing + 4),
+              _buildSectionTitle(
+                '账号操作',
+                subtitle: '先区分当前设备退出和不可恢复的账号注销，避免误触。',
+              ),
+              _buildAccountHintCard(
+                key: const Key('settings-account-actions-card'),
+                icon: Icons.manage_accounts_outlined,
+                title: '先确认你要离开的是当前设备还是整个账号',
+                description:
+                    '退出登录只会清除这台设备上的登录状态，账号资料和好友关系会保留；注销账号会清除账号与会话数据，操作后无法恢复。',
+              ),
+              SizedBox(height: layout.isCompact ? 10 : 12),
+              _buildAccountActionCard(
+                cardKey: const Key('settings-logout-card'),
+                actionKey: const Key('settings-logout-button'),
+                icon: Icons.logout_rounded,
+                title: '退出登录',
+                badgeLabel: '仅当前设备',
+                description: '适合临时退出、换设备登录或排查问题使用，不会删除你的账号本身。',
+                onTap: () => _showLogoutDialog(context),
+              ),
+              SizedBox(height: layout.isCompact ? 10 : 12),
+              _buildAccountActionCard(
+                cardKey: const Key('settings-delete-account-card'),
+                actionKey: const Key('settings-delete-account-button'),
+                icon: Icons.delete_forever_outlined,
+                title: '注销账号',
+                badgeLabel: '不可恢复',
+                description: '仅在确认不再使用该账号时再操作，注销后资料与会话数据会一并清除。',
+                onTap: () => _showDeleteAccountDialog(context),
+                isDanger: true,
+              ),
+              SizedBox(height: layout.isCompact ? 12 : 14),
+              Center(
+                child: GestureDetector(
+                  key: const ValueKey<String>('settings-debug-version-trigger'),
+                  onLongPress: kDebugMode
+                      ? () => showChatDeliveryStatsDebugSheet(context)
+                      : null,
+                  child: Text(
+                    'V1.0.3',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: AppColors.textDisabled,
+                    ),
                   ),
                 ),
+              ),
             ],
-          );
-        },
+          ),
+          ValueListenableBuilder<_SettingsInlineFeedbackState?>(
+            valueListenable: _inlineFeedbackNotifier,
+            builder: (context, inlineFeedback, child) {
+              if (inlineFeedback == null) {
+                return const SizedBox.shrink();
+              }
+              return Positioned(
+                top: 8,
+                left: layout.pageHorizontalPadding,
+                right: layout.pageHorizontalPadding,
+                child: IgnorePointer(
+                  ignoring: true,
+                  child: _buildInlineFeedbackCard(inlineFeedback),
+                ),
+              );
+            },
+          ),
+        ],
       ),
     );
   }
 
   Widget _buildAvatarManagementItem(BuildContext context) {
-    final summary = _resolveAvatarManagementSummary(_avatarPreviewState);
-    return _buildSettingItem(
-      context,
-      key: const Key('settings-avatar-management-item'),
-      icon: Icons.photo_outlined,
-      title: '头像管理',
-      subtitle: summary.itemSubtitle,
-      badgeLabel: summary.itemBadgeLabel,
-      badgeKey: const Key('settings-avatar-management-badge'),
-      trailing: _buildAvatarManagementTrailing(context),
-      onTap: () => _presentAvatarManagementSheet(context),
+    return ValueListenableBuilder<_SettingsMediaPreviewState>(
+      valueListenable: _avatarPreviewStateNotifier,
+      builder: (context, avatarPreviewState, child) {
+        final summary = _resolveAvatarManagementSummary(avatarPreviewState);
+        return _buildSettingItem(
+          context,
+          key: const Key('settings-avatar-management-item'),
+          icon: Icons.photo_outlined,
+          title: '头像管理',
+          subtitle: summary.itemSubtitle,
+          badgeLabel: summary.itemBadgeLabel,
+          badgeKey: const Key('settings-avatar-management-badge'),
+          trailing: _buildAvatarManagementTrailing(context, avatarPreviewState),
+          onTap: () => _presentAvatarManagementSheet(context),
+        );
+      },
     );
   }
 
   Widget _buildBackgroundManagementItem(BuildContext context) {
-    final summary =
-        _resolveBackgroundManagementSummary(_backgroundPreviewState);
-    return _buildSettingItem(
-      context,
-      key: const Key('settings-background-management-item'),
-      icon: Icons.wallpaper_outlined,
-      title: '背景管理',
-      subtitle: summary.itemSubtitle,
-      badgeLabel: summary.itemBadgeLabel,
-      badgeKey: const Key('settings-background-management-badge'),
-      trailing: _buildBackgroundManagementTrailing(context),
-      onTap: () => _presentBackgroundManagementSheet(context),
+    return ValueListenableBuilder<_SettingsMediaPreviewState>(
+      valueListenable: _backgroundPreviewStateNotifier,
+      builder: (context, backgroundPreviewState, child) {
+        final summary =
+            _resolveBackgroundManagementSummary(backgroundPreviewState);
+        return _buildSettingItem(
+          context,
+          key: const Key('settings-background-management-item'),
+          icon: Icons.wallpaper_outlined,
+          title: '背景管理',
+          subtitle: summary.itemSubtitle,
+          badgeLabel: summary.itemBadgeLabel,
+          badgeKey: const Key('settings-background-management-badge'),
+          trailing: _buildBackgroundManagementTrailing(
+            context,
+            backgroundPreviewState,
+          ),
+          onTap: () => _presentBackgroundManagementSheet(context),
+        );
+      },
     );
   }
 
-  Widget _buildAvatarManagementTrailing(BuildContext context) {
+  Widget _buildAvatarManagementTrailing(
+    BuildContext context,
+    _SettingsMediaPreviewState avatarPreviewState,
+  ) {
     final layout = _SettingsLayoutSpec.fromSize(
       MediaQuery.of(context).size,
     );
@@ -591,7 +741,7 @@ class _SettingsScreenState extends State<SettingsScreen>
         children: [
           _buildAvatarPreviewSurface(
             key: const Key('settings-avatar-management-preview'),
-            avatarPath: _avatarPreviewState.mediaPath,
+            avatarPath: avatarPreviewState.mediaPath,
             size: layout.isCompact ? 30 : 34,
             iconSize: layout.isCompact ? 16 : 18,
           ),
@@ -606,7 +756,10 @@ class _SettingsScreenState extends State<SettingsScreen>
     );
   }
 
-  Widget _buildBackgroundManagementTrailing(BuildContext context) {
+  Widget _buildBackgroundManagementTrailing(
+    BuildContext context,
+    _SettingsMediaPreviewState backgroundPreviewState,
+  ) {
     final layout = _SettingsLayoutSpec.fromSize(
       MediaQuery.of(context).size,
     );
@@ -617,7 +770,7 @@ class _SettingsScreenState extends State<SettingsScreen>
         children: [
           _buildBackgroundPreviewSurface(
             key: const Key('settings-background-management-preview'),
-            backgroundPath: _backgroundPreviewState.mediaPath,
+            backgroundPath: backgroundPreviewState.mediaPath,
             width: layout.isCompact ? 34 : 40,
             height: layout.isCompact ? 24 : 28,
             iconSize: layout.isCompact ? 15 : 16,
@@ -1453,49 +1606,14 @@ class _SettingsScreenState extends State<SettingsScreen>
     );
   }
 
-  Widget _buildSettingsOverviewCard(
-    BuildContext context,
-    SettingsProvider settingsProvider,
-  ) {
+  Widget _buildSettingsOverviewCard(BuildContext context) {
     final layout = _SettingsLayoutSpec.fromSize(
       MediaQuery.of(context).size,
     );
-    final auth = context.watch<AuthProvider>();
-    final hasPhone = (auth.phone ?? '').trim().isNotEmpty;
-    final focusState = _resolveOverviewFocusState(
-      auth: auth,
-      settingsProvider: settingsProvider,
-    );
-    final invisibleSettingHint = _resolveInvisibleSettingHint(settingsProvider);
-    final notificationRuntimeState = _resolveNotificationRuntimeState(
-      settingsProvider,
-    );
-    final overviewActions = <Widget>[
-      _buildOverviewAction(
-        key: const Key('settings-overview-phone-action'),
-        icon: Icons.phone_outlined,
-        label: hasPhone ? '更新手机号' : '补手机号',
-        onTap: () => _presentPhoneEditorSheet(context),
-      ),
-      _buildOverviewAction(
-        key: const Key('settings-overview-uid-action'),
-        icon: Icons.badge_outlined,
-        label: '复制 UID',
-        onTap: () => _copyUid(context),
-      ),
-      _buildOverviewAction(
-        key: const Key('settings-overview-notification-action'),
-        icon: notificationRuntimeState.actionIcon,
-        label: notificationRuntimeState.actionLabel,
-        onTap: () => _handleNotificationAction(
-          notificationRuntimeState.actionType,
-        ),
-      ),
-    ];
     final overviewDescription = layout.isTight
         ? '先看提醒、账号和展示状态即可'
         : layout.isCompact
-            ? '把高频状态集中到首屏，先看提醒、账号和展示是否已经就绪'
+            ? '把高频状态集中到首页，先看提醒、账号和展示是否已经就绪'
             : '把高频状态集中放在前面，方便你快速确认账号、安全、展示和通知是否已经就绪';
 
     return Container(
@@ -1530,33 +1648,89 @@ class _SettingsScreenState extends State<SettingsScreen>
                 layout.isCompact ? TextOverflow.ellipsis : TextOverflow.visible,
           ),
           SizedBox(height: layout.overviewGap),
-          _buildOverviewFocusCard(focusState),
+          Selector2<AuthProvider, SettingsProvider,
+              _SettingsOverviewFocusViewData>(
+            selector: (context, authProvider, settingsProvider) =>
+                _selectOverviewFocusViewData(authProvider, settingsProvider),
+            builder: (context, viewData, child) {
+              return _buildOverviewFocusCard(
+                _resolveOverviewFocusState(viewData: viewData),
+              );
+            },
+          ),
           SizedBox(height: layout.overviewGap),
-          _buildDeviceStatusCard(settingsProvider),
+          Selector<SettingsProvider, _SettingsViewData>(
+            selector: (context, settingsProvider) =>
+                _selectSettingsViewData(settingsProvider),
+            builder: (context, viewData, child) {
+              return _buildDeviceStatusCard(viewData);
+            },
+          ),
           SizedBox(height: layout.overviewGap),
-          _buildExperiencePresetCard(context, settingsProvider),
+          Selector<SettingsProvider, _SettingsExperiencePresetViewData>(
+            selector: (context, settingsProvider) =>
+                _selectExperiencePresetViewData(settingsProvider),
+            builder: (context, viewData, child) {
+              return _buildExperiencePresetCard(context, viewData);
+            },
+          ),
           SizedBox(height: layout.overviewGap),
           Wrap(
             spacing: layout.isCompact ? 6 : 8,
             runSpacing: layout.isTight ? 4 : (layout.isCompact ? 6 : 8),
             children: [
-              _buildStatusChip(
-                icon: Icons.phone_iphone_outlined,
-                label: hasPhone ? '手机号已绑定' : '手机号待补全',
+              Selector<AuthProvider, _SettingsAccountSecurityViewData>(
+                selector: (context, authProvider) =>
+                    _selectAccountSecurityViewData(authProvider),
+                builder: (context, viewData, child) {
+                  return _buildStatusChip(
+                    icon: Icons.phone_iphone_outlined,
+                    label: viewData.hasPhone ? '手机号已绑定' : '手机号待补全',
+                  );
+                },
               ),
-              _buildStatusChip(
-                icon: Icons.badge_outlined,
-                label: auth.uid == null ? 'UID 生成中' : 'UID 已可复制',
+              Selector<AuthProvider, _SettingsAccountSecurityViewData>(
+                selector: (context, authProvider) =>
+                    _selectAccountSecurityViewData(authProvider),
+                builder: (context, viewData, child) {
+                  return _buildStatusChip(
+                    icon: Icons.badge_outlined,
+                    label: viewData.uid == null ? 'UID 生成中' : 'UID 已可复制',
+                  );
+                },
               ),
-              _buildStatusChip(
-                icon: Icons.notifications_outlined,
-                label: notificationRuntimeState.statusChipLabel,
+              Selector<SettingsProvider,
+                  _SettingsOverviewNotificationRuntimeViewData>(
+                selector: (context, settingsProvider) =>
+                    _selectOverviewNotificationRuntimeViewData(
+                  settingsProvider,
+                ),
+                builder: (context, viewData, child) {
+                  final runtimeState =
+                      _resolveNotificationRuntimeStateForValues(
+                    notificationEnabled: viewData.notificationEnabled,
+                    pushPermissionGranted: viewData.pushPermissionGranted,
+                    pushHasDeviceToken: viewData.pushHasDeviceToken,
+                  );
+                  return _buildStatusChip(
+                    icon: Icons.notifications_outlined,
+                    label: runtimeState.statusChipLabel,
+                  );
+                },
               ),
-              _buildStatusChip(
-                icon: settingsProvider.invisibleMode
-                    ? Icons.visibility_off_outlined
-                    : Icons.visibility_outlined,
-                label: invisibleSettingHint.badgeLabel,
+              Selector<SettingsProvider, bool>(
+                selector: (context, settingsProvider) =>
+                    settingsProvider.invisibleMode,
+                builder: (context, invisibleMode, child) {
+                  final invisibleSettingHint =
+                      _resolveInvisibleSettingHintForValue(invisibleMode);
+                  return _buildStatusChip(
+                    icon: invisibleMode
+                        ? Icons.visibility_off_outlined
+                        : Icons.visibility_outlined,
+                    label: invisibleSettingHint.badgeLabel,
+                  );
+                },
               ),
             ],
           ),
@@ -1564,26 +1738,117 @@ class _SettingsScreenState extends State<SettingsScreen>
           if (layout.isCompact)
             Column(
               children: [
-                for (var index = 0;
-                    index < overviewActions.length;
-                    index++) ...[
-                  if (index > 0) SizedBox(height: layout.isTight ? 6 : 8),
-                  SizedBox(
-                    width: double.infinity,
-                    child: overviewActions[index],
+                Selector<AuthProvider, _SettingsAccountSecurityViewData>(
+                  selector: (context, authProvider) =>
+                      _selectAccountSecurityViewData(authProvider),
+                  builder: (context, viewData, child) {
+                    return SizedBox(
+                      width: double.infinity,
+                      child: _buildOverviewAction(
+                        key: const Key('settings-overview-phone-action'),
+                        icon: Icons.phone_outlined,
+                        label: viewData.hasPhone ? '更新手机号' : '补手机号',
+                        onTap: () => _presentPhoneEditorSheet(context),
+                      ),
+                    );
+                  },
+                ),
+                SizedBox(height: layout.isTight ? 6 : 8),
+                SizedBox(
+                  width: double.infinity,
+                  child: _buildOverviewAction(
+                    key: const Key('settings-overview-uid-action'),
+                    icon: Icons.badge_outlined,
+                    label: '复制 UID',
+                    onTap: () => _copyUid(context),
                   ),
-                ],
+                ),
+                SizedBox(height: layout.isTight ? 6 : 8),
+                Selector<SettingsProvider,
+                    _SettingsOverviewNotificationRuntimeViewData>(
+                  selector: (context, settingsProvider) =>
+                      _selectOverviewNotificationRuntimeViewData(
+                    settingsProvider,
+                  ),
+                  builder: (context, viewData, child) {
+                    final runtimeState =
+                        _resolveNotificationRuntimeStateForValues(
+                      notificationEnabled: viewData.notificationEnabled,
+                      pushPermissionGranted: viewData.pushPermissionGranted,
+                      pushHasDeviceToken: viewData.pushHasDeviceToken,
+                    );
+                    return SizedBox(
+                      width: double.infinity,
+                      child: _buildOverviewAction(
+                        key: const Key(
+                          'settings-overview-notification-action',
+                        ),
+                        icon: runtimeState.actionIcon,
+                        label: runtimeState.actionLabel,
+                        onTap: () => _handleNotificationAction(
+                          runtimeState.actionType,
+                        ),
+                      ),
+                    );
+                  },
+                ),
               ],
             )
           else
             Row(
               children: [
-                for (var index = 0;
-                    index < overviewActions.length;
-                    index++) ...[
-                  if (index > 0) const SizedBox(width: 10),
-                  Expanded(child: overviewActions[index]),
-                ],
+                Expanded(
+                  child:
+                      Selector<AuthProvider, _SettingsAccountSecurityViewData>(
+                    selector: (context, authProvider) =>
+                        _selectAccountSecurityViewData(authProvider),
+                    builder: (context, viewData, child) {
+                      return _buildOverviewAction(
+                        key: const Key('settings-overview-phone-action'),
+                        icon: Icons.phone_outlined,
+                        label: viewData.hasPhone ? '更新手机号' : '补手机号',
+                        onTap: () => _presentPhoneEditorSheet(context),
+                      );
+                    },
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: _buildOverviewAction(
+                    key: const Key('settings-overview-uid-action'),
+                    icon: Icons.badge_outlined,
+                    label: '复制 UID',
+                    onTap: () => _copyUid(context),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Selector<SettingsProvider,
+                      _SettingsOverviewNotificationRuntimeViewData>(
+                    selector: (context, settingsProvider) =>
+                        _selectOverviewNotificationRuntimeViewData(
+                      settingsProvider,
+                    ),
+                    builder: (context, viewData, child) {
+                      final runtimeState =
+                          _resolveNotificationRuntimeStateForValues(
+                        notificationEnabled: viewData.notificationEnabled,
+                        pushPermissionGranted: viewData.pushPermissionGranted,
+                        pushHasDeviceToken: viewData.pushHasDeviceToken,
+                      );
+                      return _buildOverviewAction(
+                        key: const Key(
+                          'settings-overview-notification-action',
+                        ),
+                        icon: runtimeState.actionIcon,
+                        label: runtimeState.actionLabel,
+                        onTap: () => _handleNotificationAction(
+                          runtimeState.actionType,
+                        ),
+                      );
+                    },
+                  ),
+                ),
               ],
             ),
         ],
@@ -1731,14 +1996,14 @@ class _SettingsScreenState extends State<SettingsScreen>
     );
   }
 
-  Widget _buildDeviceStatusCard(SettingsProvider settingsProvider) {
+  Widget _buildDeviceStatusCard(_SettingsViewData viewData) {
     final layout = _SettingsLayoutSpec.fromSize(
       MediaQuery.of(context).size,
     );
-    final invisibleSettingHint = _resolveInvisibleSettingHint(settingsProvider);
-    final vibrationSettingHint = _resolveVibrationSettingHint(settingsProvider);
+    final invisibleSettingHint = _resolveInvisibleSettingHint(viewData);
+    final vibrationSettingHint = _resolveVibrationSettingHint(viewData);
     final notificationRuntimeState = _resolveNotificationRuntimeState(
-      settingsProvider,
+      viewData,
     );
     final statusItems = <_SettingsDeviceStatusItem>[
       _SettingsDeviceStatusItem(
@@ -1751,7 +2016,7 @@ class _SettingsScreenState extends State<SettingsScreen>
       ),
       _SettingsDeviceStatusItem(
         key: const Key('settings-device-status-presence'),
-        icon: settingsProvider.invisibleMode
+        icon: viewData.invisibleMode
             ? Icons.visibility_off_outlined
             : Icons.visibility_outlined,
         title: '展示状态',
@@ -1761,7 +2026,7 @@ class _SettingsScreenState extends State<SettingsScreen>
       ),
       _SettingsDeviceStatusItem(
         key: const Key('settings-device-status-vibration'),
-        icon: settingsProvider.vibrationEnabled
+        icon: viewData.vibrationEnabled
             ? Icons.vibration_outlined
             : Icons.do_not_disturb_on_outlined,
         title: '震动提醒',
@@ -2352,13 +2617,15 @@ class _SettingsScreenState extends State<SettingsScreen>
 
   Widget _buildExperiencePresetCard(
     BuildContext context,
-    SettingsProvider settingsProvider,
+    _SettingsExperiencePresetViewData viewData,
   ) {
     final layout = _SettingsLayoutSpec.fromSize(
       MediaQuery.of(context).size,
     );
-    final currentPresetState = _resolveExperiencePresetState(settingsProvider);
-    final activePreset = settingsProvider.activeExperiencePreset;
+    final currentPresetState = _resolveExperiencePresetState(
+      viewData.activeExperiencePreset,
+    );
+    final activePreset = viewData.activeExperiencePreset;
     final presetOptions = _experiencePresetOptions;
     final compactSummary = layout.isCompact
         ? '按设备情况快速切到主入口、提醒更克制或展示收起的状态。'
@@ -2477,7 +2744,7 @@ class _SettingsScreenState extends State<SettingsScreen>
         : (layout.isCompact ? compactOptionWidth : null);
     return InkWell(
       key: option.key,
-      onTap: () => _applyExperiencePreset(option.preset),
+      onTap: isActive ? null : () => _applyExperiencePreset(option.preset),
       borderRadius: BorderRadius.circular(14),
       child: Container(
         width: optionWidth,
@@ -2606,18 +2873,20 @@ class _SettingsScreenState extends State<SettingsScreen>
     );
   }
 
-  _SettingsToggleHint _resolveInvisibleSettingHint(
-    SettingsProvider settingsProvider,
-  ) {
+  _SettingsToggleHint _resolveInvisibleSettingHintForValue(bool invisibleMode) {
     return _buildToggleHintFromInlineFeedback(
-      _buildInvisibleModeFeedback(settingsProvider.invisibleMode),
+      _buildInvisibleModeFeedback(invisibleMode),
     );
   }
 
+  _SettingsToggleHint _resolveInvisibleSettingHint(_SettingsViewData viewData) {
+    return _resolveInvisibleSettingHintForValue(viewData.invisibleMode);
+  }
+
   _SettingsExperiencePresetState _resolveExperiencePresetState(
-    SettingsProvider settingsProvider,
+    SettingsExperiencePreset? activePreset,
   ) {
-    switch (settingsProvider.activeExperiencePreset) {
+    switch (activePreset) {
       case SettingsExperiencePreset.responsive:
         return const _SettingsExperiencePresetState(
           badgeLabel: '主入口',
@@ -2670,31 +2939,22 @@ class _SettingsScreenState extends State<SettingsScreen>
         ),
       ];
 
-  _SettingsToggleHint _resolveNotificationSettingHint(
-    SettingsProvider settingsProvider,
+  _SettingsToggleHint _resolveVibrationSettingHintForValue(
+    bool vibrationEnabled,
   ) {
-    final runtimeState = _resolveNotificationRuntimeState(settingsProvider);
-    return _SettingsToggleHint(
-      badgeLabel: runtimeState.badgeLabel,
-      description: runtimeState.description,
-      isHealthy: runtimeState.isHealthy,
+    return _buildToggleHintFromInlineFeedback(
+      _buildVibrationFeedback(vibrationEnabled),
     );
   }
 
-  _SettingsToggleHint _resolveVibrationSettingHint(
-    SettingsProvider settingsProvider,
-  ) {
-    return _buildToggleHintFromInlineFeedback(
-      _buildVibrationFeedback(settingsProvider.vibrationEnabled),
-    );
+  _SettingsToggleHint _resolveVibrationSettingHint(_SettingsViewData viewData) {
+    return _resolveVibrationSettingHintForValue(viewData.vibrationEnabled);
   }
 
   _SettingsOverviewFocusState _resolveOverviewFocusState({
-    required AuthProvider auth,
-    required SettingsProvider settingsProvider,
+    required _SettingsOverviewFocusViewData viewData,
   }) {
-    final pushState = settingsProvider.pushRuntimeState;
-    if ((auth.phone ?? '').trim().isEmpty) {
+    if (!viewData.hasPhone) {
       return const _SettingsOverviewFocusState(
         icon: Icons.phone_outlined,
         title: '手机号还没补全',
@@ -2703,7 +2963,7 @@ class _SettingsScreenState extends State<SettingsScreen>
       );
     }
 
-    if (settingsProvider.notificationEnabled && !pushState.permissionGranted) {
+    if (viewData.notificationEnabled && !viewData.pushPermissionGranted) {
       return const _SettingsOverviewFocusState(
         icon: Icons.notifications_paused_outlined,
         title: NotificationPermissionGuidance.title,
@@ -2712,7 +2972,7 @@ class _SettingsScreenState extends State<SettingsScreen>
       );
     }
 
-    if (!settingsProvider.notificationEnabled) {
+    if (!viewData.notificationEnabled) {
       return const _SettingsOverviewFocusState(
         icon: Icons.notifications_off_outlined,
         title: '消息提醒当前已收起',
@@ -2721,7 +2981,7 @@ class _SettingsScreenState extends State<SettingsScreen>
       );
     }
 
-    if (pushState.deviceToken == null) {
+    if (!viewData.pushHasDeviceToken) {
       return const _SettingsOverviewFocusState(
         icon: Icons.sync_outlined,
         title: '通知通道正在同步',
@@ -2730,7 +2990,7 @@ class _SettingsScreenState extends State<SettingsScreen>
       );
     }
 
-    if (settingsProvider.invisibleMode) {
+    if (viewData.invisibleMode) {
       return const _SettingsOverviewFocusState(
         icon: Icons.visibility_off_outlined,
         title: '展示当前已切到隐身',
@@ -2748,11 +3008,26 @@ class _SettingsScreenState extends State<SettingsScreen>
     );
   }
 
+  _SettingsNotificationRuntimeState _resolveNotificationRuntimeStateForValues({
+    required bool notificationEnabled,
+    required bool pushPermissionGranted,
+    required bool pushHasDeviceToken,
+  }) {
+    return _resolveNotificationRuntimeState(
+      _SettingsViewData(
+        invisibleMode: false,
+        notificationEnabled: notificationEnabled,
+        vibrationEnabled: false,
+        pushPermissionGranted: pushPermissionGranted,
+        pushHasDeviceToken: pushHasDeviceToken,
+      ),
+    );
+  }
+
   _SettingsNotificationRuntimeState _resolveNotificationRuntimeState(
-    SettingsProvider settingsProvider,
+    _SettingsViewData viewData,
   ) {
-    final pushState = settingsProvider.pushRuntimeState;
-    if (!settingsProvider.notificationEnabled) {
+    if (!viewData.notificationEnabled) {
       return const _SettingsNotificationRuntimeState(
         icon: Icons.notifications_off_outlined,
         badgeLabel: '提醒已收起',
@@ -2765,7 +3040,7 @@ class _SettingsScreenState extends State<SettingsScreen>
       );
     }
 
-    if (!pushState.permissionGranted) {
+    if (!viewData.pushPermissionGranted) {
       return const _SettingsNotificationRuntimeState(
         icon: Icons.notifications_paused_outlined,
         badgeLabel: NotificationPermissionGuidance.badgeLabel,
@@ -2779,7 +3054,7 @@ class _SettingsScreenState extends State<SettingsScreen>
       );
     }
 
-    if (pushState.deviceToken == null) {
+    if (!viewData.pushHasDeviceToken) {
       return const _SettingsNotificationRuntimeState(
         icon: Icons.sync_outlined,
         badgeLabel: '通道同步中',
@@ -3129,9 +3404,11 @@ class _SettingsScreenState extends State<SettingsScreen>
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
       sheetAnimationStyle: AppDialog.sheetAnimationStyle,
-      builder: (sheetContext) => Consumer2<FriendProvider, ChatProvider>(
-        builder: (context, friendProvider, chatProvider, child) {
-          final blockedIds = friendProvider.blockedUserIds.toList()..sort();
+      builder: (sheetContext) => Selector2<FriendProvider, ChatProvider,
+          _SettingsBlockedUsersSheetViewData>(
+        selector: (context, friendProvider, chatProvider) =>
+            _selectBlockedUsersSheetViewData(friendProvider, chatProvider),
+        builder: (context, viewData, child) {
           final maxHeight = MediaQuery.of(context).size.height * 0.72;
 
           return Container(
@@ -3146,37 +3423,31 @@ class _SettingsScreenState extends State<SettingsScreen>
                   children: [
                     _buildBlockedUsersSheetHeader(
                       sheetContext,
-                      blockedCount: blockedIds.length,
+                      blockedCount: viewData.rows.length,
                     ),
                     const SizedBox(height: 14),
-                    _buildBlockedUsersSummaryCard(blockedIds.length),
+                    _buildBlockedUsersSummaryCard(viewData.rows.length),
                     const SizedBox(height: 14),
                     Expanded(
-                      child: blockedIds.isEmpty
+                      child: viewData.rows.isEmpty
                           ? _buildBlockedUsersEmptyState()
                           : ListView.separated(
                               key: const Key('settings-blocked-users-list'),
                               padding: EdgeInsets.zero,
-                              itemCount: blockedIds.length,
+                              itemCount: viewData.rows.length,
                               separatorBuilder: (_, __) =>
                                   const SizedBox(height: 10),
                               itemBuilder: (context, index) {
-                                final userId = blockedIds[index];
-                                final friend = friendProvider.getFriend(userId);
-                                final thread = chatProvider.getThread(userId);
-                                final avatar = friend?.user.avatar ??
-                                    thread?.otherUser.avatar ??
-                                    '🙂';
-                                final displayName = friend?.displayName ??
-                                    thread?.otherUser.nickname ??
-                                    userId;
+                                final row = viewData.rows[index];
+                                '🙂';
 
                                 return _buildBlockedUserRow(
                                   context,
-                                  friendProvider: friendProvider,
-                                  userId: userId,
-                                  displayName: displayName,
-                                  avatar: avatar,
+                                  friendProvider:
+                                      context.read<FriendProvider>(),
+                                  userId: row.userId,
+                                  displayName: row.displayName,
+                                  avatar: row.avatar,
                                 );
                               },
                             ),
@@ -3568,6 +3839,9 @@ class _SettingsScreenState extends State<SettingsScreen>
 
   Future<void> _applyExperiencePreset(SettingsExperiencePreset preset) async {
     final settingsProvider = context.read<SettingsProvider>();
+    if (settingsProvider.activeExperiencePreset == preset) {
+      return;
+    }
     final shouldEnableNotifications =
         preset != SettingsExperiencePreset.quietObserve;
     if (shouldEnableNotifications && !settingsProvider.notificationEnabled) {
@@ -3645,7 +3919,9 @@ class _SettingsScreenState extends State<SettingsScreen>
   _SettingsInlineFeedbackState _buildNotificationInlineFeedback(
     SettingsProvider settingsProvider,
   ) {
-    final runtimeState = _resolveNotificationRuntimeState(settingsProvider);
+    final runtimeState = _resolveNotificationRuntimeState(
+      _selectSettingsViewData(settingsProvider),
+    );
     return switch (runtimeState.actionType) {
       _SettingsNotificationAction.openSystemSettings =>
         const _SettingsInlineFeedbackState(
@@ -3682,7 +3958,9 @@ class _SettingsScreenState extends State<SettingsScreen>
   _SettingsInlineFeedbackState _buildNotificationResumeInlineFeedback(
     SettingsProvider settingsProvider,
   ) {
-    final runtimeState = _resolveNotificationRuntimeState(settingsProvider);
+    final runtimeState = _resolveNotificationRuntimeState(
+      _selectSettingsViewData(settingsProvider),
+    );
     return switch (runtimeState.actionType) {
       _SettingsNotificationAction.openSystemSettings =>
         const _SettingsInlineFeedbackState(
@@ -3822,9 +4100,7 @@ class _SettingsScreenState extends State<SettingsScreen>
 
   void _showInlineFeedback(_SettingsInlineFeedbackState state) {
     if (!mounted) return;
-    setState(() {
-      _inlineFeedback = state;
-    });
+    _inlineFeedbackNotifier.value = state;
   }
 
   void _disposeTextControllersWithDelay(
@@ -4190,120 +4466,130 @@ class _SettingsScreenState extends State<SettingsScreen>
             padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
             child: SafeArea(
               top: false,
-              child: ValueListenableBuilder<_SettingsSheetValidationState>(
-                valueListenable: phoneValidation,
-                builder: (context, validation, child) {
-                  return SingleChildScrollView(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        _buildAccountSheetHeader(
-                          title: '修改手机号',
-                          description: '手机号会影响登录找回、验证码接收和账号确认，建议保持为当前常用号码。',
-                          badgeLabel: '登录与找回',
-                        ),
-                        const SizedBox(height: 14),
-                        _buildAccountHintCard(
-                          key: const Key('settings-phone-hint-card'),
-                          icon: Icons.sim_card_outlined,
-                          title: authProvider.phone?.trim().isNotEmpty == true
-                              ? '当前已绑定手机号'
-                              : '当前还未绑定手机号',
-                          description:
-                              authProvider.phone?.trim().isNotEmpty == true
-                                  ? '更新后，这台设备后续登录和排障都会以新号码为准。'
-                                  : '补全后会更方便账号找回和后续联调确认。',
-                        ),
-                        const SizedBox(height: 16),
-                        TextField(
-                          key: const Key('settings-phone-input'),
-                          controller: controller,
-                          keyboardType: TextInputType.phone,
-                          maxLength: 11,
-                          autofocus: false,
-                          decoration: const InputDecoration(
-                            hintText: '请输入新的 11 位手机号',
-                            counterText: '',
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        _buildAccountHintCard(
-                          key: const Key('settings-phone-validation-card'),
-                          icon: validation.icon,
-                          title: validation.title,
-                          description: validation.description,
-                        ),
-                        const SizedBox(height: 20),
-                        Row(
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildAccountSheetHeader(
+                      title: '修改手机号',
+                      description: '手机号会影响登录找回、验证码接收和账号确认，建议保持为当前常用号码。',
+                      badgeLabel: '登录与找回',
+                    ),
+                    const SizedBox(height: 14),
+                    _buildAccountHintCard(
+                      key: const Key('settings-phone-hint-card'),
+                      icon: Icons.sim_card_outlined,
+                      title: authProvider.phone?.trim().isNotEmpty == true
+                          ? '当前已绑定手机号'
+                          : '当前还未绑定手机号',
+                      description: authProvider.phone?.trim().isNotEmpty == true
+                          ? '更新后，这台设备后续登录和排障都会以新号码为准。'
+                          : '补全后会更方便账号找回和后续联调确认。',
+                    ),
+                    const SizedBox(height: 16),
+                    TextField(
+                      key: const Key('settings-phone-input'),
+                      controller: controller,
+                      keyboardType: TextInputType.phone,
+                      maxLength: 11,
+                      autofocus: false,
+                      decoration: const InputDecoration(
+                        hintText: '请输入新的 11 位手机号',
+                        counterText: '',
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    ValueListenableBuilder<_SettingsSheetValidationState>(
+                      valueListenable: phoneValidation,
+                      builder: (context, validation, child) {
+                        return Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Expanded(
-                              child: TextButton(
-                                key: const Key('settings-phone-cancel'),
-                                onPressed: () {
-                                  FocusScope.of(sheetContext).unfocus();
-                                  Navigator.pop(sheetContext, false);
-                                },
-                                style: TextButton.styleFrom(
-                                  padding:
-                                      const EdgeInsets.symmetric(vertical: 14),
-                                  backgroundColor: AppColors.white05,
-                                  disabledBackgroundColor: AppColors.white05,
-                                  disabledForegroundColor:
-                                      AppColors.textDisabled,
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                ),
-                                child: const Text(
-                                  '取消',
-                                  style: TextStyle(
-                                    fontSize: 15,
-                                    fontWeight: FontWeight.w300,
-                                    color: AppColors.textSecondary,
-                                  ),
-                                ),
-                              ),
+                            _buildAccountHintCard(
+                              key: const Key('settings-phone-validation-card'),
+                              icon: validation.icon,
+                              title: validation.title,
+                              description: validation.description,
                             ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: TextButton(
-                                key: const Key('settings-phone-save'),
-                                onPressed: validation.isReady
-                                    ? () {
-                                        FocusScope.of(sheetContext).unfocus();
-                                        Navigator.pop(sheetContext, true);
-                                      }
-                                    : null,
-                                style: TextButton.styleFrom(
-                                  padding:
-                                      const EdgeInsets.symmetric(vertical: 14),
-                                  backgroundColor: AppColors.white12,
-                                  disabledBackgroundColor: AppColors.white05,
-                                  disabledForegroundColor:
-                                      AppColors.textDisabled,
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(12),
+                            const SizedBox(height: 20),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: TextButton(
+                                    key: const Key('settings-phone-cancel'),
+                                    onPressed: () {
+                                      FocusScope.of(sheetContext).unfocus();
+                                      Navigator.pop(sheetContext, false);
+                                    },
+                                    style: TextButton.styleFrom(
+                                      padding: const EdgeInsets.symmetric(
+                                        vertical: 14,
+                                      ),
+                                      backgroundColor: AppColors.white05,
+                                      disabledBackgroundColor:
+                                          AppColors.white05,
+                                      disabledForegroundColor:
+                                          AppColors.textDisabled,
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(12),
+                                      ),
+                                    ),
+                                    child: const Text(
+                                      '取消',
+                                      style: TextStyle(
+                                        fontSize: 15,
+                                        fontWeight: FontWeight.w300,
+                                        color: AppColors.textSecondary,
+                                      ),
+                                    ),
                                   ),
                                 ),
-                                child: Text(
-                                  '保存',
-                                  style: TextStyle(
-                                    fontSize: 15,
-                                    fontWeight: FontWeight.w300,
-                                    color: validation.isReady
-                                        ? AppColors.textPrimary
-                                        : AppColors.textDisabled,
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: TextButton(
+                                    key: const Key('settings-phone-save'),
+                                    onPressed: validation.isReady
+                                        ? () {
+                                            FocusScope.of(sheetContext)
+                                                .unfocus();
+                                            Navigator.pop(sheetContext, true);
+                                          }
+                                        : null,
+                                    style: TextButton.styleFrom(
+                                      padding: const EdgeInsets.symmetric(
+                                        vertical: 14,
+                                      ),
+                                      backgroundColor: AppColors.white12,
+                                      disabledBackgroundColor:
+                                          AppColors.white05,
+                                      disabledForegroundColor:
+                                          AppColors.textDisabled,
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(12),
+                                      ),
+                                    ),
+                                    child: Text(
+                                      '保存',
+                                      style: TextStyle(
+                                        fontSize: 15,
+                                        fontWeight: FontWeight.w300,
+                                        color: validation.isReady
+                                            ? AppColors.textPrimary
+                                            : AppColors.textDisabled,
+                                      ),
+                                    ),
                                   ),
                                 ),
-                              ),
+                              ],
                             ),
                           ],
-                        ),
-                      ],
+                        );
+                      },
                     ),
-                  );
-                },
+                  ],
+                ),
               ),
             ),
           ),
@@ -4371,128 +4657,141 @@ class _SettingsScreenState extends State<SettingsScreen>
             padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
             child: SafeArea(
               top: false,
-              child: ValueListenableBuilder<_SettingsSheetValidationState>(
-                valueListenable: passwordValidation,
-                builder: (context, validation, child) {
-                  return SingleChildScrollView(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        _buildAccountSheetHeader(
-                          title: '修改密码',
-                          description: '建议定期更换密码，并避免和其他账号复用，减少测试环境和正式环境串用风险。',
-                          badgeLabel: '账号安全',
-                        ),
-                        const SizedBox(height: 14),
-                        _buildAccountHintCard(
-                          key: const Key('settings-password-hint-card'),
-                          icon: Icons.lock_clock_outlined,
-                          title: '本地安全校验',
-                          description: '先确认旧密码，再保存新密码。新的登录密码至少 6 位，并保持两次输入一致。',
-                        ),
-                        const SizedBox(height: 16),
-                        TextField(
-                          key: const Key('settings-password-old-input'),
-                          controller: oldController,
-                          obscureText: true,
-                          autofocus: false,
-                          decoration: const InputDecoration(hintText: '输入当前密码'),
-                        ),
-                        const SizedBox(height: 10),
-                        TextField(
-                          key: const Key('settings-password-new-input'),
-                          controller: newController,
-                          obscureText: true,
-                          decoration: const InputDecoration(
-                            hintText: '输入新的密码，至少 6 位',
-                          ),
-                        ),
-                        const SizedBox(height: 10),
-                        TextField(
-                          key: const Key('settings-password-confirm-input'),
-                          controller: confirmController,
-                          obscureText: true,
-                          decoration:
-                              const InputDecoration(hintText: '再次确认新密码'),
-                        ),
-                        const SizedBox(height: 12),
-                        _buildAccountHintCard(
-                          key: const Key('settings-password-validation-card'),
-                          icon: validation.icon,
-                          title: validation.title,
-                          description: validation.description,
-                        ),
-                        const SizedBox(height: 20),
-                        Row(
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildAccountSheetHeader(
+                      title: '修改密码',
+                      description: '建议定期更换密码，并避免和其他账号复用，减少测试环境和正式环境串用风险。',
+                      badgeLabel: '账号安全',
+                    ),
+                    const SizedBox(height: 14),
+                    _buildAccountHintCard(
+                      key: const Key('settings-password-hint-card'),
+                      icon: Icons.lock_clock_outlined,
+                      title: '本地安全校验',
+                      description: '先确认旧密码，再保存新密码。新的登录密码至少 6 位，并保持两次输入一致。',
+                    ),
+                    const SizedBox(height: 16),
+                    TextField(
+                      key: const Key('settings-password-old-input'),
+                      controller: oldController,
+                      obscureText: true,
+                      autofocus: false,
+                      decoration: const InputDecoration(hintText: '输入当前密码'),
+                    ),
+                    const SizedBox(height: 10),
+                    TextField(
+                      key: const Key('settings-password-new-input'),
+                      controller: newController,
+                      obscureText: true,
+                      decoration: const InputDecoration(
+                        hintText: '输入新的密码，至少 6 位',
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    TextField(
+                      key: const Key('settings-password-confirm-input'),
+                      controller: confirmController,
+                      obscureText: true,
+                      decoration: const InputDecoration(hintText: '再次确认新密码'),
+                    ),
+                    const SizedBox(height: 12),
+                    ValueListenableBuilder<_SettingsSheetValidationState>(
+                      valueListenable: passwordValidation,
+                      builder: (context, validation, child) {
+                        return Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Expanded(
-                              child: TextButton(
-                                key: const Key('settings-password-cancel'),
-                                onPressed: () {
-                                  FocusScope.of(sheetContext).unfocus();
-                                  Navigator.pop(sheetContext, false);
-                                },
-                                style: TextButton.styleFrom(
-                                  padding:
-                                      const EdgeInsets.symmetric(vertical: 14),
-                                  backgroundColor: AppColors.white05,
-                                  disabledBackgroundColor: AppColors.white05,
-                                  disabledForegroundColor:
-                                      AppColors.textDisabled,
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                ),
-                                child: const Text(
-                                  '取消',
-                                  style: TextStyle(
-                                    fontSize: 15,
-                                    fontWeight: FontWeight.w300,
-                                    color: AppColors.textSecondary,
-                                  ),
-                                ),
+                            _buildAccountHintCard(
+                              key: const Key(
+                                'settings-password-validation-card',
                               ),
+                              icon: validation.icon,
+                              title: validation.title,
+                              description: validation.description,
                             ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: TextButton(
-                                key: const Key('settings-password-save'),
-                                onPressed: validation.isReady
-                                    ? () {
-                                        FocusScope.of(sheetContext).unfocus();
-                                        Navigator.pop(sheetContext, true);
-                                      }
-                                    : null,
-                                style: TextButton.styleFrom(
-                                  padding:
-                                      const EdgeInsets.symmetric(vertical: 14),
-                                  backgroundColor: AppColors.white12,
-                                  disabledBackgroundColor: AppColors.white05,
-                                  disabledForegroundColor:
-                                      AppColors.textDisabled,
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(12),
+                            const SizedBox(height: 20),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: TextButton(
+                                    key: const Key('settings-password-cancel'),
+                                    onPressed: () {
+                                      FocusScope.of(sheetContext).unfocus();
+                                      Navigator.pop(sheetContext, false);
+                                    },
+                                    style: TextButton.styleFrom(
+                                      padding: const EdgeInsets.symmetric(
+                                        vertical: 14,
+                                      ),
+                                      backgroundColor: AppColors.white05,
+                                      disabledBackgroundColor:
+                                          AppColors.white05,
+                                      disabledForegroundColor:
+                                          AppColors.textDisabled,
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(12),
+                                      ),
+                                    ),
+                                    child: const Text(
+                                      '取消',
+                                      style: TextStyle(
+                                        fontSize: 15,
+                                        fontWeight: FontWeight.w300,
+                                        color: AppColors.textSecondary,
+                                      ),
+                                    ),
                                   ),
                                 ),
-                                child: Text(
-                                  '确认',
-                                  style: TextStyle(
-                                    fontSize: 15,
-                                    fontWeight: FontWeight.w300,
-                                    color: validation.isReady
-                                        ? AppColors.textPrimary
-                                        : AppColors.textDisabled,
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: TextButton(
+                                    key: const Key('settings-password-save'),
+                                    onPressed: validation.isReady
+                                        ? () {
+                                            FocusScope.of(
+                                              sheetContext,
+                                            ).unfocus();
+                                            Navigator.pop(sheetContext, true);
+                                          }
+                                        : null,
+                                    style: TextButton.styleFrom(
+                                      padding: const EdgeInsets.symmetric(
+                                        vertical: 14,
+                                      ),
+                                      backgroundColor: AppColors.white12,
+                                      disabledBackgroundColor:
+                                          AppColors.white05,
+                                      disabledForegroundColor:
+                                          AppColors.textDisabled,
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(12),
+                                      ),
+                                    ),
+                                    child: Text(
+                                      '确认',
+                                      style: TextStyle(
+                                        fontSize: 15,
+                                        fontWeight: FontWeight.w300,
+                                        color: validation.isReady
+                                            ? AppColors.textPrimary
+                                            : AppColors.textDisabled,
+                                      ),
+                                    ),
                                   ),
                                 ),
-                              ),
+                              ],
                             ),
                           ],
-                        ),
-                      ],
+                        );
+                      },
                     ),
-                  );
-                },
+                  ],
+                ),
               ),
             ),
           ),
@@ -4557,6 +4856,324 @@ class _SettingsScreenState extends State<SettingsScreen>
       if (context.mounted) context.go('/login');
     }
   }
+}
+
+class _SettingsViewData {
+  const _SettingsViewData({
+    required this.invisibleMode,
+    required this.notificationEnabled,
+    required this.vibrationEnabled,
+    required this.pushPermissionGranted,
+    required this.pushHasDeviceToken,
+  });
+
+  final bool invisibleMode;
+  final bool notificationEnabled;
+  final bool vibrationEnabled;
+  final bool pushPermissionGranted;
+  final bool pushHasDeviceToken;
+
+  SettingsExperiencePreset? get activeExperiencePreset {
+    if (notificationEnabled && vibrationEnabled && !invisibleMode) {
+      return SettingsExperiencePreset.responsive;
+    }
+
+    if (notificationEnabled && !vibrationEnabled && !invisibleMode) {
+      return SettingsExperiencePreset.balanced;
+    }
+
+    if (!notificationEnabled && !vibrationEnabled && invisibleMode) {
+      return SettingsExperiencePreset.quietObserve;
+    }
+
+    return null;
+  }
+
+  @override
+  bool operator ==(Object other) {
+    return identical(this, other) ||
+        other is _SettingsViewData &&
+            other.invisibleMode == invisibleMode &&
+            other.notificationEnabled == notificationEnabled &&
+            other.vibrationEnabled == vibrationEnabled &&
+            other.pushPermissionGranted == pushPermissionGranted &&
+            other.pushHasDeviceToken == pushHasDeviceToken;
+  }
+
+  @override
+  int get hashCode => Object.hash(
+        invisibleMode,
+        notificationEnabled,
+        vibrationEnabled,
+        pushPermissionGranted,
+        pushHasDeviceToken,
+      );
+}
+
+class _SettingsInvisibleModeItemViewData {
+  const _SettingsInvisibleModeItemViewData({
+    required this.invisibleMode,
+    required this.badgeLabel,
+    required this.description,
+    required this.isHealthy,
+  });
+
+  final bool invisibleMode;
+  final String badgeLabel;
+  final String description;
+  final bool isHealthy;
+
+  @override
+  bool operator ==(Object other) {
+    return identical(this, other) ||
+        other is _SettingsInvisibleModeItemViewData &&
+            other.invisibleMode == invisibleMode &&
+            other.badgeLabel == badgeLabel &&
+            other.description == description &&
+            other.isHealthy == isHealthy;
+  }
+
+  @override
+  int get hashCode => Object.hash(
+        invisibleMode,
+        badgeLabel,
+        description,
+        isHealthy,
+      );
+}
+
+class _SettingsNotificationItemViewData {
+  const _SettingsNotificationItemViewData({
+    required this.notificationEnabled,
+    required this.badgeLabel,
+    required this.description,
+    required this.isHealthy,
+  });
+
+  final bool notificationEnabled;
+  final String badgeLabel;
+  final String description;
+  final bool isHealthy;
+
+  @override
+  bool operator ==(Object other) {
+    return identical(this, other) ||
+        other is _SettingsNotificationItemViewData &&
+            other.notificationEnabled == notificationEnabled &&
+            other.badgeLabel == badgeLabel &&
+            other.description == description &&
+            other.isHealthy == isHealthy;
+  }
+
+  @override
+  int get hashCode => Object.hash(
+        notificationEnabled,
+        badgeLabel,
+        description,
+        isHealthy,
+      );
+}
+
+class _SettingsVibrationItemViewData {
+  const _SettingsVibrationItemViewData({
+    required this.vibrationEnabled,
+    required this.badgeLabel,
+    required this.description,
+    required this.isHealthy,
+  });
+
+  final bool vibrationEnabled;
+  final String badgeLabel;
+  final String description;
+  final bool isHealthy;
+
+  @override
+  bool operator ==(Object other) {
+    return identical(this, other) ||
+        other is _SettingsVibrationItemViewData &&
+            other.vibrationEnabled == vibrationEnabled &&
+            other.badgeLabel == badgeLabel &&
+            other.description == description &&
+            other.isHealthy == isHealthy;
+  }
+
+  @override
+  int get hashCode => Object.hash(
+        vibrationEnabled,
+        badgeLabel,
+        description,
+        isHealthy,
+      );
+}
+
+class _SettingsBlockedUsersSheetViewData {
+  const _SettingsBlockedUsersSheetViewData({
+    required this.rows,
+  });
+
+  final List<_SettingsBlockedUserRowViewData> rows;
+
+  @override
+  bool operator ==(Object other) {
+    return identical(this, other) ||
+        other is _SettingsBlockedUsersSheetViewData &&
+            listEquals(other.rows, rows);
+  }
+
+  @override
+  int get hashCode => Object.hashAll(rows);
+}
+
+class _SettingsBlockedUserRowViewData {
+  const _SettingsBlockedUserRowViewData({
+    required this.userId,
+    required this.displayName,
+    required this.avatar,
+  });
+
+  final String userId;
+  final String displayName;
+  final String avatar;
+
+  @override
+  bool operator ==(Object other) {
+    return identical(this, other) ||
+        other is _SettingsBlockedUserRowViewData &&
+            other.userId == userId &&
+            other.displayName == displayName &&
+            other.avatar == avatar;
+  }
+
+  @override
+  int get hashCode => Object.hash(userId, displayName, avatar);
+}
+
+class _SettingsAccountSecurityViewData {
+  const _SettingsAccountSecurityViewData({
+    required this.phone,
+    required this.uid,
+  });
+
+  final String? phone;
+  final String? uid;
+
+  bool get hasPhone => (phone ?? '').trim().isNotEmpty;
+
+  @override
+  bool operator ==(Object other) {
+    return identical(this, other) ||
+        other is _SettingsAccountSecurityViewData &&
+            other.phone == phone &&
+            other.uid == uid;
+  }
+
+  @override
+  int get hashCode => Object.hash(phone, uid);
+}
+
+class _SettingsOverviewFocusViewData {
+  const _SettingsOverviewFocusViewData({
+    required this.hasPhone,
+    required this.invisibleMode,
+    required this.notificationEnabled,
+    required this.pushPermissionGranted,
+    required this.pushHasDeviceToken,
+  });
+
+  final bool hasPhone;
+  final bool invisibleMode;
+  final bool notificationEnabled;
+  final bool pushPermissionGranted;
+  final bool pushHasDeviceToken;
+
+  @override
+  bool operator ==(Object other) {
+    return identical(this, other) ||
+        other is _SettingsOverviewFocusViewData &&
+            other.hasPhone == hasPhone &&
+            other.invisibleMode == invisibleMode &&
+            other.notificationEnabled == notificationEnabled &&
+            other.pushPermissionGranted == pushPermissionGranted &&
+            other.pushHasDeviceToken == pushHasDeviceToken;
+  }
+
+  @override
+  int get hashCode => Object.hash(
+        hasPhone,
+        invisibleMode,
+        notificationEnabled,
+        pushPermissionGranted,
+        pushHasDeviceToken,
+      );
+}
+
+class _SettingsExperiencePresetViewData {
+  const _SettingsExperiencePresetViewData({
+    required this.invisibleMode,
+    required this.notificationEnabled,
+    required this.vibrationEnabled,
+  });
+
+  final bool invisibleMode;
+  final bool notificationEnabled;
+  final bool vibrationEnabled;
+
+  SettingsExperiencePreset? get activeExperiencePreset {
+    if (notificationEnabled && vibrationEnabled && !invisibleMode) {
+      return SettingsExperiencePreset.responsive;
+    }
+
+    if (notificationEnabled && !vibrationEnabled && !invisibleMode) {
+      return SettingsExperiencePreset.balanced;
+    }
+
+    if (!notificationEnabled && !vibrationEnabled && invisibleMode) {
+      return SettingsExperiencePreset.quietObserve;
+    }
+
+    return null;
+  }
+
+  @override
+  bool operator ==(Object other) {
+    return identical(this, other) ||
+        other is _SettingsExperiencePresetViewData &&
+            other.invisibleMode == invisibleMode &&
+            other.notificationEnabled == notificationEnabled &&
+            other.vibrationEnabled == vibrationEnabled;
+  }
+
+  @override
+  int get hashCode =>
+      Object.hash(invisibleMode, notificationEnabled, vibrationEnabled);
+}
+
+class _SettingsOverviewNotificationRuntimeViewData {
+  const _SettingsOverviewNotificationRuntimeViewData({
+    required this.notificationEnabled,
+    required this.pushPermissionGranted,
+    required this.pushHasDeviceToken,
+  });
+
+  final bool notificationEnabled;
+  final bool pushPermissionGranted;
+  final bool pushHasDeviceToken;
+
+  @override
+  bool operator ==(Object other) {
+    return identical(this, other) ||
+        other is _SettingsOverviewNotificationRuntimeViewData &&
+            other.notificationEnabled == notificationEnabled &&
+            other.pushPermissionGranted == pushPermissionGranted &&
+            other.pushHasDeviceToken == pushHasDeviceToken;
+  }
+
+  @override
+  int get hashCode => Object.hash(
+        notificationEnabled,
+        pushPermissionGranted,
+        pushHasDeviceToken,
+      );
 }
 
 class _SettingsOverviewFocusState {

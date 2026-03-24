@@ -412,6 +412,9 @@ class ChatDeliveryStatusCard extends StatelessWidget {
           if (spec.actionLabel != null && onActionTap != null) ...[
             const SizedBox(width: 8),
             GestureDetector(
+              key: ValueKey<String>(
+                'chat-delivery-status-action:${spec.actionType?.name ?? spec.actionLabel}',
+              ),
               onTap: onActionTap,
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),

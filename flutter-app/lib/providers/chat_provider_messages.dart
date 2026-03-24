@@ -27,12 +27,22 @@ extension ChatProviderMessages on ChatProvider {
       type: MessageType.text,
     );
 
+    final previousOutgoingDeliveryFingerprint =
+        _threadOutgoingDeliveryFingerprint(threadId);
+    final previousFingerprint = _threadListPresentationFingerprint(threadId);
     _messages[threadId]?.add(message);
+    _markThreadInteractionChanged(threadId);
+    _markThreadOutgoingDeliveryDirtyIfChanged(
+      threadId,
+      previousOutgoingDeliveryFingerprint,
+    );
+    _markThreadListPresentationDirtyIfChanged(threadId, previousFingerprint);
 
     if (thread.isUnfollowed) {
       _updateThread(
         threadId,
         messagesSinceUnfollow: thread.messagesSinceUnfollow + 1,
+        notify: false,
       );
     }
 
@@ -185,9 +195,18 @@ extension ChatProviderMessages on ChatProvider {
 
     final remoteMessage = result.data;
     if (remoteMessage != null) {
+      final previousOutgoingDeliveryFingerprint =
+          _threadOutgoingDeliveryFingerprint(threadId);
+      final previousFingerprint = _threadListPresentationFingerprint(threadId);
       messages[index] = remoteMessage;
       _clearDeliveryFailureState(threadId, localMessageId);
-      _addIntimacy(threadId, content, true);
+      _markThreadInteractionChanged(threadId);
+      _markThreadOutgoingDeliveryDirtyIfChanged(
+        threadId,
+        previousOutgoingDeliveryFingerprint,
+      );
+      _markThreadListPresentationDirtyIfChanged(threadId, previousFingerprint);
+      _addIntimacy(threadId, content, true, notify: false);
       _recordDeliverySuccess(MessageType.text, localMessageId);
       notifyListeners();
       return;
@@ -212,6 +231,8 @@ extension ChatProviderMessages on ChatProvider {
       final index = messages.indexWhere((msg) => msg.id == messageId);
       if (index != -1) {
         final isSuccess = DateTime.now().millisecond % 10 != 0;
+        final previousOutgoingDeliveryFingerprint =
+            _threadOutgoingDeliveryFingerprint(threadId);
 
         messages[index] = messages[index].copyWith(
           status: isSuccess ? MessageStatus.sent : MessageStatus.failed,
@@ -223,17 +244,29 @@ extension ChatProviderMessages on ChatProvider {
           _clearDeliveryFailureState(threadId, messageId);
           _recordDeliveryFailure(MessageType.text, messageId);
         }
+        _markThreadInteractionChanged(threadId);
+        _markThreadOutgoingDeliveryDirtyIfChanged(
+          threadId,
+          previousOutgoingDeliveryFingerprint,
+        );
+        if (isSuccess) {
+          _addIntimacy(threadId, content, true, notify: false);
+        }
         notifyListeners();
 
         if (isSuccess) {
-          _addIntimacy(threadId, content, true);
           _mockReply(threadId);
         }
       }
     }
   }
 
-  void _addIntimacy(String threadId, String content, bool isSend) {
+  void _addIntimacy(
+    String threadId,
+    String content,
+    bool isSend, {
+    bool notify = false,
+  }) {
     final thread = _threads[threadId];
     if (thread == null || thread.isFriend) return;
 
@@ -260,7 +293,7 @@ extension ChatProviderMessages on ChatProvider {
     _lastMessageTime[threadId] = DateTime.now();
 
     final newPoints = thread.intimacyPoints + points;
-    _updateThread(threadId, intimacyPoints: newPoints);
+    _updateThread(threadId, intimacyPoints: newPoints, notify: notify);
   }
 
   bool canResendMessage(String threadId, String messageId) {
@@ -295,9 +328,26 @@ extension ChatProviderMessages on ChatProvider {
           (msg) => msg?.id == messageId,
           orElse: () => null,
         );
-    if (message == null ||
-        !message.isMe ||
-        message.status != MessageStatus.failed) {
+    if (message == null) {
+      return ChatDeliveryFailureState.retryable;
+    }
+
+    return _deliveryFailureStateForMessage(threadId, message);
+  }
+
+  ChatDeliveryFailureState deliveryFailureStateForMessage(
+    String threadId,
+    Message message,
+  ) {
+    return _deliveryFailureStateForMessage(threadId, message);
+  }
+
+  ChatDeliveryFailureState _deliveryFailureStateForMessage(
+    String threadId,
+    Message message,
+  ) {
+    threadId = _resolveThreadId(threadId);
+    if (!message.isMe || message.status != MessageStatus.failed) {
       return ChatDeliveryFailureState.retryable;
     }
 
@@ -320,14 +370,14 @@ extension ChatProviderMessages on ChatProvider {
     }
 
     final cachedFailureState =
-        _messageFailureStates[_deliveryFailureKey(threadId, messageId)];
+        _messageFailureStates[_deliveryFailureKey(threadId, message.id)];
     if (cachedFailureState != null) {
       return cachedFailureState;
     }
 
     final retryable = message.type == MessageType.image
         ? _canRetryFailedImageMessage(threadId, message)
-        : canResendMessage(threadId, messageId);
+        : canResendMessage(threadId, message.id);
     return retryable
         ? ChatDeliveryFailureState.retryable
         : ChatDeliveryFailureState.retryUnavailable;
@@ -385,8 +435,15 @@ extension ChatProviderMessages on ChatProvider {
 
     _deliveryStatsService.recordRetryRequested();
     _retryingMessageIds.add(messageId);
+    final previousOutgoingDeliveryFingerprint =
+        _threadOutgoingDeliveryFingerprint(threadId);
     _clearDeliveryFailureState(threadId, messageId);
     messages[index] = message.copyWith(status: MessageStatus.sending);
+    _markThreadInteractionChanged(threadId);
+    _markThreadOutgoingDeliveryDirtyIfChanged(
+      threadId,
+      previousOutgoingDeliveryFingerprint,
+    );
     notifyListeners();
 
     if (_chatService.hasSession) {
@@ -453,9 +510,16 @@ extension ChatProviderMessages on ChatProvider {
     final content = messages[index].content;
     _deliveryStatsService.recordRetryRequested();
     _retryingMessageIds.add(messageId);
+    final previousOutgoingDeliveryFingerprint =
+        _threadOutgoingDeliveryFingerprint(threadId);
     _clearDeliveryFailureState(threadId, messageId);
     messages[index] = messages[index].copyWith(
       status: MessageStatus.sending,
+    );
+    _markThreadInteractionChanged(threadId);
+    _markThreadOutgoingDeliveryDirtyIfChanged(
+      threadId,
+      previousOutgoingDeliveryFingerprint,
     );
     notifyListeners();
 
@@ -482,6 +546,8 @@ extension ChatProviderMessages on ChatProvider {
     if (messages == null) return;
     final index = messages.indexWhere((msg) => msg.id == messageId);
     if (index == -1) return;
+    final previousOutgoingDeliveryFingerprint =
+        _threadOutgoingDeliveryFingerprint(threadId);
     final message = messages[index];
     messages[index] = message.copyWith(status: MessageStatus.failed);
     if (failureState != null) {
@@ -490,6 +556,11 @@ extension ChatProviderMessages on ChatProvider {
       _clearDeliveryFailureState(threadId, messageId);
     }
     _recordDeliveryFailure(message.type, messageId);
+    _markThreadInteractionChanged(threadId);
+    _markThreadOutgoingDeliveryDirtyIfChanged(
+      threadId,
+      previousOutgoingDeliveryFingerprint,
+    );
     notifyListeners();
   }
 
@@ -553,6 +624,8 @@ extension ChatProviderMessages on ChatProvider {
 
     final content = _chatService.getMockReply();
     final isActiveThread = _activeThreadId == threadId;
+    final hadUnread = (_threads[threadId]?.unreadCount ?? 0) > 0;
+    final previousFingerprint = _threadListPresentationFingerprint(threadId);
     _markPeerReadForOutgoing(threadId);
     final reply = Message(
       id: const Uuid().v4(),
@@ -566,10 +639,15 @@ extension ChatProviderMessages on ChatProvider {
 
     _messages[threadId]?.add(reply);
     _deletedThreads[threadId] = false;
-    _addIntimacy(threadId, content, false);
+    _markThreadInteractionChanged(threadId);
+    _markThreadListPresentationDirtyIfChanged(threadId, previousFingerprint);
+    _addIntimacy(threadId, content, false, notify: false);
 
     if (isActiveThread) {
       markAsRead(threadId);
+      if (!hadUnread) {
+        notifyListeners();
+      }
     } else {
       _updateThread(
         threadId,
@@ -595,6 +673,7 @@ extension ChatProviderMessages on ChatProvider {
     }
 
     if (messageUpdated) {
+      _markThreadInteractionChanged(threadId);
       notifyListeners();
     }
 
@@ -697,6 +776,8 @@ extension ChatProviderMessages on ChatProvider {
   }) {
     final messages = _messages[threadId];
     if (messages == null || messages.isEmpty) return;
+    final previousOutgoingDeliveryFingerprint =
+        _threadOutgoingDeliveryFingerprint(threadId);
 
     final upperBound = _resolvePeerReadUpperBound(
       messages,
@@ -716,6 +797,11 @@ extension ChatProviderMessages on ChatProvider {
     }
 
     if (changed) {
+      _markThreadInteractionChanged(threadId);
+      _markThreadOutgoingDeliveryDirtyIfChanged(
+        threadId,
+        previousOutgoingDeliveryFingerprint,
+      );
       notifyListeners();
     }
   }
@@ -825,12 +911,22 @@ extension ChatProviderMessages on ChatProvider {
         imageQuality: quality,
       );
 
+      final previousOutgoingDeliveryFingerprint =
+          _threadOutgoingDeliveryFingerprint(threadId);
+      final previousFingerprint = _threadListPresentationFingerprint(threadId);
       _messages[threadId]?.add(message);
+      _markThreadInteractionChanged(threadId);
+      _markThreadOutgoingDeliveryDirtyIfChanged(
+        threadId,
+        previousOutgoingDeliveryFingerprint,
+      );
+      _markThreadListPresentationDirtyIfChanged(threadId, previousFingerprint);
 
       if (latestThread.isUnfollowed) {
         _updateThread(
           threadId,
           messagesSinceUnfollow: latestThread.messagesSinceUnfollow + 1,
+          notify: false,
         );
       }
 
@@ -1009,6 +1105,8 @@ extension ChatProviderMessages on ChatProvider {
       final index = messages.indexWhere((msg) => msg.id == messageId);
       if (index != -1) {
         final isSuccess = DateTime.now().millisecond % 20 != 0;
+        final previousOutgoingDeliveryFingerprint =
+            _threadOutgoingDeliveryFingerprint(threadId);
 
         messages[index] = messages[index].copyWith(
           status: isSuccess ? MessageStatus.sent : MessageStatus.failed,
@@ -1020,6 +1118,11 @@ extension ChatProviderMessages on ChatProvider {
           _clearDeliveryFailureState(threadId, messageId);
           _recordDeliveryFailure(MessageType.image, messageId);
         }
+        _markThreadInteractionChanged(threadId);
+        _markThreadOutgoingDeliveryDirtyIfChanged(
+          threadId,
+          previousOutgoingDeliveryFingerprint,
+        );
         notifyListeners();
 
         if (isSuccess) {
@@ -1049,8 +1152,17 @@ extension ChatProviderMessages on ChatProvider {
 
     final remoteMessage = result.data;
     if (remoteMessage != null) {
+      final previousOutgoingDeliveryFingerprint =
+          _threadOutgoingDeliveryFingerprint(threadId);
+      final previousFingerprint = _threadListPresentationFingerprint(threadId);
       messages[index] = _mergeRemoteMessage(messages[index], remoteMessage);
       _clearDeliveryFailureState(threadId, localMessageId);
+      _markThreadInteractionChanged(threadId);
+      _markThreadOutgoingDeliveryDirtyIfChanged(
+        threadId,
+        previousOutgoingDeliveryFingerprint,
+      );
+      _markThreadListPresentationDirtyIfChanged(threadId, previousFingerprint);
       _addIntimacy(threadId, '[图片]', true);
       _recordDeliverySuccess(MessageType.image, localMessageId);
       notifyListeners();
@@ -1091,6 +1203,7 @@ extension ChatProviderMessages on ChatProvider {
               ),
             );
           }
+          _markThreadInteractionChanged(threadId);
           notifyListeners();
           final lastMessageId = _resolveAutoReadMessageId(messages);
           if (_chatService.hasSession &&
@@ -1136,9 +1249,12 @@ extension ChatProviderMessages on ChatProvider {
 
     final messages = _messages[threadId];
     if (messages == null) return false;
+    final previousFingerprint = _threadListPresentationFingerprint(threadId);
     messages.removeWhere((msg) => msg.id == messageId);
     _clearDeliveryFailureState(threadId, messageId);
     (_recalledMessageIds[threadId] ??= <String>{}).add(messageId);
+    _markThreadInteractionChanged(threadId);
+    _markThreadListPresentationDirtyIfChanged(threadId, previousFingerprint);
     notifyListeners();
     unawaited(_chatService.recallMessage(messageId));
     return true;

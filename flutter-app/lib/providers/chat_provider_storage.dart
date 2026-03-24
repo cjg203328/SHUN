@@ -67,6 +67,12 @@ extension ChatProviderStorage on ChatProvider {
       _recalledMessageIds.clear();
       _deletedThreads.clear();
       _messageFailureStates.clear();
+      _threadComposerRevisions.clear();
+      _threadOutgoingDeliveryRevisions.clear();
+      _threadHeaderRevisions.clear();
+      _threadInteractionRevisions.clear();
+      _threadSummaryRevisions.clear();
+      _threadSummaryCache.clear();
       _deliveryStatsService.clear();
 
       if (rawThreads is Map) {
@@ -143,7 +149,8 @@ extension ChatProviderStorage on ChatProvider {
     }
 
     if (_threads.isNotEmpty) {
-      notifyListeners();
+      _markThreadListPresentationDirty();
+      _notifyListeners(persist: false);
     }
   }
 
@@ -264,12 +271,32 @@ extension ChatProviderStorage on ChatProvider {
       }
     }
     mergedMessages.sort((a, b) => a.timestamp.compareTo(b.timestamp));
+    final didMessagesChange = _didMessageListChange(
+      localMessages,
+      mergedMessages,
+    );
+    final previousOutgoingDeliveryFingerprint =
+        _threadOutgoingDeliveryFingerprint(threadId);
+    final previousFingerprint = _threadListPresentationFingerprint(threadId);
     _messages[threadId] = mergedMessages;
     _lastRemoteMessageSyncAt[threadId] = DateTime.now();
-    notifyListeners();
+    if (didMessagesChange) {
+      _markThreadInteractionChanged(threadId);
+      _markThreadOutgoingDeliveryDirtyIfChanged(
+        threadId,
+        previousOutgoingDeliveryFingerprint,
+      );
+      _markThreadListPresentationDirtyIfChanged(threadId, previousFingerprint);
+      notifyListeners();
+    }
   }
 
   void _removeThreadState(String threadId) {
+    final previousComposerFingerprint = _threadComposerFingerprint(threadId);
+    final previousOutgoingDeliveryFingerprint =
+        _threadOutgoingDeliveryFingerprint(threadId);
+    final previousFingerprint = _threadListPresentationFingerprint(threadId);
+    final previousHeaderFingerprint = _threadHeaderFingerprint(threadId);
     _threads.remove(threadId);
     _messages.remove(threadId);
     _lastMessageTime.remove(threadId);
@@ -285,6 +312,12 @@ extension ChatProviderStorage on ChatProvider {
     _joinedRealtimeThreads.remove(threadId);
     _joiningRealtimeThreads.remove(threadId);
     _threadIdAliases.remove(threadId);
+    _threadComposerRevisions.remove(threadId);
+    _threadOutgoingDeliveryRevisions.remove(threadId);
+    _threadHeaderRevisions.remove(threadId);
+    _threadInteractionRevisions.remove(threadId);
+    _threadSummaryRevisions.remove(threadId);
+    _threadSummaryCache.remove(threadId);
     _clearDeliveryFailureStatesForThread(threadId);
     for (final alias in _threadIdAliases.keys.toList(growable: false)) {
       if (_threadIdAliases[alias] == threadId) {
@@ -296,6 +329,13 @@ extension ChatProviderStorage on ChatProvider {
           ? _activeThreadFocusOrder.last
           : null;
     }
+    _markThreadOutgoingDeliveryDirtyIfChanged(
+      threadId,
+      previousOutgoingDeliveryFingerprint,
+    );
+    _markThreadComposerDirtyIfChanged(threadId, previousComposerFingerprint);
+    _markThreadListPresentationDirtyIfChanged(threadId, previousFingerprint);
+    _markThreadHeaderDirtyIfChanged(threadId, previousHeaderFingerprint);
     unawaited(
       NotificationCenterProvider.instance.removeThreadNotifications(threadId),
     );
@@ -343,6 +383,36 @@ extension ChatProviderStorage on ChatProvider {
         (left.timestamp == right.timestamp &&
             left.content == right.content &&
             left.isMe == right.isMe);
+  }
+
+  bool _didMessageListChange(List<Message> previous, List<Message> next) {
+    if (identical(previous, next)) {
+      return false;
+    }
+    if (previous.length != next.length) {
+      return true;
+    }
+
+    for (var index = 0; index < previous.length; index++) {
+      if (_hasMessagePresentationChange(previous[index], next[index])) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  bool _hasMessagePresentationChange(Message previous, Message next) {
+    return previous.id != next.id ||
+        previous.content != next.content ||
+        previous.isMe != next.isMe ||
+        previous.timestamp != next.timestamp ||
+        previous.status != next.status ||
+        previous.type != next.type ||
+        previous.imagePath != next.imagePath ||
+        previous.isBurnAfterReading != next.isBurnAfterReading ||
+        previous.isRead != next.isRead ||
+        previous.imageQuality != next.imageQuality;
   }
 
   bool _canTreatAsRemoteResolution(

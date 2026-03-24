@@ -31,7 +31,9 @@ backend/server/storage/
 *.log
 flutter-app/android/local.properties
 *.backup
+*.corrupt-*.bak
 coverage/
+tmp_test_logs/
 
 flutter-app/coverage/
 *.apk

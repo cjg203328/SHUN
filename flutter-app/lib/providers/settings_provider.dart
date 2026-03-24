@@ -56,9 +56,9 @@ class SettingsProvider extends ChangeNotifier {
   }
 
   Future<void> _load({required bool enableRemoteHydration}) async {
-    _applyState(_settingsService.loadState());
-    _syncPushRuntimeState();
-    notifyListeners();
+    final didChangeLocalState = _applyState(_settingsService.loadState());
+    final didChangePushRuntime = _syncPushRuntimeState();
+    _notifyIfChanged(didChangeLocalState || didChangePushRuntime);
 
     if (!enableRemoteHydration) {
       return;
@@ -66,52 +66,60 @@ class SettingsProvider extends ChangeNotifier {
 
     try {
       final state = await _settingsService.refreshState();
-      _applyState(state);
-      _syncPushRuntimeState();
-      notifyListeners();
+      final didChangeRemoteState = _applyState(state);
+      final didChangeRemotePushRuntime = _syncPushRuntimeState();
+      _notifyIfChanged(didChangeRemoteState || didChangeRemotePushRuntime);
     } catch (_) {}
   }
 
   Future<void> refreshFromRemote() async {
     final state = await _settingsService.refreshState();
-    _applyState(state);
-    _syncPushRuntimeState();
-    notifyListeners();
+    final didChangeState = _applyState(state);
+    final didChangePushRuntime = _syncPushRuntimeState();
+    _notifyIfChanged(didChangeState || didChangePushRuntime);
   }
 
-  void _applyState(SettingsStateSnapshot state) {
+  bool _applyState(SettingsStateSnapshot state) {
+    final didChange = _invisibleMode != state.invisibleMode ||
+        _notificationEnabled != state.notificationEnabled ||
+        _vibrationEnabled != state.vibrationEnabled;
     _invisibleMode = state.invisibleMode;
     _notificationEnabled = state.notificationEnabled;
     _vibrationEnabled = state.vibrationEnabled;
+    return didChange;
   }
 
   Future<void> updateInvisibleMode(bool enabled) async {
     final state = await _settingsService.saveInvisibleMode(enabled);
-    _applyState(state);
-    notifyListeners();
+    _notifyIfChanged(_applyState(state));
   }
 
   Future<void> updateNotificationEnabled(bool enabled) async {
     final state = await _settingsService.saveNotificationEnabled(enabled);
-    _applyState(state);
+    final didChangeState = _applyState(state);
     await _pushNotificationService.syncSettings(
       notificationsEnabled: state.notificationEnabled,
     );
-    _syncPushRuntimeState();
-    await AnalyticsService.instance.track(
-      'notification_setting_updated',
-      properties: {'enabled': state.notificationEnabled},
-    );
-    notifyListeners();
+    final didChangePushRuntime = _syncPushRuntimeState();
+    if (didChangeState) {
+      await AnalyticsService.instance.track(
+        'notification_setting_updated',
+        properties: {'enabled': state.notificationEnabled},
+      );
+    }
+    _notifyIfChanged(didChangeState || didChangePushRuntime);
   }
 
   Future<void> updateVibrationEnabled(bool enabled) async {
     final state = await _settingsService.saveVibrationEnabled(enabled);
-    _applyState(state);
-    notifyListeners();
+    _notifyIfChanged(_applyState(state));
   }
 
   Future<void> applyExperiencePreset(SettingsExperiencePreset preset) async {
+    if (activeExperiencePreset == preset) {
+      return;
+    }
+
     final nextState = switch (preset) {
       SettingsExperiencePreset.responsive => (
           invisibleMode: false,
@@ -137,13 +145,14 @@ class SettingsProvider extends ChangeNotifier {
       notificationEnabled: nextState.notificationEnabled,
       vibrationEnabled: nextState.vibrationEnabled,
     );
-    _applyState(state);
+    final didChangeState = _applyState(state);
+    var didChangePushRuntime = false;
 
     if (didChangeNotification) {
       await _pushNotificationService.syncSettings(
         notificationsEnabled: state.notificationEnabled,
       );
-      _syncPushRuntimeState();
+      didChangePushRuntime = _syncPushRuntimeState();
       await AnalyticsService.instance.track(
         'notification_setting_updated',
         properties: {'enabled': state.notificationEnabled},
@@ -159,13 +168,14 @@ class SettingsProvider extends ChangeNotifier {
         'invisibleMode': state.invisibleMode,
       },
     );
-    notifyListeners();
+    _notifyIfChanged(didChangeState || didChangePushRuntime);
   }
 
-  Future<void> refreshPushRuntimeState() async {
+  Future<bool> refreshPushRuntimeState() async {
     await _pushNotificationService.refreshPermissionState();
-    _syncPushRuntimeState();
-    notifyListeners();
+    final didChange = _syncPushRuntimeState();
+    _notifyIfChanged(didChange);
+    return didChange;
   }
 
   void markNotificationPermissionRecoveryPending() {
@@ -180,14 +190,25 @@ class SettingsProvider extends ChangeNotifier {
     _pendingNotificationPermissionRecovery = false;
     _notificationPermissionRecoveryInFlight = true;
     try {
-      await refreshPushRuntimeState();
-      return true;
+      return await refreshPushRuntimeState();
     } finally {
       _notificationPermissionRecoveryInFlight = false;
     }
   }
 
-  void _syncPushRuntimeState() {
-    _pushRuntimeState = _pushNotificationService.state;
+  bool _syncPushRuntimeState() {
+    final nextState = _pushNotificationService.state;
+    final didChange = _pushRuntimeState.notificationsEnabled !=
+            nextState.notificationsEnabled ||
+        _pushRuntimeState.permissionGranted != nextState.permissionGranted ||
+        _pushRuntimeState.deviceToken != nextState.deviceToken;
+    _pushRuntimeState = nextState;
+    return didChange;
+  }
+
+  void _notifyIfChanged(bool didChange) {
+    if (didChange) {
+      notifyListeners();
+    }
   }
 }

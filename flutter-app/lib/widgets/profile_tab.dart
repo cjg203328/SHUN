@@ -16,6 +16,8 @@ import '../services/media_upload_service.dart';
 import '../services/profile_service.dart';
 import 'app_toast.dart';
 
+const Object _profileMediaStateUnchanged = Object();
+
 class ProfileTab extends StatefulWidget {
   const ProfileTab({
     super.key,
@@ -30,14 +32,20 @@ class ProfileTab extends StatefulWidget {
 
 class _ProfileTabState extends State<ProfileTab> {
   static const String _defaultStatus = '想找人聊聊';
-  String? _avatarPath;
-  String? _backgroundPath;
-  _ProfileInlineFeedbackState? _inlineFeedback;
+  final ValueNotifier<_ProfileMediaState> _mediaStateNotifier =
+      ValueNotifier(const _ProfileMediaState());
+  final ValueNotifier<_ProfileInlineFeedbackState?> _inlineFeedbackNotifier =
+      ValueNotifier(null);
   Timer? _inlineFeedbackTimer;
-  _ProfileIdentitySyncCueState? _identitySyncCueState;
+  final ValueNotifier<_ProfileIdentitySyncCueState?> _identitySyncCueNotifier =
+      ValueNotifier(null);
   Timer? _identitySyncCueTimer;
   final ScrollController _scrollController = ScrollController();
   late final MediaUploadService _mediaUploadService;
+
+  String? get _avatarPath => _mediaStateNotifier.value.avatarPath;
+
+  String? get _backgroundPath => _mediaStateNotifier.value.backgroundPath;
 
   @override
   void initState() {
@@ -50,6 +58,9 @@ class _ProfileTabState extends State<ProfileTab> {
   void dispose() {
     _inlineFeedbackTimer?.cancel();
     _identitySyncCueTimer?.cancel();
+    _mediaStateNotifier.dispose();
+    _inlineFeedbackNotifier.dispose();
+    _identitySyncCueNotifier.dispose();
     _scrollController.dispose();
     super.dispose();
   }
@@ -59,10 +70,10 @@ class _ProfileTabState extends State<ProfileTab> {
     final backgroundPath = await ImageUploadService.getBackgroundPath();
 
     if (mounted) {
-      setState(() {
-        _avatarPath = avatarPath;
-        _backgroundPath = backgroundPath;
-      });
+      _setMediaState(
+        avatarPath: avatarPath,
+        backgroundPath: backgroundPath,
+      );
 
       if (backgroundPath == null) {
         final profileProvider = context.read<ProfileProvider>();
@@ -261,19 +272,29 @@ class _ProfileTabState extends State<ProfileTab> {
     );
   }
 
+  void _setMediaState({
+    Object? avatarPath = _profileMediaStateUnchanged,
+    Object? backgroundPath = _profileMediaStateUnchanged,
+  }) {
+    final nextState = _mediaStateNotifier.value.copyWith(
+      avatarPath: avatarPath,
+      backgroundPath: backgroundPath,
+    );
+    if (nextState == _mediaStateNotifier.value) {
+      return;
+    }
+    _mediaStateNotifier.value = nextState;
+  }
+
   void _showInlineFeedback(
     _ProfileInlineFeedbackState state, {
     Duration duration = const Duration(milliseconds: 2200),
   }) {
     _inlineFeedbackTimer?.cancel();
-    setState(() {
-      _inlineFeedback = state;
-    });
+    _inlineFeedbackNotifier.value = state;
     _inlineFeedbackTimer = Timer(duration, () {
       if (!mounted) return;
-      setState(() {
-        _inlineFeedback = null;
-      });
+      _inlineFeedbackNotifier.value = null;
     });
   }
 
@@ -282,17 +303,13 @@ class _ProfileTabState extends State<ProfileTab> {
     Duration? duration = const Duration(milliseconds: 2200),
   }) {
     _identitySyncCueTimer?.cancel();
-    setState(() {
-      _identitySyncCueState = state;
-    });
+    _identitySyncCueNotifier.value = state;
     if (duration == null) {
       return;
     }
     _identitySyncCueTimer = Timer(duration, () {
       if (!mounted) return;
-      setState(() {
-        _identitySyncCueState = null;
-      });
+      _identitySyncCueNotifier.value = null;
     });
   }
 
@@ -380,487 +397,542 @@ class _ProfileTabState extends State<ProfileTab> {
         builder: (context, constraints) {
           return Consumer<ProfileProvider>(
             builder: (context, profileProvider, child) {
-              final screenHeight = constraints.maxHeight;
-              final hasBackground = _backgroundPath != null;
-              final isPortraitFullscreen =
-                  hasBackground && profileProvider.portraitFullscreenBackground;
-              final usesCompactIdentityPanel =
-                  isCompactScreen && !isPortraitFullscreen;
-              final isTransparentBackground =
-                  isPortraitFullscreen && profileProvider.transparentHomepage;
-              final normalHeight = (screenHeight *
-                      (usesCompactIdentityPanel
-                          ? 0.30
-                          : (isCompactScreen ? 0.34 : 0.52)))
-                  .clamp(
-                usesCompactIdentityPanel
-                    ? 164.0
-                    : (isCompactScreen ? 192.0 : 320.0),
-                usesCompactIdentityPanel
-                    ? 220.0
-                    : (isCompactScreen ? 280.0 : 520.0),
-              );
-              final fullHeight = screenHeight - mediaQuery.padding.top;
-              final backgroundHeight =
-                  isPortraitFullscreen ? fullHeight : normalHeight;
-              final profileTopOffset = isPortraitFullscreen
-                  ? backgroundHeight * (isCompactScreen ? 0.4 : 0.5)
-                  : backgroundHeight -
-                      (usesCompactIdentityPanel
-                          ? 60.0
-                          : (isCompactScreen ? 34 : 62));
-              final pageHorizontalPadding = isCompactScreen ? 16.0 : 20.0;
-              final identityMaxWidth = usesCompactIdentityPanel
-                  ? double.infinity
-                  : (isCompactScreen ? 240.0 : 300.0);
-              final avatarSize = usesCompactIdentityPanel
-                  ? 64.0
-                  : (isCompactScreen ? 68.0 : 100.0);
-              final headerBottomPadding = usesCompactIdentityPanel
-                  ? 8.0
-                  : (isCompactScreen ? 16.0 : 40.0);
-              final identityGap = usesCompactIdentityPanel
-                  ? 6.0
-                  : (isCompactScreen ? 10.0 : 20.0);
-              final statusGap = usesCompactIdentityPanel
-                  ? 8.0
-                  : (isCompactScreen ? 12.0 : 24.0);
-              final listBottomInset = mediaQuery.padding.bottom +
-                  (isPortraitFullscreen
-                      ? 24.0
-                      : (isCompactScreen ? 18.0 : 40.0));
-              final signatureText = profileProvider.signature.trim().isEmpty
-                  ? '这个人很神秘，什么都没留下。'
-                  : profileProvider.signature.trim();
-              final backgroundManagementSummary =
-                  _resolveBackgroundManagementSummary(
-                hasMedia: hasBackground,
-              );
-              final contentMinHeight =
-                  (constraints.maxHeight - listBottomInset).clamp(
-                0.0,
-                double.infinity,
-              );
-              return SingleChildScrollView(
-                key: const Key('profile-main-scroll'),
-                controller: _scrollController,
-                padding: EdgeInsets.only(bottom: listBottomInset),
-                child: ConstrainedBox(
-                  constraints: BoxConstraints(minHeight: contentMinHeight),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Stack(
+              return ValueListenableBuilder<_ProfileMediaState>(
+                valueListenable: _mediaStateNotifier,
+                builder: (context, mediaState, _) {
+                  final screenHeight = constraints.maxHeight;
+                  final backgroundPath = mediaState.backgroundPath;
+                  final hasBackground = mediaState.hasBackground;
+                  final isPortraitFullscreen = hasBackground &&
+                      profileProvider.portraitFullscreenBackground;
+                  final usesCompactIdentityPanel =
+                      isCompactScreen && !isPortraitFullscreen;
+                  final isTransparentBackground = isPortraitFullscreen &&
+                      profileProvider.transparentHomepage;
+                  final normalHeight = (screenHeight *
+                          (usesCompactIdentityPanel
+                              ? 0.30
+                              : (isCompactScreen ? 0.34 : 0.52)))
+                      .clamp(
+                    usesCompactIdentityPanel
+                        ? 164.0
+                        : (isCompactScreen ? 192.0 : 320.0),
+                    usesCompactIdentityPanel
+                        ? 220.0
+                        : (isCompactScreen ? 280.0 : 520.0),
+                  );
+                  final fullHeight = screenHeight - mediaQuery.padding.top;
+                  final backgroundHeight =
+                      isPortraitFullscreen ? fullHeight : normalHeight;
+                  final profileTopOffset = isPortraitFullscreen
+                      ? backgroundHeight * (isCompactScreen ? 0.4 : 0.5)
+                      : backgroundHeight -
+                          (usesCompactIdentityPanel
+                              ? 60.0
+                              : (isCompactScreen ? 34 : 62));
+                  final pageHorizontalPadding = isCompactScreen ? 16.0 : 20.0;
+                  final identityMaxWidth = usesCompactIdentityPanel
+                      ? double.infinity
+                      : (isCompactScreen ? 240.0 : 300.0);
+                  final avatarSize = usesCompactIdentityPanel
+                      ? 64.0
+                      : (isCompactScreen ? 68.0 : 100.0);
+                  final headerBottomPadding = usesCompactIdentityPanel
+                      ? 8.0
+                      : (isCompactScreen ? 16.0 : 40.0);
+                  final identityGap = usesCompactIdentityPanel
+                      ? 6.0
+                      : (isCompactScreen ? 10.0 : 20.0);
+                  final statusGap = usesCompactIdentityPanel
+                      ? 8.0
+                      : (isCompactScreen ? 12.0 : 24.0);
+                  final listBottomInset = mediaQuery.padding.bottom +
+                      (isPortraitFullscreen
+                          ? 24.0
+                          : (isCompactScreen ? 18.0 : 40.0));
+                  final signatureText = profileProvider.signature.trim().isEmpty
+                      ? '这个人很神秘，什么都没留下。'
+                      : profileProvider.signature.trim();
+                  final backgroundManagementSummary =
+                      _resolveBackgroundManagementSummary(
+                    hasMedia: hasBackground,
+                  );
+                  final contentMinHeight =
+                      (constraints.maxHeight - listBottomInset).clamp(
+                    0.0,
+                    double.infinity,
+                  );
+                  return SingleChildScrollView(
+                    key: const Key('profile-main-scroll'),
+                    controller: _scrollController,
+                    padding: EdgeInsets.only(bottom: listBottomInset),
+                    child: ConstrainedBox(
+                      constraints: BoxConstraints(minHeight: contentMinHeight),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          Semantics(
-                            button: true,
-                            label: backgroundManagementSummary.quickActionLabel,
-                            child: Tooltip(
-                              message:
-                                  backgroundManagementSummary.quickActionLabel,
-                              child: GestureDetector(
-                                onTap: _openBackgroundManagementSheet,
-                                behavior: HitTestBehavior.opaque,
-                                child: Container(
-                                  key: const Key('profile-background-surface'),
-                                  height: backgroundHeight,
-                                  width: double.infinity,
-                                  decoration: BoxDecoration(
-                                    color: AppColors.white08,
-                                    image: _backgroundPath != null
-                                        ? DecorationImage(
-                                            image: _buildImageProvider(
-                                                _backgroundPath!),
-                                            fit: BoxFit.cover,
-                                            alignment: isPortraitFullscreen
-                                                ? Alignment.topCenter
-                                                : Alignment.center,
-                                          )
-                                        : null,
-                                  ),
-                                  foregroundDecoration: BoxDecoration(
-                                    gradient: LinearGradient(
-                                      begin: Alignment.topCenter,
-                                      end: Alignment.bottomCenter,
-                                      colors: [
-                                        AppColors.pureBlack.withValues(
-                                          alpha: isTransparentBackground
-                                              ? 0.03
-                                              : 0.08,
+                          Stack(
+                            children: [
+                              Semantics(
+                                button: true,
+                                label: backgroundManagementSummary
+                                    .quickActionLabel,
+                                child: Tooltip(
+                                  message: backgroundManagementSummary
+                                      .quickActionLabel,
+                                  child: GestureDetector(
+                                    onTap: _openBackgroundManagementSheet,
+                                    behavior: HitTestBehavior.opaque,
+                                    child: Container(
+                                      key: const Key(
+                                          'profile-background-surface'),
+                                      height: backgroundHeight,
+                                      width: double.infinity,
+                                      decoration: BoxDecoration(
+                                        color: AppColors.white08,
+                                        image: backgroundPath != null
+                                            ? DecorationImage(
+                                                image: _buildImageProvider(
+                                                    backgroundPath),
+                                                fit: BoxFit.cover,
+                                                alignment: isPortraitFullscreen
+                                                    ? Alignment.topCenter
+                                                    : Alignment.center,
+                                              )
+                                            : null,
+                                      ),
+                                      foregroundDecoration: BoxDecoration(
+                                        gradient: LinearGradient(
+                                          begin: Alignment.topCenter,
+                                          end: Alignment.bottomCenter,
+                                          colors: [
+                                            AppColors.pureBlack.withValues(
+                                              alpha: isTransparentBackground
+                                                  ? 0.03
+                                                  : 0.08,
+                                            ),
+                                            AppColors.pureBlack.withValues(
+                                              alpha: isTransparentBackground
+                                                  ? 0.16
+                                                  : (isPortraitFullscreen
+                                                      ? 0.3
+                                                      : 0.4),
+                                            ),
+                                          ],
                                         ),
-                                        AppColors.pureBlack.withValues(
-                                          alpha: isTransparentBackground
-                                              ? 0.16
-                                              : (isPortraitFullscreen
-                                                  ? 0.3
-                                                  : 0.4),
-                                        ),
-                                      ],
+                                      ),
+                                      child: backgroundPath == null
+                                          ? Center(
+                                              child: Column(
+                                                mainAxisAlignment:
+                                                    MainAxisAlignment.center,
+                                                children: [
+                                                  Icon(
+                                                    Icons
+                                                        .add_photo_alternate_outlined,
+                                                    size: 40,
+                                                    color: AppColors
+                                                        .textTertiary
+                                                        .withValues(alpha: 0.5),
+                                                  ),
+                                                  const SizedBox(height: 8),
+                                                  Text(
+                                                    '点击设置背景',
+                                                    style: TextStyle(
+                                                      fontSize: 13,
+                                                      color: AppColors
+                                                          .textTertiary
+                                                          .withValues(
+                                                              alpha: 0.5),
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            )
+                                          : Container(
+                                              alignment: Alignment.topRight,
+                                              padding: EdgeInsets.all(
+                                                isCompactScreen ? 10 : 12,
+                                              ),
+                                              child: _buildMediaEditBadge(
+                                                key: const Key(
+                                                  'profile-background-edit-pill',
+                                                ),
+                                                icon: Icons.wallpaper_outlined,
+                                                label: '编辑背景',
+                                                isCompact: isCompactScreen,
+                                              ),
+                                            ),
                                     ),
                                   ),
-                                  child: _backgroundPath == null
-                                      ? Center(
-                                          child: Column(
-                                            mainAxisAlignment:
-                                                MainAxisAlignment.center,
-                                            children: [
-                                              Icon(
-                                                Icons
-                                                    .add_photo_alternate_outlined,
-                                                size: 40,
-                                                color: AppColors.textTertiary
-                                                    .withValues(alpha: 0.5),
-                                              ),
-                                              const SizedBox(height: 8),
-                                              Text(
-                                                '点击设置背景',
-                                                style: TextStyle(
-                                                  fontSize: 13,
-                                                  color: AppColors.textTertiary
-                                                      .withValues(alpha: 0.5),
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        )
-                                      : Container(
-                                          alignment: Alignment.topRight,
-                                          padding: EdgeInsets.all(
-                                            isCompactScreen ? 10 : 12,
-                                          ),
-                                          child: _buildMediaEditBadge(
-                                            key: const Key(
-                                              'profile-background-edit-pill',
-                                            ),
-                                            icon: Icons.wallpaper_outlined,
-                                            label: '编辑背景',
-                                            isCompact: isCompactScreen,
-                                          ),
-                                        ),
                                 ),
                               ),
-                            ),
-                          ),
-                          Container(
-                            margin: EdgeInsets.only(top: profileTopOffset),
-                            padding: EdgeInsets.fromLTRB(
-                              pageHorizontalPadding,
-                              0,
-                              pageHorizontalPadding,
-                              headerBottomPadding,
-                            ),
-                            child: Stack(
-                              clipBehavior: Clip.none,
-                              children: [
-                                usesCompactIdentityPanel
-                                    ? _buildCompactIdentityCard(
-                                        context,
-                                        profileProvider: profileProvider,
-                                        signatureText: signatureText,
-                                        avatarSize: avatarSize,
-                                      )
-                                    : Column(
-                                        children: [
-                                          // 头像
-                                          _buildAvatarTrigger(
+                              Container(
+                                margin: EdgeInsets.only(top: profileTopOffset),
+                                padding: EdgeInsets.fromLTRB(
+                                  pageHorizontalPadding,
+                                  0,
+                                  pageHorizontalPadding,
+                                  headerBottomPadding,
+                                ),
+                                child: Stack(
+                                  clipBehavior: Clip.none,
+                                  children: [
+                                    usesCompactIdentityPanel
+                                        ? _buildCompactIdentityCard(
+                                            context,
                                             profileProvider: profileProvider,
+                                            signatureText: signatureText,
                                             avatarSize: avatarSize,
-                                            isCompact: isCompactScreen,
-                                          ),
+                                          )
+                                        : Column(
+                                            children: [
+                                              // 头像
+                                              _buildAvatarTrigger(
+                                                profileProvider:
+                                                    profileProvider,
+                                                avatarSize: avatarSize,
+                                                isCompact: isCompactScreen,
+                                              ),
 
-                                          SizedBox(height: identityGap),
+                                              SizedBox(height: identityGap),
 
-                                          // 昵称
-                                          Center(
-                                            child: GestureDetector(
-                                              key: const Key(
-                                                  'profile-nickname-trigger'),
-                                              onTap: () =>
-                                                  _presentNicknameEditor(
-                                                      context),
-                                              behavior: HitTestBehavior.opaque,
-                                              child: ConstrainedBox(
-                                                constraints: BoxConstraints(
-                                                  maxWidth: identityMaxWidth,
-                                                ),
-                                                child: Row(
-                                                  mainAxisSize:
-                                                      MainAxisSize.min,
-                                                  mainAxisAlignment:
-                                                      MainAxisAlignment.center,
-                                                  children: [
-                                                    Flexible(
-                                                      child: Text(
-                                                        profileProvider
-                                                            .nickname,
-                                                        maxLines: 1,
-                                                        overflow: TextOverflow
-                                                            .ellipsis,
-                                                        style: const TextStyle(
-                                                          fontSize: 22,
-                                                          fontWeight:
-                                                              FontWeight.w300,
-                                                          color: AppColors
-                                                              .textPrimary,
-                                                          letterSpacing: 1,
+                                              // 昵称
+                                              Center(
+                                                child: GestureDetector(
+                                                  key: const Key(
+                                                      'profile-nickname-trigger'),
+                                                  onTap: () =>
+                                                      _presentNicknameEditor(
+                                                          context),
+                                                  behavior:
+                                                      HitTestBehavior.opaque,
+                                                  child: ConstrainedBox(
+                                                    constraints: BoxConstraints(
+                                                      maxWidth:
+                                                          identityMaxWidth,
+                                                    ),
+                                                    child: Row(
+                                                      mainAxisSize:
+                                                          MainAxisSize.min,
+                                                      mainAxisAlignment:
+                                                          MainAxisAlignment
+                                                              .center,
+                                                      children: [
+                                                        Flexible(
+                                                          child: Text(
+                                                            profileProvider
+                                                                .nickname,
+                                                            maxLines: 1,
+                                                            overflow:
+                                                                TextOverflow
+                                                                    .ellipsis,
+                                                            style:
+                                                                const TextStyle(
+                                                              fontSize: 22,
+                                                              fontWeight:
+                                                                  FontWeight
+                                                                      .w300,
+                                                              color: AppColors
+                                                                  .textPrimary,
+                                                              letterSpacing: 1,
+                                                            ),
+                                                          ),
                                                         ),
-                                                      ),
-                                                    ),
-                                                    const SizedBox(width: 8),
-                                                    const Icon(
-                                                      Icons.edit,
-                                                      size: 18,
-                                                      color: AppColors
-                                                          .textTertiary,
-                                                    ),
-                                                  ],
-                                                ),
-                                              ),
-                                            ),
-                                          ),
-
-                                          const SizedBox(height: 8),
-
-                                          Center(
-                                            child: TextButton(
-                                              key: const Key(
-                                                'profile-signature-trigger',
-                                              ),
-                                              onPressed: () =>
-                                                  _presentSignatureEditor(
-                                                context,
-                                              ),
-                                              style: TextButton.styleFrom(
-                                                padding:
-                                                    const EdgeInsets.symmetric(
-                                                  horizontal: 10,
-                                                  vertical: 4,
-                                                ),
-                                                minimumSize: Size.zero,
-                                                tapTargetSize:
-                                                    MaterialTapTargetSize
-                                                        .shrinkWrap,
-                                                shape: RoundedRectangleBorder(
-                                                  borderRadius:
-                                                      BorderRadius.circular(12),
-                                                ),
-                                                foregroundColor:
-                                                    AppColors.textTertiary,
-                                              ),
-                                              child: ConstrainedBox(
-                                                constraints: BoxConstraints(
-                                                  maxWidth: identityMaxWidth,
-                                                ),
-                                                child: Row(
-                                                  mainAxisSize:
-                                                      MainAxisSize.min,
-                                                  crossAxisAlignment:
-                                                      CrossAxisAlignment.start,
-                                                  children: [
-                                                    Flexible(
-                                                      child: Text(
-                                                        signatureText,
-                                                        maxLines: 2,
-                                                        overflow: TextOverflow
-                                                            .ellipsis,
-                                                        textAlign:
-                                                            TextAlign.center,
-                                                        style: const TextStyle(
-                                                          fontSize: 14,
-                                                          fontWeight:
-                                                              FontWeight.w300,
+                                                        const SizedBox(
+                                                            width: 8),
+                                                        const Icon(
+                                                          Icons.edit,
+                                                          size: 18,
                                                           color: AppColors
                                                               .textTertiary,
-                                                          height: 1.35,
+                                                        ),
+                                                      ],
+                                                    ),
+                                                  ),
+                                                ),
+                                              ),
+
+                                              const SizedBox(height: 8),
+
+                                              Center(
+                                                child: TextButton(
+                                                  key: const Key(
+                                                    'profile-signature-trigger',
+                                                  ),
+                                                  onPressed: () =>
+                                                      _presentSignatureEditor(
+                                                    context,
+                                                  ),
+                                                  style: TextButton.styleFrom(
+                                                    padding: const EdgeInsets
+                                                        .symmetric(
+                                                      horizontal: 10,
+                                                      vertical: 4,
+                                                    ),
+                                                    minimumSize: Size.zero,
+                                                    tapTargetSize:
+                                                        MaterialTapTargetSize
+                                                            .shrinkWrap,
+                                                    shape:
+                                                        RoundedRectangleBorder(
+                                                      borderRadius:
+                                                          BorderRadius.circular(
+                                                              12),
+                                                    ),
+                                                    foregroundColor:
+                                                        AppColors.textTertiary,
+                                                  ),
+                                                  child: ConstrainedBox(
+                                                    constraints: BoxConstraints(
+                                                      maxWidth:
+                                                          identityMaxWidth,
+                                                    ),
+                                                    child: Row(
+                                                      mainAxisSize:
+                                                          MainAxisSize.min,
+                                                      crossAxisAlignment:
+                                                          CrossAxisAlignment
+                                                              .start,
+                                                      children: [
+                                                        Flexible(
+                                                          child: Text(
+                                                            signatureText,
+                                                            maxLines: 2,
+                                                            overflow:
+                                                                TextOverflow
+                                                                    .ellipsis,
+                                                            textAlign: TextAlign
+                                                                .center,
+                                                            style:
+                                                                const TextStyle(
+                                                              fontSize: 14,
+                                                              fontWeight:
+                                                                  FontWeight
+                                                                      .w300,
+                                                              color: AppColors
+                                                                  .textTertiary,
+                                                              height: 1.35,
+                                                            ),
+                                                          ),
+                                                        ),
+                                                        const SizedBox(
+                                                            width: 6),
+                                                        const Padding(
+                                                          padding:
+                                                              EdgeInsets.only(
+                                                                  top: 2),
+                                                          child: Icon(
+                                                            Icons.edit,
+                                                            size: 14,
+                                                            color: AppColors
+                                                                .textTertiary,
+                                                          ),
+                                                        ),
+                                                      ],
+                                                    ),
+                                                  ),
+                                                ),
+                                              ),
+
+                                              SizedBox(height: statusGap),
+
+                                              GestureDetector(
+                                                key: const Key(
+                                                  'profile-status-trigger',
+                                                ),
+                                                onTap: () =>
+                                                    _presentStatusEditor(
+                                                        context),
+                                                behavior:
+                                                    HitTestBehavior.opaque,
+                                                child: Container(
+                                                  padding: EdgeInsets.symmetric(
+                                                    horizontal: isCompactScreen
+                                                        ? 16
+                                                        : 20,
+                                                    vertical: isCompactScreen
+                                                        ? 10
+                                                        : 12,
+                                                  ),
+                                                  decoration: BoxDecoration(
+                                                    color:
+                                                        isTransparentBackground
+                                                            ? AppColors.white15
+                                                            : AppColors.white05,
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                            20),
+                                                    border: Border.all(
+                                                      color:
+                                                          isTransparentBackground
+                                                              ? AppColors
+                                                                  .white15
+                                                              : AppColors
+                                                                  .white08,
+                                                    ),
+                                                  ),
+                                                  child: Row(
+                                                    mainAxisSize:
+                                                        MainAxisSize.max,
+                                                    children: [
+                                                      const Text(
+                                                        '状态：',
+                                                        style: TextStyle(
+                                                          fontSize: 13,
+                                                          color: AppColors
+                                                              .textTertiary,
                                                         ),
                                                       ),
-                                                    ),
-                                                    const SizedBox(width: 6),
-                                                    const Padding(
-                                                      padding: EdgeInsets.only(
-                                                          top: 2),
-                                                      child: Icon(
+                                                      const SizedBox(width: 4),
+                                                      Expanded(
+                                                        child: Text(
+                                                          profileProvider
+                                                              .status,
+                                                          maxLines: 1,
+                                                          overflow: TextOverflow
+                                                              .ellipsis,
+                                                          style:
+                                                              const TextStyle(
+                                                            fontSize: 13,
+                                                            color: AppColors
+                                                                .textSecondary,
+                                                          ),
+                                                        ),
+                                                      ),
+                                                      const SizedBox(width: 6),
+                                                      const Icon(
                                                         Icons.edit,
                                                         size: 14,
                                                         color: AppColors
                                                             .textTertiary,
                                                       ),
-                                                    ),
-                                                  ],
+                                                    ],
+                                                  ),
                                                 ),
                                               ),
-                                            ),
+                                            ],
                                           ),
-
-                                          SizedBox(height: statusGap),
-
-                                          GestureDetector(
-                                            key: const Key(
-                                              'profile-status-trigger',
-                                            ),
-                                            onTap: () =>
-                                                _presentStatusEditor(context),
-                                            behavior: HitTestBehavior.opaque,
-                                            child: Container(
-                                              padding: EdgeInsets.symmetric(
-                                                horizontal:
-                                                    isCompactScreen ? 16 : 20,
-                                                vertical:
-                                                    isCompactScreen ? 10 : 12,
-                                              ),
-                                              decoration: BoxDecoration(
-                                                color: isTransparentBackground
-                                                    ? AppColors.white15
-                                                    : AppColors.white05,
-                                                borderRadius:
-                                                    BorderRadius.circular(20),
-                                                border: Border.all(
-                                                  color: isTransparentBackground
-                                                      ? AppColors.white15
-                                                      : AppColors.white08,
-                                                ),
-                                              ),
-                                              child: Row(
-                                                mainAxisSize: MainAxisSize.max,
-                                                children: [
-                                                  const Text(
-                                                    '状态：',
-                                                    style: TextStyle(
-                                                      fontSize: 13,
-                                                      color: AppColors
-                                                          .textTertiary,
-                                                    ),
+                                    Positioned(
+                                      top: usesCompactIdentityPanel ? -10 : 6,
+                                      right: usesCompactIdentityPanel ? 6 : 0,
+                                      child: IgnorePointer(
+                                        child: ValueListenableBuilder<
+                                            _ProfileIdentitySyncCueState?>(
+                                          valueListenable:
+                                              _identitySyncCueNotifier,
+                                          builder: (context,
+                                              identitySyncCueState, _) {
+                                            return AnimatedSwitcher(
+                                              duration: const Duration(
+                                                  milliseconds: 220),
+                                              switchInCurve:
+                                                  Curves.easeOutCubic,
+                                              switchOutCurve:
+                                                  Curves.easeInCubic,
+                                              transitionBuilder:
+                                                  (child, animation) {
+                                                final curvedAnimation =
+                                                    CurvedAnimation(
+                                                  parent: animation,
+                                                  curve: Curves.easeOutCubic,
+                                                );
+                                                return FadeTransition(
+                                                  opacity: curvedAnimation,
+                                                  child: ScaleTransition(
+                                                    scale: Tween<double>(
+                                                      begin: 0.96,
+                                                      end: 1,
+                                                    ).animate(curvedAnimation),
+                                                    child: child,
                                                   ),
-                                                  const SizedBox(width: 4),
-                                                  Expanded(
-                                                    child: Text(
-                                                      profileProvider.status,
-                                                      maxLines: 1,
-                                                      overflow:
-                                                          TextOverflow.ellipsis,
-                                                      style: const TextStyle(
-                                                        fontSize: 13,
-                                                        color: AppColors
-                                                            .textSecondary,
-                                                      ),
-                                                    ),
-                                                  ),
-                                                  const SizedBox(width: 6),
-                                                  const Icon(
-                                                    Icons.edit,
-                                                    size: 14,
-                                                    color:
-                                                        AppColors.textTertiary,
-                                                  ),
-                                                ],
-                                              ),
-                                            ),
-                                          ),
-                                        ],
+                                                );
+                                              },
+                                              child:
+                                                  identitySyncCueState != null
+                                                      ? KeyedSubtree(
+                                                          key: ValueKey<
+                                                                  _ProfileIdentitySyncCueState>(
+                                                              identitySyncCueState),
+                                                          child:
+                                                              _buildIdentitySyncBadge(
+                                                            isCompactScreen:
+                                                                usesCompactIdentityPanel,
+                                                            state:
+                                                                identitySyncCueState,
+                                                          ),
+                                                        )
+                                                      : const SizedBox.shrink(),
+                                            );
+                                          },
+                                        ),
                                       ),
-                                Positioned(
-                                  top: usesCompactIdentityPanel ? -10 : 6,
-                                  right: usesCompactIdentityPanel ? 6 : 0,
-                                  child: IgnorePointer(
-                                    child: AnimatedSwitcher(
-                                      duration:
-                                          const Duration(milliseconds: 220),
-                                      switchInCurve: Curves.easeOutCubic,
-                                      switchOutCurve: Curves.easeInCubic,
-                                      transitionBuilder: (child, animation) {
-                                        final curvedAnimation = CurvedAnimation(
-                                          parent: animation,
-                                          curve: Curves.easeOutCubic,
-                                        );
-                                        return FadeTransition(
-                                          opacity: curvedAnimation,
-                                          child: ScaleTransition(
-                                            scale: Tween<double>(
-                                              begin: 0.96,
-                                              end: 1,
-                                            ).animate(curvedAnimation),
-                                            child: child,
-                                          ),
-                                        );
-                                      },
-                                      child: _identitySyncCueState != null
-                                          ? KeyedSubtree(
-                                              key: ValueKey<
-                                                      _ProfileIdentitySyncCueState>(
-                                                  _identitySyncCueState!),
-                                              child: _buildIdentitySyncBadge(
-                                                isCompactScreen:
-                                                    usesCompactIdentityPanel,
-                                                state: _identitySyncCueState!,
-                                              ),
-                                            )
-                                          : const SizedBox.shrink(),
                                     ),
+                                  ],
+                                ),
+                              ),
+                              if (isPortraitFullscreen)
+                                Positioned(
+                                  top: mediaQuery.padding.top + 10,
+                                  right: 14,
+                                  child: _buildFullscreenActionRail(
+                                    context,
                                   ),
                                 ),
-                              ],
-                            ),
+                            ],
                           ),
-                          if (isPortraitFullscreen)
-                            Positioned(
-                              top: mediaQuery.padding.top + 10,
-                              right: 14,
-                              child: _buildFullscreenActionRail(
-                                context,
+                          if (!isPortraitFullscreen)
+                            Padding(
+                              padding: EdgeInsets.fromLTRB(
+                                pageHorizontalPadding,
+                                usesCompactIdentityPanel ? 10 : 12,
+                                pageHorizontalPadding,
+                                0,
+                              ),
+                              child: Consumer2<FriendProvider, ChatProvider>(
+                                builder: (context, friendProv, chatProv, _) {
+                                  if (usesCompactIdentityPanel) {
+                                    return _buildCompactStatsCard(
+                                      friendCount: friendProv.friends.length,
+                                      threadCount: chatProv.threads.length,
+                                    );
+                                  }
+                                  return Row(
+                                    mainAxisAlignment:
+                                        MainAxisAlignment.spaceEvenly,
+                                    children: [
+                                      _buildStatItem(
+                                          '好友', '${friendProv.friends.length}'),
+                                      _buildStatDivider(),
+                                      _buildStatItem(
+                                          '会话', '${chatProv.threads.length}'),
+                                    ],
+                                  );
+                                },
                               ),
                             ),
+                          if (!isPortraitFullscreen)
+                            Padding(
+                              padding: EdgeInsets.fromLTRB(
+                                pageHorizontalPadding,
+                                0,
+                                pageHorizontalPadding,
+                                usesCompactIdentityPanel ? 12 : 16,
+                              ),
+                              child: _buildQuickActionsCard(
+                                context,
+                                hasBackground: hasBackground,
+                                profileProvider: profileProvider,
+                              ),
+                            ),
+                          SizedBox(
+                            height: isPortraitFullscreen ? 0 : 4,
+                          ),
                         ],
                       ),
-                      if (!isPortraitFullscreen)
-                        Padding(
-                          padding: EdgeInsets.fromLTRB(
-                            pageHorizontalPadding,
-                            usesCompactIdentityPanel ? 10 : 12,
-                            pageHorizontalPadding,
-                            0,
-                          ),
-                          child: Consumer2<FriendProvider, ChatProvider>(
-                            builder: (context, friendProv, chatProv, _) {
-                              if (usesCompactIdentityPanel) {
-                                return _buildCompactStatsCard(
-                                  friendCount: friendProv.friends.length,
-                                  threadCount: chatProv.threads.length,
-                                );
-                              }
-                              return Row(
-                                mainAxisAlignment:
-                                    MainAxisAlignment.spaceEvenly,
-                                children: [
-                                  _buildStatItem(
-                                      '好友', '${friendProv.friends.length}'),
-                                  _buildStatDivider(),
-                                  _buildStatItem(
-                                      '会话', '${chatProv.threads.length}'),
-                                ],
-                              );
-                            },
-                          ),
-                        ),
-                      if (!isPortraitFullscreen)
-                        Padding(
-                          padding: EdgeInsets.fromLTRB(
-                            pageHorizontalPadding,
-                            0,
-                            pageHorizontalPadding,
-                            usesCompactIdentityPanel ? 12 : 16,
-                          ),
-                          child: _buildQuickActionsCard(
-                            context,
-                            hasBackground: hasBackground,
-                            profileProvider: profileProvider,
-                          ),
-                        ),
-                      SizedBox(
-                        height: isPortraitFullscreen ? 0 : 4,
-                      ),
-                    ],
-                  ),
-                ),
+                    ),
+                  );
+                },
               );
             },
           );
@@ -893,7 +965,6 @@ class _ProfileTabState extends State<ProfileTab> {
       profileProvider: profileProvider,
     );
     final pendingCount = checklistItems.where((item) => !item.isReady).length;
-    final inlineFeedback = _inlineFeedback;
     final description =
         isCompactScreen ? null : '先把头像、状态和背景整理到位，通知、账号与隐私设置放到下面继续处理。';
 
@@ -975,65 +1046,22 @@ class _ProfileTabState extends State<ProfileTab> {
             ),
           ],
           SizedBox(height: isCompactScreen ? 8 : 14),
-          if (inlineFeedback != null)
-            _buildInlineFeedbackBanner(
-              inlineFeedback,
-              isCompactScreen: isCompactScreen,
-            )
-          else
-            Container(
-              key: const Key('profile-readiness-chip'),
-              padding: EdgeInsets.symmetric(
-                horizontal: isCompactScreen ? 10 : 12,
-                vertical: isCompactScreen ? 7 : 10,
-              ),
-              decoration: BoxDecoration(
-                color: AppColors.white08,
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: AppColors.white12),
-              ),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Icon(
-                    readinessState.icon,
-                    size: 16,
-                    color: readinessState.isReady
-                        ? AppColors.textSecondary
-                        : AppColors.brandBlue,
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          readinessState.title,
-                          style: const TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w400,
-                            color: AppColors.textPrimary,
-                          ),
-                        ),
-                        if (!isCompactScreen) ...[
-                          const SizedBox(height: 4),
-                          Text(
-                            readinessState.subtitle,
-                            style: TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w300,
-                              color: AppColors.textTertiary
-                                  .withValues(alpha: 0.92),
-                              height: 1.4,
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
+          ValueListenableBuilder<_ProfileInlineFeedbackState?>(
+            valueListenable: _inlineFeedbackNotifier,
+            builder: (context, inlineFeedback, _) {
+              if (inlineFeedback != null) {
+                return _buildInlineFeedbackBanner(
+                  inlineFeedback,
+                  isCompactScreen: isCompactScreen,
+                );
+              }
+
+              return _buildReadinessChip(
+                readinessState,
+                isCompactScreen: isCompactScreen,
+              );
+            },
+          ),
           if (isCompactScreen) ...[
             const SizedBox(height: 6),
             _buildQuickActionsWrap(
@@ -1094,6 +1122,64 @@ class _ProfileTabState extends State<ProfileTab> {
             const SizedBox(height: 12),
             _buildSecondarySettingsEntry(isCompactScreen: isCompactScreen),
           ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildReadinessChip(
+    _ProfileReadinessState readinessState, {
+    required bool isCompactScreen,
+  }) {
+    return Container(
+      key: const Key('profile-readiness-chip'),
+      padding: EdgeInsets.symmetric(
+        horizontal: isCompactScreen ? 10 : 12,
+        vertical: isCompactScreen ? 7 : 10,
+      ),
+      decoration: BoxDecoration(
+        color: AppColors.white08,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.white12),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            readinessState.icon,
+            size: 16,
+            color: readinessState.isReady
+                ? AppColors.textSecondary
+                : AppColors.brandBlue,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  readinessState.title,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w400,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+                if (!isCompactScreen) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    readinessState.subtitle,
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w300,
+                      color: AppColors.textTertiary.withValues(alpha: 0.92),
+                      height: 1.4,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
         ],
       ),
     );
@@ -2813,9 +2899,7 @@ class _ProfileTabState extends State<ProfileTab> {
 
     await ImageUploadService.clearAvatar();
     if (!mounted) return;
-    setState(() {
-      _avatarPath = null;
-    });
+    _setMediaState(avatarPath: null);
     _showInlineFeedback(
       _buildSavedFeedback(
         icon: Icons.delete_outline,
@@ -2849,9 +2933,7 @@ class _ProfileTabState extends State<ProfileTab> {
       await profileProvider.updatePortraitFullscreenBackground(false);
     }
     if (!mounted) return;
-    setState(() {
-      _backgroundPath = null;
-    });
+    _setMediaState(backgroundPath: null);
     _showInlineFeedback(
       _buildSavedFeedback(
         icon: Icons.delete_outline,
@@ -2984,9 +3066,7 @@ class _ProfileTabState extends State<ProfileTab> {
         cleanupLocalPath: imageFile.path,
       );
       if (!mounted) return;
-      setState(() {
-        _avatarPath = mediaRef;
-      });
+      _setMediaState(avatarPath: mediaRef);
       _showInlineFeedback(
         _buildMediaUpdatedFeedback(
           isBackground: false,
@@ -3027,9 +3107,7 @@ class _ProfileTabState extends State<ProfileTab> {
         cleanupLocalPath: imageFile.path,
       );
       if (!mounted) return;
-      setState(() {
-        _backgroundPath = mediaRef;
-      });
+      _setMediaState(backgroundPath: mediaRef);
       _showInlineFeedback(
         _buildMediaUpdatedFeedback(
           isBackground: true,
@@ -3643,6 +3721,43 @@ class _ProfileMediaManagementSummary {
   final String previewStatusLabel;
   final String previewBadgeLabel;
   final String replaceActionLabel;
+}
+
+class _ProfileMediaState {
+  const _ProfileMediaState({
+    this.avatarPath,
+    this.backgroundPath,
+  });
+
+  final String? avatarPath;
+  final String? backgroundPath;
+
+  bool get hasBackground => (backgroundPath ?? '').trim().isNotEmpty;
+
+  _ProfileMediaState copyWith({
+    Object? avatarPath = _profileMediaStateUnchanged,
+    Object? backgroundPath = _profileMediaStateUnchanged,
+  }) {
+    return _ProfileMediaState(
+      avatarPath: identical(avatarPath, _profileMediaStateUnchanged)
+          ? this.avatarPath
+          : avatarPath as String?,
+      backgroundPath: identical(backgroundPath, _profileMediaStateUnchanged)
+          ? this.backgroundPath
+          : backgroundPath as String?,
+    );
+  }
+
+  @override
+  bool operator ==(Object other) {
+    if (identical(this, other)) return true;
+    return other is _ProfileMediaState &&
+        other.avatarPath == avatarPath &&
+        other.backgroundPath == backgroundPath;
+  }
+
+  @override
+  int get hashCode => Object.hash(avatarPath, backgroundPath);
 }
 
 class _ProfileInlineFeedbackState {

@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:uuid/uuid.dart';
 
 import '../config/app_env.dart';
+import '../core/policy/feature_policy.dart';
 import '../models/models.dart';
 import '../repositories/app_data_repository.dart';
 import '../services/analytics_service.dart';
@@ -46,6 +47,14 @@ class ChatProvider extends ChangeNotifier {
   final Set<String> _retryingMessageIds = <String>{};
   final Map<String, ChatDeliveryFailureState> _messageFailureStates = {};
   final Set<String> _pinnedThreadIds = <String>{};
+  List<String>? _sortedVisibleThreadIdsCache;
+  final Map<String, ChatThreadSummarySnapshot> _threadSummaryCache = {};
+  final Map<String, int> _threadSummaryRevisions = {};
+  final Map<String, int> _threadComposerRevisions = {};
+  final Map<String, int> _threadOutgoingDeliveryRevisions = {};
+  final Map<String, int> _threadHeaderRevisions = {};
+  int _threadListPresentationRevision = 0;
+  final Map<String, int> _threadInteractionRevisions = {};
   final bool _enableRealtime;
   final bool _enableRemoteHydration;
   String? _activeThreadId;
@@ -54,6 +63,7 @@ class ChatProvider extends ChangeNotifier {
   bool _persistRequestedWhileInFlight = false;
   bool _isRestoring = false;
   bool _isDisposed = false;
+  bool _skipPersistForNextNotify = false;
 
   ChatProvider({
     AppDataRepository? repository,
@@ -95,23 +105,71 @@ class ChatProvider extends ChangeNotifier {
     if (_isDisposed) {
       return;
     }
+    final skipPersist = _skipPersistForNextNotify;
+    _skipPersistForNextNotify = false;
     super.notifyListeners();
-    if (_isRestoring) return;
+    if (_isRestoring || skipPersist) return;
     _schedulePersist();
+  }
+
+  void _notifyListeners({bool persist = true}) {
+    if (!persist) {
+      _skipPersistForNextNotify = true;
+    }
+    notifyListeners();
+  }
+
+  int get threadListPresentationRevision => _threadListPresentationRevision;
+
+  int threadSummaryRevision(String threadId) {
+    return _threadSummaryRevisions[_resolveThreadId(threadId)] ?? 0;
+  }
+
+  int threadComposerRevision(String threadId) {
+    return _threadComposerRevisions[_resolveThreadId(threadId)] ?? 0;
+  }
+
+  int threadOutgoingDeliveryRevision(String threadId) {
+    return _threadOutgoingDeliveryRevisions[_resolveThreadId(threadId)] ?? 0;
+  }
+
+  int threadHeaderRevision(String threadId) {
+    return _threadHeaderRevisions[_resolveThreadId(threadId)] ?? 0;
+  }
+
+  int threadInteractionRevision(String threadId) {
+    return _threadInteractionRevisions[_resolveThreadId(threadId)] ?? 0;
   }
 
   Map<String, ChatThread> get threads {
     return Map.fromEntries(
       _threads.entries.where(
-        (entry) =>
-            !(_deletedThreads[entry.key] ?? false) &&
-            (entry.value.isFriend || !entry.value.isExpired),
+        (entry) => _isVisibleThread(entry.key, entry.value),
       ),
     );
   }
 
   List<ChatThread> get sortedThreads {
-    final items = threads.values.toList();
+    final items = _sortedVisibleThreadIds
+        .map((threadId) => _threads[threadId])
+        .whereType<ChatThread>()
+        .toList(growable: false);
+    if (items.length <= 1) {
+      return items;
+    }
+    return items;
+  }
+
+  List<String> get _sortedVisibleThreadIds {
+    final cached = _sortedVisibleThreadIdsCache;
+    if (cached != null) {
+      return cached;
+    }
+
+    final items = _threads.entries
+        .where((entry) => _isVisibleThread(entry.key, entry.value))
+        .map((entry) => entry.value)
+        .toList();
     items.sort((a, b) {
       final aPinned = _pinnedThreadIds.contains(a.id) ? 0 : 1;
       final bPinned = _pinnedThreadIds.contains(b.id) ? 0 : 1;
@@ -120,7 +178,199 @@ class ChatProvider extends ChangeNotifier {
       if (compare != 0) return compare;
       return b.createdAt.compareTo(a.createdAt);
     });
-    return items;
+    final sortedIds = List<String>.unmodifiable(
+      items.map((thread) => thread.id),
+    );
+    _sortedVisibleThreadIdsCache = sortedIds;
+    return sortedIds;
+  }
+
+  bool _isVisibleThread(String threadId, ChatThread thread) {
+    return !(_deletedThreads[threadId] ?? false) &&
+        (thread.isFriend || !thread.isExpired);
+  }
+
+  Object? _threadListPresentationFingerprint(String threadId) {
+    final resolvedThreadId = _resolveThreadId(threadId);
+    final thread = _threads[resolvedThreadId];
+    if (thread == null || !_isVisibleThread(resolvedThreadId, thread)) {
+      return null;
+    }
+    return Object.hash(
+      resolvedThreadId,
+      thread.otherUser.nickname,
+      _pinnedThreadIds.contains(resolvedThreadId),
+      _lastActivityAt(thread),
+    );
+  }
+
+  void _markThreadListPresentationDirty() {
+    _sortedVisibleThreadIdsCache = null;
+    _threadListPresentationRevision++;
+  }
+
+  void _markThreadSummaryDirty(String threadId) {
+    final resolvedThreadId = _resolveThreadId(threadId);
+    _threadSummaryRevisions[resolvedThreadId] =
+        (_threadSummaryRevisions[resolvedThreadId] ?? 0) + 1;
+    _threadSummaryCache.remove(resolvedThreadId);
+  }
+
+  Object? _threadComposerFingerprint(String threadId) {
+    final resolvedThreadId = _resolveThreadId(threadId);
+    final thread = _threads[resolvedThreadId];
+    if (thread == null) {
+      return null;
+    }
+    return Object.hash(
+      resolvedThreadId,
+      thread.canSendMessage,
+      FeaturePolicy.canSendImage(thread),
+      thread.intimacyPoints,
+      thread.expiresAt.millisecondsSinceEpoch,
+    );
+  }
+
+  void _markThreadComposerDirty(String threadId) {
+    final resolvedThreadId = _resolveThreadId(threadId);
+    _threadComposerRevisions[resolvedThreadId] =
+        (_threadComposerRevisions[resolvedThreadId] ?? 0) + 1;
+  }
+
+  void _markThreadComposerDirtyIfChanged(
+    String threadId,
+    Object? previousFingerprint,
+  ) {
+    if (_threadComposerFingerprint(threadId) != previousFingerprint) {
+      _markThreadComposerDirty(threadId);
+    }
+  }
+
+  Object? _threadOutgoingDeliveryFingerprint(String threadId) {
+    final resolvedThreadId = _resolveThreadId(threadId);
+    final messages = _messages[resolvedThreadId];
+    if (messages == null || messages.isEmpty) {
+      return null;
+    }
+    return Object.hashAll(
+      messages.where((message) => message.isMe).map((message) {
+        return Object.hash(
+          message.id,
+          message.status,
+          message.isRead,
+          message.type,
+          message.imagePath,
+          message.imageQuality,
+        );
+      }),
+    );
+  }
+
+  void _markThreadOutgoingDeliveryDirty(String threadId) {
+    final resolvedThreadId = _resolveThreadId(threadId);
+    _threadOutgoingDeliveryRevisions[resolvedThreadId] =
+        (_threadOutgoingDeliveryRevisions[resolvedThreadId] ?? 0) + 1;
+  }
+
+  void _markThreadOutgoingDeliveryDirtyIfChanged(
+    String threadId,
+    Object? previousFingerprint,
+  ) {
+    if (_threadOutgoingDeliveryFingerprint(threadId) != previousFingerprint) {
+      _markThreadOutgoingDeliveryDirty(threadId);
+    }
+  }
+
+  Object? _threadHeaderFingerprint(String threadId) {
+    final resolvedThreadId = _resolveThreadId(threadId);
+    final thread = _threads[resolvedThreadId];
+    if (thread == null) {
+      return null;
+    }
+    return Object.hash(
+      resolvedThreadId,
+      thread.otherUser.id,
+      thread.otherUser.nickname,
+      thread.otherUser.avatar,
+      thread.otherUser.isOnline,
+      thread.createdAt.millisecondsSinceEpoch,
+      thread.intimacyPoints,
+      thread.isUnfollowed,
+      thread.messagesSinceUnfollow,
+    );
+  }
+
+  void _markThreadHeaderDirty(String threadId) {
+    final resolvedThreadId = _resolveThreadId(threadId);
+    _threadHeaderRevisions[resolvedThreadId] =
+        (_threadHeaderRevisions[resolvedThreadId] ?? 0) + 1;
+  }
+
+  void _markThreadHeaderDirtyIfChanged(
+    String threadId,
+    Object? previousFingerprint,
+  ) {
+    if (_threadHeaderFingerprint(threadId) != previousFingerprint) {
+      _markThreadHeaderDirty(threadId);
+    }
+  }
+
+  void _markThreadListPresentationDirtyIfChanged(
+    String threadId,
+    Object? previousFingerprint,
+  ) {
+    if (_threadListPresentationFingerprint(threadId) != previousFingerprint) {
+      _markThreadListPresentationDirty();
+    }
+  }
+
+  void _markThreadInteractionChanged(String threadId) {
+    final resolvedThreadId = _resolveThreadId(threadId);
+    _threadInteractionRevisions[resolvedThreadId] =
+        (_threadInteractionRevisions[resolvedThreadId] ?? 0) + 1;
+    _markThreadSummaryDirty(resolvedThreadId);
+  }
+
+  ChatThreadSummarySnapshot? threadSummarySnapshot(String threadId) {
+    final resolvedThreadId = _resolveThreadId(threadId);
+    final thread = _threads[resolvedThreadId];
+    if (thread == null || !_isVisibleThread(resolvedThreadId, thread)) {
+      return null;
+    }
+
+    final cached = _threadSummaryCache[resolvedThreadId];
+    if (cached != null) {
+      return cached;
+    }
+
+    final messages = _messages[resolvedThreadId];
+    final lastMessage =
+        messages != null && messages.isNotEmpty ? messages.last : null;
+    final failureState =
+        lastMessage != null && lastMessage.status == MessageStatus.failed
+            ? _deliveryFailureStateForMessage(resolvedThreadId, lastMessage)
+            : null;
+    final snapshot = ChatThreadSummarySnapshot(
+      threadId: thread.id,
+      userId: thread.otherUser.id,
+      nickname: thread.otherUser.nickname,
+      avatar: thread.otherUser.avatar,
+      isOnline: thread.otherUser.isOnline,
+      unreadCount: thread.unreadCount,
+      createdAt: thread.createdAt,
+      expiresAt: thread.expiresAt,
+      intimacyPoints: thread.intimacyPoints,
+      draft: _threadDrafts[resolvedThreadId] ?? '',
+      isPinned: _pinnedThreadIds.contains(resolvedThreadId),
+      lastMessage: lastMessage == null
+          ? null
+          : ChatMessagePreviewSnapshot.fromMessage(
+              lastMessage,
+              failureState: failureState,
+            ),
+    );
+    _threadSummaryCache[resolvedThreadId] = snapshot;
+    return snapshot;
   }
 
   bool isThreadPinned(String threadId) =>
@@ -128,12 +378,22 @@ class ChatProvider extends ChangeNotifier {
 
   void pinThread(String threadId) {
     final id = _resolveThreadId(threadId);
-    if (_pinnedThreadIds.add(id)) notifyListeners();
+    final previousFingerprint = _threadListPresentationFingerprint(id);
+    if (_pinnedThreadIds.add(id)) {
+      _markThreadSummaryDirty(id);
+      _markThreadListPresentationDirtyIfChanged(id, previousFingerprint);
+      _notifyListeners(persist: false);
+    }
   }
 
   void unpinThread(String threadId) {
     final id = _resolveThreadId(threadId);
-    if (_pinnedThreadIds.remove(id)) notifyListeners();
+    final previousFingerprint = _threadListPresentationFingerprint(id);
+    if (_pinnedThreadIds.remove(id)) {
+      _markThreadSummaryDirty(id);
+      _markThreadListPresentationDirtyIfChanged(id, previousFingerprint);
+      _notifyListeners(persist: false);
+    }
   }
 
   List<Message> getMessages(String threadId) {
@@ -154,7 +414,8 @@ class ChatProvider extends ChangeNotifier {
     final previous = _threadDrafts[resolvedThreadId] ?? '';
     if (normalized.isEmpty) {
       if (_threadDrafts.remove(resolvedThreadId) != null && notify) {
-        notifyListeners();
+        _markThreadSummaryDirty(resolvedThreadId);
+        _notifyListeners(persist: false);
       }
       return;
     }
@@ -162,15 +423,17 @@ class ChatProvider extends ChangeNotifier {
       return;
     }
     _threadDrafts[resolvedThreadId] = normalized;
+    _markThreadSummaryDirty(resolvedThreadId);
     if (notify) {
-      notifyListeners();
+      _notifyListeners(persist: false);
     }
   }
 
   void clearDraft(String threadId, {bool notify = false}) {
     final resolvedThreadId = _resolveThreadId(threadId);
     if (_threadDrafts.remove(resolvedThreadId) != null && notify) {
-      notifyListeners();
+      _markThreadSummaryDirty(resolvedThreadId);
+      _notifyListeners(persist: false);
     }
   }
 
@@ -254,11 +517,20 @@ class ChatProvider extends ChangeNotifier {
     String messageId,
     ChatDeliveryFailureState state,
   ) {
-    _messageFailureStates[_deliveryFailureKey(threadId, messageId)] = state;
+    final resolvedThreadId = _resolveThreadId(threadId);
+    _messageFailureStates[_deliveryFailureKey(resolvedThreadId, messageId)] =
+        state;
+    _markThreadSummaryDirty(resolvedThreadId);
   }
 
   void _clearDeliveryFailureState(String threadId, String messageId) {
-    _messageFailureStates.remove(_deliveryFailureKey(threadId, messageId));
+    final resolvedThreadId = _resolveThreadId(threadId);
+    final removed = _messageFailureStates.remove(
+      _deliveryFailureKey(resolvedThreadId, messageId),
+    );
+    if (removed != null) {
+      _markThreadSummaryDirty(resolvedThreadId);
+    }
   }
 
   void _remapDeliveryFailureStates(String fromThreadId, String toThreadId) {
@@ -283,4 +555,81 @@ class ChatProvider extends ChangeNotifier {
     final prefix = '${_resolveThreadId(threadId)}::';
     _messageFailureStates.removeWhere((key, _) => key.startsWith(prefix));
   }
+}
+
+class ChatThreadSummarySnapshot {
+  const ChatThreadSummarySnapshot({
+    required this.threadId,
+    required this.userId,
+    required this.nickname,
+    required this.avatar,
+    required this.isOnline,
+    required this.unreadCount,
+    required this.createdAt,
+    required this.expiresAt,
+    required this.intimacyPoints,
+    required this.draft,
+    required this.isPinned,
+    required this.lastMessage,
+  });
+
+  final String threadId;
+  final String userId;
+  final String nickname;
+  final String? avatar;
+  final bool isOnline;
+  final int unreadCount;
+  final DateTime createdAt;
+  final DateTime expiresAt;
+  final int intimacyPoints;
+  final String draft;
+  final bool isPinned;
+  final ChatMessagePreviewSnapshot? lastMessage;
+}
+
+class ChatMessagePreviewSnapshot {
+  const ChatMessagePreviewSnapshot({
+    required this.id,
+    required this.content,
+    required this.isMe,
+    required this.timestamp,
+    required this.status,
+    required this.type,
+    required this.imagePath,
+    required this.isBurnAfterReading,
+    required this.isRead,
+    required this.imageQuality,
+    required this.failureState,
+  });
+
+  factory ChatMessagePreviewSnapshot.fromMessage(
+    Message message, {
+    required ChatDeliveryFailureState? failureState,
+  }) {
+    return ChatMessagePreviewSnapshot(
+      id: message.id,
+      content: message.content,
+      isMe: message.isMe,
+      timestamp: message.timestamp,
+      status: message.status,
+      type: message.type,
+      imagePath: message.imagePath,
+      isBurnAfterReading: message.isBurnAfterReading,
+      isRead: message.isRead,
+      imageQuality: message.imageQuality,
+      failureState: failureState,
+    );
+  }
+
+  final String id;
+  final String content;
+  final bool isMe;
+  final DateTime timestamp;
+  final MessageStatus status;
+  final MessageType type;
+  final String? imagePath;
+  final bool isBurnAfterReading;
+  final bool isRead;
+  final ImageQuality? imageQuality;
+  final ChatDeliveryFailureState? failureState;
 }

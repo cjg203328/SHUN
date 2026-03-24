@@ -98,6 +98,10 @@ extension ChatProviderRealtime on ChatProvider {
     }
 
     final messages = _messages[event.threadId] ??= <Message>[];
+    final previousOutgoingDeliveryFingerprint =
+        _threadOutgoingDeliveryFingerprint(event.threadId);
+    final previousFingerprint =
+        _threadListPresentationFingerprint(event.threadId);
     final index = messages.indexWhere((msg) => msg.id == event.clientMsgId);
     if (index != -1) {
       final previous = messages[index];
@@ -111,6 +115,15 @@ extension ChatProviderRealtime on ChatProvider {
       messages.add(event.message);
     }
     _deletedThreads[event.threadId] = false;
+    _markThreadInteractionChanged(event.threadId);
+    _markThreadOutgoingDeliveryDirtyIfChanged(
+      event.threadId,
+      previousOutgoingDeliveryFingerprint,
+    );
+    _markThreadListPresentationDirtyIfChanged(
+      event.threadId,
+      previousFingerprint,
+    );
     notifyListeners();
   }
 
@@ -125,6 +138,8 @@ extension ChatProviderRealtime on ChatProvider {
     }
 
     final messages = _messages[event.threadId] ??= <Message>[];
+    final previousFingerprint =
+        _threadListPresentationFingerprint(event.threadId);
     final alreadyExists = messages.any((msg) => msg.id == event.message.id);
     if (alreadyExists) {
       restoreThread(event.threadId);
@@ -138,6 +153,11 @@ extension ChatProviderRealtime on ChatProvider {
 
     messages.add(event.message);
     messages.sort((a, b) => a.timestamp.compareTo(b.timestamp));
+    _markThreadInteractionChanged(event.threadId);
+    _markThreadListPresentationDirtyIfChanged(
+      event.threadId,
+      previousFingerprint,
+    );
     _addIntimacy(event.threadId, event.message.content, false);
 
     final hadUnread = (_threads[event.threadId]?.unreadCount ?? 0) > 0;
@@ -172,6 +192,9 @@ extension ChatProviderRealtime on ChatProvider {
     }
 
     final messages = _messages[threadId] ??= <Message>[];
+    final previousOutgoingDeliveryFingerprint =
+        _threadOutgoingDeliveryFingerprint(threadId);
+    final previousFingerprint = _threadListPresentationFingerprint(threadId);
     final localIndex = _findLocalMessageMatchIndex(
       messages,
       remoteMessage,
@@ -194,6 +217,12 @@ extension ChatProviderRealtime on ChatProvider {
 
     messages.sort((a, b) => a.timestamp.compareTo(b.timestamp));
     restoreThread(threadId, notify: false);
+    _markThreadInteractionChanged(threadId);
+    _markThreadOutgoingDeliveryDirtyIfChanged(
+      threadId,
+      previousOutgoingDeliveryFingerprint,
+    );
+    _markThreadListPresentationDirtyIfChanged(threadId, previousFingerprint);
     notifyListeners();
   }
 

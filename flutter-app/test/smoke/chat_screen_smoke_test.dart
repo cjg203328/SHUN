@@ -331,14 +331,79 @@ void main() {
 
     expect(find.text('重选图片'), findsOneWidget);
     expect(find.text('原图失效，请重新选择图片'), findsOneWidget);
-    expect(find.text('查看说明'), findsOneWidget);
+    expect(
+      find.byKey(
+        const ValueKey<String>('chat-delivery-status-action:showGuide'),
+      ),
+      findsOneWidget,
+    );
 
-    await tester.tap(find.text('查看说明'));
+    await tester.tap(
+      find.byKey(
+        const ValueKey<String>('chat-delivery-status-action:showGuide'),
+      ),
+    );
     await tester.pumpAndSettle();
 
     expect(find.text('图片需要重新选择'), findsOneWidget);
     expect(find.text('回到输入区重新选图'), findsOneWidget);
     expect(find.byIcon(Icons.compress_outlined), findsOneWidget);
+
+    await _disposeHost(tester, chatProvider, friendProvider);
+  });
+
+  testWidgets('chat screen should keep failure guide stable on tight size',
+      (tester) async {
+    tester.view.physicalSize = const Size(320, 568);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    final chatProvider = ChatProvider();
+    final friendProvider = FriendProvider();
+
+    final thread = _buildThread('u_chat_screen_failed_image_tight');
+    chatProvider.addThread(thread);
+    chatProvider.getMessages(thread.id).add(
+          Message(
+            id: 'failed-tight-image',
+            content: '',
+            isMe: true,
+            timestamp: DateTime.now(),
+            status: MessageStatus.failed,
+            type: MessageType.image,
+            imageQuality: ImageQuality.original,
+          ),
+        );
+
+    await tester.pumpWidget(
+      _ChatScreenHost(
+        threadId: thread.id,
+        chatProvider: chatProvider,
+        friendProvider: friendProvider,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(
+      find.byKey(
+        const ValueKey<String>('chat-delivery-status-action:showGuide'),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const Key('chat-image-failure-guide-sheet')),
+      findsOneWidget,
+    );
+    expect(find.byIcon(Icons.compress_outlined), findsOneWidget);
+    expect(tester.takeException(), isNull);
+
+    final sheetRect =
+        tester.getRect(find.byKey(const Key('chat-image-failure-guide-sheet')));
+    expect(sheetRect.height, lessThanOrEqualTo(568));
 
     await _disposeHost(tester, chatProvider, friendProvider);
   });
@@ -408,6 +473,62 @@ void main() {
     );
     expect(find.text('文字可发送'), findsOneWidget);
     expect(find.text('图片待解锁'), findsOneWidget);
+
+    await _disposeHost(tester, chatProvider, friendProvider);
+  });
+
+  testWidgets('chat screen should keep unfollow banner stable on tight size',
+      (tester) async {
+    tester.view.physicalSize = const Size(320, 568);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    final chatProvider = ChatProvider();
+    final friendProvider = FriendProvider();
+    final now = DateTime.now();
+    final thread = ChatThread(
+      id: 'u_chat_screen_unfollow_tight',
+      otherUser: _buildUser(
+        'u_chat_screen_unfollow_tight',
+        nickname: 'A very long contact name for unfollow banner verification',
+      ),
+      createdAt: now.subtract(const Duration(minutes: 10)),
+      expiresAt: now.add(const Duration(hours: 24)),
+      intimacyPoints: 60,
+      isUnfollowed: true,
+      messagesSinceUnfollow: 3,
+    );
+    chatProvider.addThread(thread);
+
+    await tester.pumpWidget(
+      _ChatScreenHost(
+        threadId: thread.id,
+        chatProvider: chatProvider,
+        friendProvider: friendProvider,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('chat-unfollow-banner')), findsOneWidget);
+    expect(
+      find.byKey(const Key('chat-unfollow-banner-remind-action')),
+      findsOneWidget,
+    );
+    expect(tester.takeException(), isNull);
+
+    final bannerRect =
+        tester.getRect(find.byKey(const Key('chat-unfollow-banner')));
+    final actionRect = tester.getRect(
+      find.byKey(const Key('chat-unfollow-banner-remind-action')),
+    );
+    final composerRect =
+        tester.getRect(find.byKey(const Key('chat-composer-shell')));
+
+    expect(bannerRect.bottom, lessThanOrEqualTo(composerRect.top));
+    expect(actionRect.bottom, lessThanOrEqualTo(composerRect.top));
 
     await _disposeHost(tester, chatProvider, friendProvider);
   });
@@ -502,6 +623,37 @@ void main() {
     expect(avatarRect.right, lessThan(titleRect.right));
     expect(titleRect.right, lessThanOrEqualTo(menuRect.left));
     expect(sendRect.bottom, lessThanOrEqualTo(568));
+
+    await _disposeHost(tester, chatProvider, friendProvider);
+  });
+
+  testWidgets('chat screen should open user profile sheet from action menu',
+      (tester) async {
+    final chatProvider = ChatProvider();
+    final friendProvider = FriendProvider();
+    final thread = _buildThread('u_chat_screen_profile_sheet');
+    chatProvider.addThread(thread);
+
+    await tester.pumpWidget(
+      _ChatScreenHost(
+        threadId: thread.id,
+        chatProvider: chatProvider,
+        friendProvider: friendProvider,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('chat-action-menu-button')));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('chat-action-menu-profile')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('chat-user-profile-sheet')), findsOneWidget);
+    expect(
+      find.byKey(const Key('chat-user-profile-primary-action')),
+      findsOneWidget,
+    );
 
     await _disposeHost(tester, chatProvider, friendProvider);
   });

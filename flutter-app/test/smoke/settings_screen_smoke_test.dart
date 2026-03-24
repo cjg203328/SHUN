@@ -939,6 +939,62 @@ void main() {
   );
 
   testWidgets(
+    'settings screen should ignore tapping active experience preset',
+    (tester) async {
+      final chatProvider = ChatProvider(
+        enableRealtime: false,
+        enableRemoteHydration: false,
+      );
+      final authProvider = AuthProvider();
+      final friendProvider = FriendProvider(enableRemoteHydration: false);
+      final settingsProvider = SettingsProvider(enableRemoteHydration: false);
+      addTearDown(chatProvider.dispose);
+      addTearDown(authProvider.dispose);
+      addTearDown(friendProvider.dispose);
+      addTearDown(settingsProvider.dispose);
+
+      await tester.pumpWidget(
+        MultiProvider(
+          providers: [
+            ChangeNotifierProvider<AuthProvider>.value(value: authProvider),
+            ChangeNotifierProvider<ChatProvider>.value(value: chatProvider),
+            ChangeNotifierProvider<FriendProvider>.value(value: friendProvider),
+            ChangeNotifierProvider<SettingsProvider>.value(
+              value: settingsProvider,
+            ),
+          ],
+          child: const MaterialApp(home: SettingsScreen()),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+
+      expect(
+        settingsProvider.activeExperiencePreset,
+        SettingsExperiencePreset.responsive,
+      );
+
+      final responsivePreset = find.byKey(
+        const Key('settings-preset-responsive'),
+      );
+      await tester.ensureVisible(responsivePreset);
+      await tester.pumpAndSettle();
+      await tester.tap(responsivePreset, warnIfMissed: false);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+
+      expect(
+        settingsProvider.activeExperiencePreset,
+        SettingsExperiencePreset.responsive,
+      );
+      expect(
+        find.byKey(const Key('settings-inline-feedback-card')),
+        findsNothing,
+      );
+    },
+  );
+
+  testWidgets(
     'settings screen should surface missing system notification permission',
     (tester) async {
       PushNotificationService.instance.debugSetState(
@@ -1721,6 +1777,98 @@ void main() {
             .data,
         contains(
             '\u68c0\u6d4b\u5230\u7cfb\u7edf\u901a\u77e5\u6743\u9650\u5df2\u6062\u590d'),
+      );
+    },
+  );
+
+  testWidgets(
+    'settings screen should avoid duplicate recovery feedback when notification permission is unchanged after returning from system settings',
+    (tester) async {
+      final pushNotificationService = _TestPushNotificationService(
+        initialState: const PushRuntimeState(
+          notificationsEnabled: true,
+          permissionGranted: false,
+        ),
+        refreshedState: const PushRuntimeState(
+          notificationsEnabled: true,
+          permissionGranted: false,
+        ),
+      );
+
+      final chatProvider = ChatProvider(
+        enableRealtime: false,
+        enableRemoteHydration: false,
+      );
+      final authProvider = AuthProvider();
+      final friendProvider = FriendProvider(enableRemoteHydration: false);
+      final settingsProvider = SettingsProvider(
+        pushNotificationService: pushNotificationService,
+        enableRemoteHydration: false,
+      );
+      addTearDown(chatProvider.dispose);
+      addTearDown(authProvider.dispose);
+      addTearDown(friendProvider.dispose);
+      addTearDown(settingsProvider.dispose);
+
+      await tester.pumpWidget(
+        MultiProvider(
+          providers: [
+            ChangeNotifierProvider<AuthProvider>.value(value: authProvider),
+            ChangeNotifierProvider<ChatProvider>.value(value: chatProvider),
+            ChangeNotifierProvider<FriendProvider>.value(value: friendProvider),
+            ChangeNotifierProvider<SettingsProvider>.value(
+              value: settingsProvider,
+            ),
+          ],
+          child: const MaterialApp(home: SettingsScreen()),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+
+      final runtimeAction = find.byKey(
+        const Key('settings-notification-runtime-action'),
+      );
+      await tester.ensureVisible(runtimeAction);
+      await tester.pumpAndSettle();
+      await tester.tap(runtimeAction, warnIfMissed: false);
+      await tester.pumpAndSettle();
+
+      expect(
+        tester
+            .widget<Text>(
+              find.byKey(const Key('settings-inline-feedback-title')),
+            )
+            .data,
+        '已打开系统设置',
+      );
+
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+      await tester.pump();
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await tester.pump();
+      await tester.pumpAndSettle();
+
+      expect(settingsProvider.pushRuntimeState.deviceToken, isNull);
+      expect(
+        find.byKey(const Key('settings-notification-runtime-card')),
+        findsOneWidget,
+      );
+      expect(
+        tester
+            .widget<Text>(
+              find.byKey(const Key('settings-inline-feedback-title')),
+            )
+            .data,
+        '已打开系统设置',
+      );
+      expect(
+        tester
+            .widget<Text>(
+              find.byKey(const Key('settings-inline-feedback-badge')),
+            )
+            .data,
+        '等待返回',
       );
     },
   );

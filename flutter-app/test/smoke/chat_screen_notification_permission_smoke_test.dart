@@ -336,6 +336,7 @@ void main() {
 
       expect(bannerActionRect.bottom, lessThan(composerRect.top));
       expect(sendRect.bottom, lessThanOrEqualTo(640));
+      await tester.pump(const Duration(milliseconds: 700));
     },
   );
 

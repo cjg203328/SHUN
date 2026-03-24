@@ -54,7 +54,25 @@ extension ChatProviderThreads on ChatProvider {
   }) async {
     final existingThread = _findThreadByUserId(user.id);
     if (existingThread != null) {
+      final previousComposerFingerprint =
+          _threadComposerFingerprint(existingThread.id);
+      final previousFingerprint =
+          _threadListPresentationFingerprint(existingThread.id);
+      final previousHeaderFingerprint =
+          _threadHeaderFingerprint(existingThread.id);
       _deletedThreads[existingThread.id] = false;
+      _markThreadListPresentationDirtyIfChanged(
+        existingThread.id,
+        previousFingerprint,
+      );
+      _markThreadComposerDirtyIfChanged(
+        existingThread.id,
+        previousComposerFingerprint,
+      );
+      _markThreadHeaderDirtyIfChanged(
+        existingThread.id,
+        previousHeaderFingerprint,
+      );
       if (!_chatService.hasSession || _isRemoteThreadId(existingThread.id)) {
         notifyListeners();
         return existingThread;
@@ -102,6 +120,9 @@ extension ChatProviderThreads on ChatProvider {
     bool notify = true,
     bool restoreDeleted = true,
   }) {
+    final previousComposerFingerprint = _threadComposerFingerprint(thread.id);
+    final previousFingerprint = _threadListPresentationFingerprint(thread.id);
+    final previousHeaderFingerprint = _threadHeaderFingerprint(thread.id);
     final existingThread = _threads[thread.id];
     if (existingThread != null) {
       final mergedThread = ChatThread(
@@ -120,6 +141,13 @@ extension ChatProviderThreads on ChatProvider {
       _deletedThreads[thread.id] =
           restoreDeleted ? false : (_deletedThreads[thread.id] ?? false);
       unawaited(_joinThreadRealtime(thread.id));
+      _markThreadInteractionChanged(thread.id);
+      _markThreadListPresentationDirtyIfChanged(
+        thread.id,
+        previousFingerprint,
+      );
+      _markThreadComposerDirtyIfChanged(thread.id, previousComposerFingerprint);
+      _markThreadHeaderDirtyIfChanged(thread.id, previousHeaderFingerprint);
       if (notify) {
         notifyListeners();
       }
@@ -152,6 +180,13 @@ extension ChatProviderThreads on ChatProvider {
     _deletedThreads[thread.id] =
         restoreDeleted ? false : (_deletedThreads[thread.id] ?? false);
     unawaited(_joinThreadRealtime(thread.id));
+    _markThreadInteractionChanged(thread.id);
+    _markThreadListPresentationDirtyIfChanged(
+      thread.id,
+      previousFingerprint,
+    );
+    _markThreadComposerDirtyIfChanged(thread.id, previousComposerFingerprint);
+    _markThreadHeaderDirtyIfChanged(thread.id, previousHeaderFingerprint);
     if (notify) {
       notifyListeners();
     }
@@ -172,6 +207,9 @@ extension ChatProviderThreads on ChatProvider {
   }
 
   void _replaceThread(String oldThreadId, ChatThread newThread) {
+    final previousOutgoingDeliveryFingerprint =
+        _threadOutgoingDeliveryFingerprint(newThread.id) ??
+            _threadOutgoingDeliveryFingerprint(oldThreadId);
     final oldMessages = _messages.remove(oldThreadId) ?? const <Message>[];
     final mergedMessages = <Message>[
       ...(_messages[newThread.id] ?? const <Message>[]),
@@ -260,6 +298,20 @@ extension ChatProviderThreads on ChatProvider {
     if (_activeThreadId == oldThreadId) {
       _activeThreadId = newThread.id;
     }
+    _threadComposerRevisions.remove(oldThreadId);
+    _threadOutgoingDeliveryRevisions.remove(oldThreadId);
+    _threadHeaderRevisions.remove(oldThreadId);
+    _threadInteractionRevisions.remove(oldThreadId);
+    _threadSummaryRevisions.remove(oldThreadId);
+    _threadSummaryCache.remove(oldThreadId);
+    _markThreadComposerDirty(newThread.id);
+    _markThreadOutgoingDeliveryDirtyIfChanged(
+      newThread.id,
+      previousOutgoingDeliveryFingerprint,
+    );
+    _markThreadHeaderDirty(newThread.id);
+    _markThreadInteractionChanged(newThread.id);
+    _markThreadListPresentationDirty();
     unawaited(
       NotificationCenterProvider.instance.remapThreadNotifications(
         fromThreadId: oldThreadId,
@@ -345,6 +397,9 @@ extension ChatProviderThreads on ChatProvider {
     if (threadId == null) return;
     final thread = _threads[threadId];
     if (thread == null) return;
+    final previousComposerFingerprint = _threadComposerFingerprint(threadId);
+    final previousFingerprint = _threadListPresentationFingerprint(threadId);
+    final previousHeaderFingerprint = _threadHeaderFingerprint(threadId);
 
     _deletedThreads[threadId] = false;
     _lastRemoteMessageSyncAt.remove(threadId);
@@ -364,6 +419,10 @@ extension ChatProviderThreads on ChatProvider {
       );
     }
 
+    _markThreadInteractionChanged(threadId);
+    _markThreadComposerDirtyIfChanged(threadId, previousComposerFingerprint);
+    _markThreadListPresentationDirtyIfChanged(threadId, previousFingerprint);
+    _markThreadHeaderDirtyIfChanged(threadId, previousHeaderFingerprint);
     notifyListeners();
   }
 
@@ -405,6 +464,9 @@ extension ChatProviderThreads on ChatProvider {
     threadId = _resolveThreadId(threadId);
     final thread = _threads[threadId];
     if (thread == null) return;
+    final previousComposerFingerprint = _threadComposerFingerprint(threadId);
+    final previousFingerprint = _threadListPresentationFingerprint(threadId);
+    final previousHeaderFingerprint = _threadHeaderFingerprint(threadId);
 
     final nextUnreadCount = unreadCount ?? thread.unreadCount;
     final nextIntimacyPoints = intimacyPoints ?? thread.intimacyPoints;
@@ -432,6 +494,10 @@ extension ChatProviderThreads on ChatProvider {
       isUnfollowed: nextIsUnfollowed,
       messagesSinceUnfollow: nextMessagesSinceUnfollow,
     );
+    _markThreadInteractionChanged(threadId);
+    _markThreadComposerDirtyIfChanged(threadId, previousComposerFingerprint);
+    _markThreadListPresentationDirtyIfChanged(threadId, previousFingerprint);
+    _markThreadHeaderDirtyIfChanged(threadId, previousHeaderFingerprint);
     if (notify) {
       notifyListeners();
     }
@@ -439,10 +505,19 @@ extension ChatProviderThreads on ChatProvider {
 
   void deleteThread(String threadId) {
     threadId = _resolveThreadId(threadId);
+    final previousOutgoingDeliveryFingerprint =
+        _threadOutgoingDeliveryFingerprint(threadId);
+    final previousFingerprint = _threadListPresentationFingerprint(threadId);
     _messages[threadId] = <Message>[];
     _lastRemoteMessageSyncAt.remove(threadId);
     _updateThread(threadId, unreadCount: 0, notify: false);
     _deletedThreads[threadId] = true;
+    _markThreadInteractionChanged(threadId);
+    _markThreadOutgoingDeliveryDirtyIfChanged(
+      threadId,
+      previousOutgoingDeliveryFingerprint,
+    );
+    _markThreadListPresentationDirtyIfChanged(threadId, previousFingerprint);
     notifyListeners();
     unawaited(
       NotificationCenterProvider.instance.removeThreadNotifications(threadId),
@@ -452,8 +527,11 @@ extension ChatProviderThreads on ChatProvider {
 
   bool restoreThread(String threadId, {bool notify = true}) {
     threadId = _resolveThreadId(threadId);
+    final previousFingerprint = _threadListPresentationFingerprint(threadId);
     final wasDeleted = _deletedThreads[threadId] ?? false;
     _deletedThreads[threadId] = false;
+    _markThreadInteractionChanged(threadId);
+    _markThreadListPresentationDirtyIfChanged(threadId, previousFingerprint);
     if (wasDeleted && notify) {
       notifyListeners();
     }

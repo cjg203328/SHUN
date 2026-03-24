@@ -3603,6 +3603,498 @@ void main() {
     );
     expect(provider.recentDeliveryEvents, isEmpty);
   });
+
+  test('restoring local chat snapshot should not immediately persist again',
+      () async {
+    final thread = _buildThread('u_chat_restore_no_resave');
+    final message = Message(
+      id: 'restore-message',
+      content: 'persisted',
+      isMe: true,
+      timestamp: DateTime.parse('2026-03-20T15:00:00.000'),
+      status: MessageStatus.sent,
+    );
+    final repository = _FakeAppDataRepository(
+      initialChatState: <String, dynamic>{
+        'version': 2,
+        'threads': <String, dynamic>{
+          thread.id: thread.toJson(),
+        },
+        'messages': <String, dynamic>{
+          thread.id: <Map<String, dynamic>>[message.toJson()],
+        },
+        'lastMessageTime': <String, dynamic>{},
+        'recalledMessageIds': <String, dynamic>{},
+        'deletedThreads': <String, dynamic>{
+          thread.id: false,
+        },
+        'deliveryStats': <String, dynamic>{},
+      },
+    );
+
+    final provider = ChatProvider(
+      repository: repository,
+      enableRemoteHydration: false,
+    );
+    addTearDown(provider.dispose);
+
+    await Future<void>.delayed(const Duration(milliseconds: 800));
+
+    expect(repository.saveChatStateCallCount, 0);
+    expect(provider.getMessages(thread.id), hasLength(1));
+    expect(provider.getMessages(thread.id).first.content, 'persisted');
+  });
+
+  test('pinning thread should update UI without persisting chat snapshot',
+      () async {
+    final repository = _FakeAppDataRepository();
+    final provider = ChatProvider(
+      repository: repository,
+      enableRemoteHydration: false,
+    );
+    addTearDown(provider.dispose);
+    final thread = _buildThread('u_chat_pin_no_persist');
+
+    provider.addThread(thread);
+    await Future<void>.delayed(const Duration(milliseconds: 800));
+    repository.resetSaveTracking();
+
+    var notificationCount = 0;
+    provider.addListener(() {
+      notificationCount++;
+    });
+
+    provider.pinThread(thread.id);
+    provider.unpinThread(thread.id);
+
+    await Future<void>.delayed(const Duration(milliseconds: 800));
+
+    expect(notificationCount, 2);
+    expect(repository.saveChatStateCallCount, 0);
+    expect(provider.isThreadPinned(thread.id), isFalse);
+  });
+
+  test(
+      'thread list presentation revision should stay stable for row-only changes',
+      () {
+    final provider = ChatProvider(enableRemoteHydration: false);
+    addTearDown(provider.dispose);
+
+    final thread = _buildThread('u_chat_thread_list_revision');
+    provider.addThread(thread);
+
+    final revisionAfterAdd = provider.threadListPresentationRevision;
+
+    provider.saveDraft(thread.id, '这一条只是草稿变化', notify: true);
+
+    expect(provider.threadListPresentationRevision, revisionAfterAdd);
+
+    provider.pinThread(thread.id);
+    final revisionAfterPin = provider.threadListPresentationRevision;
+
+    expect(revisionAfterPin, greaterThan(revisionAfterAdd));
+
+    provider.sendMessage(thread.id, '这条消息会更新最近活跃时间');
+
+    expect(
+      provider.threadListPresentationRevision,
+      greaterThan(revisionAfterPin),
+    );
+
+    final unreadOnlyThread = ChatThread(
+      id: 'u_chat_thread_list_read_only',
+      otherUser: _buildUser('u_chat_thread_list_read_only'),
+      unreadCount: 3,
+      createdAt: DateTime.now().subtract(const Duration(minutes: 20)),
+      expiresAt: DateTime.now().add(const Duration(hours: 24)),
+      intimacyPoints: 60,
+    );
+    provider.addThread(unreadOnlyThread);
+
+    final revisionBeforeMarkRead = provider.threadListPresentationRevision;
+
+    provider.markAsRead(unreadOnlyThread.id);
+
+    expect(provider.threadListPresentationRevision, revisionBeforeMarkRead);
+  });
+
+  test('thread interaction revision should stay scoped to the changed thread',
+      () {
+    final provider = ChatProvider(enableRemoteHydration: false);
+    addTearDown(provider.dispose);
+
+    final currentThread = _buildThread('u_chat_interaction_current');
+    final otherThread = _buildThread('u_chat_interaction_other');
+    provider.addThread(currentThread);
+    provider.addThread(otherThread);
+
+    final currentRevisionAfterAdd =
+        provider.threadInteractionRevision(currentThread.id);
+    final otherRevisionAfterAdd =
+        provider.threadInteractionRevision(otherThread.id);
+
+    provider.sendMessage(otherThread.id, 'only other thread changed');
+
+    expect(
+      provider.threadInteractionRevision(currentThread.id),
+      currentRevisionAfterAdd,
+    );
+    expect(
+      provider.threadInteractionRevision(otherThread.id),
+      greaterThan(otherRevisionAfterAdd),
+    );
+
+    final currentRevisionBeforePin =
+        provider.threadInteractionRevision(currentThread.id);
+    provider.pinThread(currentThread.id);
+
+    expect(
+      provider.threadInteractionRevision(currentThread.id),
+      currentRevisionBeforePin,
+    );
+
+    provider.sendMessage(currentThread.id, 'current thread changed');
+
+    expect(
+      provider.threadInteractionRevision(currentThread.id),
+      greaterThan(currentRevisionBeforePin),
+    );
+  });
+
+  test('thread summary revision should stay scoped to the changed thread', () {
+    final provider = ChatProvider(enableRemoteHydration: false);
+    addTearDown(provider.dispose);
+
+    final currentThread = _buildThread('u_chat_summary_revision_current');
+    final otherThread = _buildThread('u_chat_summary_revision_other');
+    provider.addThread(currentThread);
+    provider.addThread(otherThread);
+
+    final currentRevisionAfterAdd =
+        provider.threadSummaryRevision(currentThread.id);
+    final otherRevisionAfterAdd =
+        provider.threadSummaryRevision(otherThread.id);
+
+    provider.saveDraft(otherThread.id, '只改另一个线程的草稿', notify: true);
+
+    expect(
+      provider.threadSummaryRevision(currentThread.id),
+      currentRevisionAfterAdd,
+    );
+    expect(
+      provider.threadSummaryRevision(otherThread.id),
+      greaterThan(otherRevisionAfterAdd),
+    );
+
+    final currentRevisionBeforePin =
+        provider.threadSummaryRevision(currentThread.id);
+    provider.pinThread(currentThread.id);
+
+    expect(
+      provider.threadSummaryRevision(currentThread.id),
+      greaterThan(currentRevisionBeforePin),
+    );
+
+    final currentRevisionBeforeSend =
+        provider.threadSummaryRevision(currentThread.id);
+    provider.sendMessage(currentThread.id, '当前线程消息变化');
+
+    expect(
+      provider.threadSummaryRevision(currentThread.id),
+      greaterThan(currentRevisionBeforeSend),
+    );
+  });
+
+  test('thread header revision should ignore message-only changes', () {
+    final provider = ChatProvider(enableRemoteHydration: false);
+    addTearDown(provider.dispose);
+
+    final currentThread = _buildThread('u_chat_header_revision_current');
+    final otherThread = _buildThread('u_chat_header_revision_other');
+    provider.addThread(currentThread);
+    provider.addThread(otherThread);
+
+    final currentRevisionAfterAdd =
+        provider.threadHeaderRevision(currentThread.id);
+    final otherRevisionAfterAdd = provider.threadHeaderRevision(otherThread.id);
+
+    provider.sendMessage(currentThread.id, '只改消息发送态');
+
+    expect(
+      provider.threadHeaderRevision(currentThread.id),
+      currentRevisionAfterAdd,
+    );
+
+    provider.saveDraft(currentThread.id, '草稿也不该影响头部', notify: true);
+    expect(
+      provider.threadHeaderRevision(currentThread.id),
+      currentRevisionAfterAdd,
+    );
+
+    provider.sendMessage(otherThread.id, '另一个线程消息变化');
+    expect(
+      provider.threadHeaderRevision(currentThread.id),
+      currentRevisionAfterAdd,
+    );
+    expect(
+      provider.threadHeaderRevision(otherThread.id),
+      otherRevisionAfterAdd,
+    );
+
+    provider.unfollowFriend(currentThread.id);
+    expect(
+      provider.threadHeaderRevision(currentThread.id),
+      greaterThan(currentRevisionAfterAdd),
+    );
+  });
+
+  test(
+      'thread outgoing delivery revision should stay scoped to delivery-related changes',
+      () {
+    final provider = ChatProvider(enableRemoteHydration: false);
+    addTearDown(provider.dispose);
+
+    final currentThread = _buildThread('u_chat_delivery_revision_current');
+    final otherThread = _buildThread('u_chat_delivery_revision_other');
+    provider.addThread(currentThread);
+    provider.addThread(otherThread);
+
+    final currentRevisionAfterAdd =
+        provider.threadOutgoingDeliveryRevision(currentThread.id);
+    final otherRevisionAfterAdd =
+        provider.threadOutgoingDeliveryRevision(otherThread.id);
+
+    provider.saveDraft(currentThread.id, 'draft only change', notify: true);
+    expect(
+      provider.threadOutgoingDeliveryRevision(currentThread.id),
+      currentRevisionAfterAdd,
+    );
+
+    provider.unfollowFriend(currentThread.id);
+    expect(
+      provider.threadOutgoingDeliveryRevision(currentThread.id),
+      currentRevisionAfterAdd,
+    );
+
+    provider.sendMessage(otherThread.id, 'other thread outgoing');
+    expect(
+      provider.threadOutgoingDeliveryRevision(currentThread.id),
+      currentRevisionAfterAdd,
+    );
+    expect(
+      provider.threadOutgoingDeliveryRevision(otherThread.id),
+      greaterThan(otherRevisionAfterAdd),
+    );
+
+    provider.sendMessage(currentThread.id, 'current outgoing');
+    expect(
+      provider.threadOutgoingDeliveryRevision(currentThread.id),
+      greaterThan(currentRevisionAfterAdd),
+    );
+  });
+
+  test(
+      'thread composer revision should only change when composer capability changes',
+      () {
+    final provider = ChatProvider(enableRemoteHydration: false);
+    addTearDown(provider.dispose);
+
+    final currentThread = _buildThread('u_chat_composer_revision_current');
+    final otherThread = _buildThread('u_chat_composer_revision_other');
+    provider.addThread(currentThread);
+    provider.addThread(otherThread);
+
+    final currentRevisionAfterAdd =
+        provider.threadComposerRevision(currentThread.id);
+    final otherRevisionAfterAdd =
+        provider.threadComposerRevision(otherThread.id);
+
+    provider.sendMessage(currentThread.id, 'message only change');
+    expect(
+      provider.threadComposerRevision(currentThread.id),
+      currentRevisionAfterAdd,
+    );
+
+    provider.saveDraft(currentThread.id, 'draft only change', notify: true);
+    expect(
+      provider.threadComposerRevision(currentThread.id),
+      currentRevisionAfterAdd,
+    );
+
+    provider.sendMessage(otherThread.id, 'other thread message');
+    expect(
+      provider.threadComposerRevision(currentThread.id),
+      currentRevisionAfterAdd,
+    );
+    expect(
+      provider.threadComposerRevision(otherThread.id),
+      otherRevisionAfterAdd,
+    );
+
+    provider.unfollowFriend(currentThread.id);
+    expect(
+      provider.threadComposerRevision(currentThread.id),
+      currentRevisionAfterAdd,
+    );
+
+    provider.sendMessage(currentThread.id, 'quota 1');
+    expect(
+      provider.threadComposerRevision(currentThread.id),
+      currentRevisionAfterAdd,
+    );
+
+    provider.sendMessage(currentThread.id, 'quota 2');
+    expect(
+      provider.threadComposerRevision(currentThread.id),
+      currentRevisionAfterAdd,
+    );
+
+    provider.sendMessage(currentThread.id, 'quota 3');
+    expect(
+      provider.threadComposerRevision(currentThread.id),
+      greaterThan(currentRevisionAfterAdd),
+    );
+    expect(provider.getThread(currentThread.id)?.canSendMessage, isFalse);
+  });
+
+  test('thread summary snapshot should stay scoped to the changed thread', () {
+    final provider = ChatProvider(enableRemoteHydration: false);
+    addTearDown(provider.dispose);
+
+    final currentThread = _buildThread('u_chat_summary_current');
+    final otherThread = _buildThread('u_chat_summary_other');
+    provider.addThread(currentThread);
+    provider.addThread(otherThread);
+
+    final currentSnapshot = provider.threadSummarySnapshot(currentThread.id);
+    final otherSnapshot = provider.threadSummarySnapshot(otherThread.id);
+
+    expect(currentSnapshot, isNotNull);
+    expect(otherSnapshot, isNotNull);
+    expect(
+      identical(
+        provider.threadSummarySnapshot(currentThread.id),
+        currentSnapshot,
+      ),
+      isTrue,
+    );
+
+    provider.saveDraft(otherThread.id, '只改另一个线程的草稿', notify: true);
+
+    expect(
+      identical(
+        provider.threadSummarySnapshot(currentThread.id),
+        currentSnapshot,
+      ),
+      isTrue,
+    );
+    expect(
+      identical(
+        provider.threadSummarySnapshot(otherThread.id),
+        otherSnapshot,
+      ),
+      isFalse,
+    );
+
+    final draftSnapshot = provider.threadSummarySnapshot(currentThread.id);
+    provider.saveDraft(currentThread.id, '当前线程草稿', notify: true);
+    final updatedDraftSnapshot =
+        provider.threadSummarySnapshot(currentThread.id);
+
+    expect(identical(updatedDraftSnapshot, draftSnapshot), isFalse);
+    expect(updatedDraftSnapshot?.draft, '当前线程草稿');
+
+    provider.pinThread(currentThread.id);
+    final pinnedSnapshot = provider.threadSummarySnapshot(currentThread.id);
+
+    expect(pinnedSnapshot?.isPinned, isTrue);
+    expect(identical(pinnedSnapshot, updatedDraftSnapshot), isFalse);
+  });
+
+  test('loading unchanged remote history should not notify listeners',
+      () async {
+    final thread = _buildThread('u_chat_same_remote_history');
+    final message = Message(
+      id: 'same-remote-message',
+      content: 'already synced',
+      isMe: false,
+      timestamp: DateTime.parse('2026-03-20T15:10:00.000'),
+      status: MessageStatus.sent,
+    );
+    final fakeChatService = _FakeChatService(
+      hasSessionOverride: true,
+      messagesByThread: <String, List<Message>>{
+        thread.id: <Message>[
+          Message(
+            id: message.id,
+            content: message.content,
+            isMe: message.isMe,
+            timestamp: message.timestamp,
+            status: message.status,
+          ),
+        ],
+      },
+    );
+    final provider = ChatProvider(
+      chatService: fakeChatService,
+      chatSocketService: _FakeChatSocketService(),
+      enableRemoteHydration: false,
+    );
+    addTearDown(provider.dispose);
+
+    provider.addThread(thread);
+    provider.getMessages(thread.id).add(message);
+
+    var notificationCount = 0;
+    provider.addListener(() {
+      notificationCount++;
+    });
+
+    provider.setActiveThread(thread.id);
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+
+    expect(fakeChatService.loadMessagesCalls[thread.id], 1);
+    expect(notificationCount, 0);
+    expect(provider.getMessages(thread.id), hasLength(1));
+  });
+}
+
+class _FakeAppDataRepository implements AppDataRepository {
+  _FakeAppDataRepository({
+    Map<String, dynamic>? initialChatState,
+  }) : _chatState =
+            initialChatState == null ? null : _cloneSnapshot(initialChatState);
+
+  int saveChatStateCallCount = 0;
+  Map<String, dynamic>? _chatState;
+
+  @override
+  Map<String, dynamic>? loadChatState() {
+    final snapshot = _chatState;
+    if (snapshot == null) {
+      return null;
+    }
+    return _cloneSnapshot(snapshot);
+  }
+
+  @override
+  Future<void> saveChatState(Map<String, dynamic> snapshot) async {
+    saveChatStateCallCount++;
+    _chatState = _cloneSnapshot(snapshot);
+  }
+
+  void resetSaveTracking() {
+    saveChatStateCallCount = 0;
+  }
+
+  static Map<String, dynamic> _cloneSnapshot(Map<String, dynamic> snapshot) {
+    return Map<String, dynamic>.from(
+      jsonDecode(jsonEncode(snapshot)) as Map<String, dynamic>,
+    );
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 class _FakeChatService extends ChatService {
