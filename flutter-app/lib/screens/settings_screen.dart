@@ -1,13 +1,10 @@
 import 'dart:async';
-import 'dart:io';
-
-import 'package:flutter/foundation.dart';
+import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
-import '../config/app_env.dart';
 import '../config/theme.dart';
 import '../models/app_notification.dart';
 import '../providers/auth_provider.dart';
@@ -18,10 +15,12 @@ import '../providers/settings_provider.dart';
 import '../services/image_upload_service.dart';
 import '../services/media_upload_service.dart';
 import '../services/storage_service.dart';
+import '../utils/media_preview_state_resolver.dart';
 import '../utils/notification_permission_guidance.dart';
 import '../utils/permission_manager.dart';
+import '../widgets/settings_media_management_preview_card.dart';
+import '../widgets/settings_media_preview_surface.dart';
 import '../widgets/app_toast.dart';
-import '../widgets/chat_delivery_debug_sheet.dart';
 import '../core/feedback/app_feedback.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -143,6 +142,7 @@ class _SettingsScreenState extends State<SettingsScreen>
     with WidgetsBindingObserver {
   final ValueNotifier<_SettingsInlineFeedbackState?> _inlineFeedbackNotifier =
       ValueNotifier<_SettingsInlineFeedbackState?>(null);
+  Timer? _inlineFeedbackTimer;
   final ValueNotifier<_SettingsMediaPreviewState> _avatarPreviewStateNotifier =
       ValueNotifier<_SettingsMediaPreviewState>(
     const _SettingsMediaPreviewState(),
@@ -165,6 +165,7 @@ class _SettingsScreenState extends State<SettingsScreen>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _inlineFeedbackTimer?.cancel();
     _inlineFeedbackNotifier.dispose();
     _avatarPreviewStateNotifier.dispose();
     _backgroundPreviewStateNotifier.dispose();
@@ -211,36 +212,23 @@ class _SettingsScreenState extends State<SettingsScreen>
   }
 
   Future<_SettingsMediaPreviewState> _readAvatarPreviewState() {
-    return _readMediaPreviewState(
-      loadPath: ImageUploadService.getAvatarPath,
-      exists: ImageUploadService.avatarExists,
-    );
+    return _readMediaPreviewState(loadPath: ImageUploadService.getAvatarPath);
   }
 
   Future<_SettingsMediaPreviewState> _readBackgroundPreviewState() {
     return _readMediaPreviewState(
       loadPath: ImageUploadService.getBackgroundPath,
-      exists: ImageUploadService.backgroundExists,
     );
   }
 
   Future<_SettingsMediaPreviewState> _readMediaPreviewState({
     required Future<String?> Function() loadPath,
-    required Future<bool> Function() exists,
   }) async {
-    final mediaPath = await loadPath();
-    if (mediaPath == null || mediaPath.trim().isEmpty) {
-      return const _SettingsMediaPreviewState();
-    }
-
-    final hasMedia = await exists();
-    if (!hasMedia) {
-      return const _SettingsMediaPreviewState();
-    }
-
+    final resolvedState = resolveMediaPreviewState(await loadPath());
     return _SettingsMediaPreviewState(
-      mediaPath: mediaPath,
-      hasMedia: true,
+      mediaPath: resolvedState.mediaPath,
+      hasMedia: resolvedState.hasMedia,
+      isRemote: resolvedState.isRemote,
     );
   }
 
@@ -355,6 +343,64 @@ class _SettingsScreenState extends State<SettingsScreen>
     );
   }
 
+  _SettingsNotificationRuntimeState _selectNotificationRuntimeState(
+    SettingsProvider settingsProvider,
+  ) {
+    return _resolveNotificationRuntimeState(
+      _selectSettingsViewData(settingsProvider),
+    );
+  }
+
+  _SettingsDeviceStatusItem _selectNotificationStatusItem(
+    SettingsProvider settingsProvider,
+  ) {
+    final runtimeState = _selectNotificationRuntimeState(settingsProvider);
+    return _SettingsDeviceStatusItem(
+      key: const Key('settings-device-status-notification'),
+      icon: runtimeState.icon,
+      title: '消息通知',
+      badgeLabel: runtimeState.badgeLabel,
+      description: runtimeState.description,
+      isHealthy: runtimeState.isHealthy,
+    );
+  }
+
+  _SettingsDeviceStatusItem _selectPresenceStatusItem(
+    SettingsProvider settingsProvider,
+  ) {
+    final invisibleMode = settingsProvider.invisibleMode;
+    final invisibleSettingHint =
+        _resolveInvisibleSettingHintForValue(invisibleMode);
+    return _SettingsDeviceStatusItem(
+      key: const Key('settings-device-status-presence'),
+      icon: invisibleMode
+          ? Icons.visibility_off_outlined
+          : Icons.visibility_outlined,
+      title: '展示状态',
+      badgeLabel: invisibleSettingHint.badgeLabel,
+      description: invisibleSettingHint.description,
+      isHealthy: invisibleSettingHint.isHealthy,
+    );
+  }
+
+  _SettingsDeviceStatusItem _selectVibrationStatusItem(
+    SettingsProvider settingsProvider,
+  ) {
+    final vibrationEnabled = settingsProvider.vibrationEnabled;
+    final vibrationSettingHint =
+        _resolveVibrationSettingHintForValue(vibrationEnabled);
+    return _SettingsDeviceStatusItem(
+      key: const Key('settings-device-status-vibration'),
+      icon: vibrationEnabled
+          ? Icons.vibration_outlined
+          : Icons.do_not_disturb_on_outlined,
+      title: '震动提醒',
+      badgeLabel: vibrationSettingHint.badgeLabel,
+      description: vibrationSettingHint.description,
+      isHealthy: vibrationSettingHint.isHealthy,
+    );
+  }
+
   _SettingsAccountSecurityViewData _selectAccountSecurityViewData(
     AuthProvider authProvider,
   ) {
@@ -399,7 +445,7 @@ class _SettingsScreenState extends State<SettingsScreen>
             children: [
               _buildSettingsOverviewCard(context),
               SizedBox(height: layout.sectionSpacing),
-              _buildSectionTitle('账号与安全', subtitle: '登录、身份标识与账号找回'),
+              _buildSectionTitle('账号与安全'),
               Selector<AuthProvider, _SettingsAccountSecurityViewData>(
                 selector: (context, authProvider) =>
                     _selectAccountSecurityViewData(authProvider),
@@ -411,7 +457,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                         key: const Key('settings-phone-item'),
                         icon: Icons.phone_outlined,
                         title: '手机号',
-                        subtitle: '用于登录、接收验证码和找回账号',
+                        subtitle: '登录与找回',
                         trailing: Text(
                           viewData.phone ?? '未绑定',
                           style: const TextStyle(
@@ -426,7 +472,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                         context,
                         icon: Icons.badge_outlined,
                         title: '账号 UID',
-                        subtitle: '点击即可复制，便于测试、加好友或排查问题',
+                        subtitle: '用于加好友和确认账号',
                         trailing: Text(
                           viewData.uid ?? '生成中',
                           style: const TextStyle(
@@ -442,7 +488,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                         key: const Key('settings-password-item'),
                         icon: Icons.lock_outlined,
                         title: '修改密码',
-                        subtitle: '定期更新密码，能更好保护你的账号安全',
+                        subtitle: '更新登录密码',
                         onTap: () => _presentPasswordEditorSheet(context),
                       ),
                     ],
@@ -450,7 +496,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                 },
               ),
               SizedBox(height: layout.sectionSpacing),
-              _buildSectionTitle('隐私与展示', subtitle: '优先保留影响曝光和关系边界的核心设置'),
+              _buildSectionTitle('隐私与展示'),
               Selector<SettingsProvider, _SettingsInvisibleModeItemViewData>(
                 selector: (context, settingsProvider) =>
                     _selectInvisibleModeItemViewData(settingsProvider),
@@ -462,7 +508,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                         key: const Key('settings-invisible-mode-item'),
                         icon: Icons.visibility_off_outlined,
                         title: '隐身模式',
-                        subtitle: '开启后，你的活跃状态和匹配曝光会更低调',
+                        subtitle: '开启后，活跃状态和匹配曝光会更低调',
                         helperText: viewData.description,
                         badgeLabel: viewData.badgeLabel,
                         badgeKey: const Key('settings-invisible-mode-badge'),
@@ -479,7 +525,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                 },
               ),
               SizedBox(height: layout.sectionSpacing),
-              _buildSectionTitle('通知与提醒', subtitle: '建议保持消息通知开启，避免错过新回复'),
+              _buildSectionTitle('通知与提醒'),
               Selector<SettingsProvider, _SettingsNotificationItemViewData>(
                 selector: (context, settingsProvider) =>
                     _selectNotificationItemViewData(settingsProvider),
@@ -491,7 +537,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                         key: const Key('settings-notification-item'),
                         icon: Icons.notifications_outlined,
                         title: '消息通知',
-                        subtitle: '关闭后，将不再收到新消息提醒',
+                        subtitle: '关闭后，不再收到新消息提醒',
                         helperText: viewData.description,
                         badgeLabel: viewData.badgeLabel,
                         badgeKey: const Key('settings-notification-badge'),
@@ -508,14 +554,14 @@ class _SettingsScreenState extends State<SettingsScreen>
                 },
               ),
               SizedBox(height: layout.sectionSpacing),
-              _buildSectionTitle('资料与展示', subtitle: '优先维护头像，背景等低频内容可按需调整'),
+              _buildSectionTitle('资料与展示'),
               _buildSectionCard(
                 children: [
                   _buildAvatarManagementItem(context),
                 ],
               ),
               SizedBox(height: layout.sectionSpacing),
-              _buildSectionTitle('更多设置（低频）', subtitle: '这些内容通常不用频繁修改，需要时再进入即可'),
+              _buildSectionTitle('更多设置'),
               Selector<SettingsProvider, _SettingsVibrationItemViewData>(
                 selector: (context, settingsProvider) =>
                     _selectVibrationItemViewData(settingsProvider),
@@ -527,7 +573,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                         key: const Key('settings-blocked-users-item'),
                         icon: Icons.block_outlined,
                         title: '黑名单',
-                        subtitle: '管理你不想再看到或接触的人',
+                        subtitle: '管理不想再接触的人',
                         onTap: () => _showBlockedUsers(context),
                       ),
                       _buildDivider(),
@@ -536,7 +582,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                         key: const Key('settings-vibration-item'),
                         icon: Icons.vibration_outlined,
                         title: '震动提醒',
-                        subtitle: '收到消息时通过震动给予提示',
+                        subtitle: '收到消息时用震动提醒',
                         helperText: viewData.description,
                         badgeLabel: viewData.badgeLabel,
                         badgeKey: const Key('settings-vibration-badge'),
@@ -555,14 +601,23 @@ class _SettingsScreenState extends State<SettingsScreen>
                 },
               ),
               SizedBox(height: layout.sectionSpacing),
-              _buildSectionTitle('安全与举报', subtitle: '保护自己和他人的使用体验'),
+              _buildSectionTitle('设备模式'),
+              Selector<SettingsProvider, _SettingsExperiencePresetViewData>(
+                selector: (context, settingsProvider) =>
+                    _selectExperiencePresetViewData(settingsProvider),
+                builder: (context, viewData, child) {
+                  return _buildExperiencePresetCard(context, viewData);
+                },
+              ),
+              SizedBox(height: layout.sectionSpacing),
+              _buildSectionTitle('安全与举报'),
               _buildSectionCard(
                 children: [
                   _buildSettingItem(
                     context,
                     icon: Icons.flag_outlined,
                     title: '举报违规用户',
-                    subtitle: '在聊天页面点击右上角菜单，选择「举报」进行投诉',
+                    subtitle: '在聊天页右上角处理',
                     onTap: () => AppToast.show(
                       context,
                       '请在聊天页面通过右上角菜单举报对方',
@@ -573,13 +628,13 @@ class _SettingsScreenState extends State<SettingsScreen>
                     context,
                     icon: Icons.security_outlined,
                     title: '账号安全提示',
-                    subtitle: '不要轻信陌生人的转账、链接等请求',
+                    subtitle: '查看风险提醒',
                     onTap: () => context.push('/legal/safety-tips'),
                   ),
                 ],
               ),
               SizedBox(height: layout.sectionSpacing),
-              _buildSectionTitle('关于与协议', subtitle: '查看产品说明、协议与隐私内容'),
+              _buildSectionTitle('关于与协议'),
               _buildSectionCard(
                 children: [
                   _buildSettingItem(
@@ -587,7 +642,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                     key: const Key('settings-about-item'),
                     icon: Icons.info_outlined,
                     title: '关于瞬聊',
-                    subtitle: '查看产品介绍、版本信息与开发说明',
+                    subtitle: '版本信息',
                     onTap: () => context.push('/about'),
                   ),
                   _buildDivider(),
@@ -596,7 +651,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                     key: const Key('settings-privacy-policy-item'),
                     icon: Icons.privacy_tip_outlined,
                     title: '隐私政策',
-                    subtitle: '说明我们如何收集、使用和保护你的数据',
+                    subtitle: '数据与隐私',
                     onTap: () => context.push('/legal/privacy-policy'),
                   ),
                   _buildDivider(),
@@ -605,57 +660,48 @@ class _SettingsScreenState extends State<SettingsScreen>
                     key: const Key('settings-user-agreement-item'),
                     icon: Icons.description_outlined,
                     title: '用户协议',
-                    subtitle: '查看使用规则、权责说明与服务条款',
+                    subtitle: '规则与条款',
                     onTap: () => context.push('/legal/user-agreement'),
                   ),
                 ],
               ),
               SizedBox(height: layout.sectionSpacing + 4),
-              _buildSectionTitle(
-                '账号操作',
-                subtitle: '先区分当前设备退出和不可恢复的账号注销，避免误触。',
-              ),
-              _buildAccountHintCard(
+              _buildSectionTitle('账号操作'),
+              Container(
                 key: const Key('settings-account-actions-card'),
-                icon: Icons.manage_accounts_outlined,
-                title: '先确认你要离开的是当前设备还是整个账号',
-                description:
-                    '退出登录只会清除这台设备上的登录状态，账号资料和好友关系会保留；注销账号会清除账号与会话数据，操作后无法恢复。',
-              ),
-              SizedBox(height: layout.isCompact ? 10 : 12),
-              _buildAccountActionCard(
-                cardKey: const Key('settings-logout-card'),
-                actionKey: const Key('settings-logout-button'),
-                icon: Icons.logout_rounded,
-                title: '退出登录',
-                badgeLabel: '仅当前设备',
-                description: '适合临时退出、换设备登录或排查问题使用，不会删除你的账号本身。',
-                onTap: () => _showLogoutDialog(context),
-              ),
-              SizedBox(height: layout.isCompact ? 10 : 12),
-              _buildAccountActionCard(
-                cardKey: const Key('settings-delete-account-card'),
-                actionKey: const Key('settings-delete-account-button'),
-                icon: Icons.delete_forever_outlined,
-                title: '注销账号',
-                badgeLabel: '不可恢复',
-                description: '仅在确认不再使用该账号时再操作，注销后资料与会话数据会一并清除。',
-                onTap: () => _showDeleteAccountDialog(context),
-                isDanger: true,
+                child: Column(
+                  children: [
+                    _buildAccountActionCard(
+                      cardKey: const Key('settings-logout-card'),
+                      actionKey: const Key('settings-logout-button'),
+                      icon: Icons.logout_rounded,
+                      title: '退出登录',
+                      badgeLabel: '仅当前设备',
+                      description: '只退出当前设备，资料仍保留。',
+                      onTap: () => _showLogoutDialog(context),
+                    ),
+                    SizedBox(height: layout.isCompact ? 10 : 12),
+                    _buildAccountActionCard(
+                      cardKey: const Key('settings-delete-account-card'),
+                      actionKey: const Key('settings-delete-account-button'),
+                      icon: Icons.delete_forever_outlined,
+                      title: '注销账号',
+                      badgeLabel: '不可恢复',
+                      description: '清除账号和会话数据，且不可恢复。',
+                      onTap: () => _showDeleteAccountDialog(context),
+                      isDanger: true,
+                    ),
+                  ],
+                ),
               ),
               SizedBox(height: layout.isCompact ? 12 : 14),
               Center(
-                child: GestureDetector(
-                  key: const ValueKey<String>('settings-debug-version-trigger'),
-                  onLongPress: kDebugMode
-                      ? () => showChatDeliveryStatsDebugSheet(context)
-                      : null,
-                  child: Text(
-                    'V1.0.3',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: AppColors.textDisabled,
-                    ),
+                child: Text(
+                  'V1.0.4',
+                  key: const Key('settings-version-label'),
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: AppColors.textDisabled,
                   ),
                 ),
               ),
@@ -664,16 +710,45 @@ class _SettingsScreenState extends State<SettingsScreen>
           ValueListenableBuilder<_SettingsInlineFeedbackState?>(
             valueListenable: _inlineFeedbackNotifier,
             builder: (context, inlineFeedback, child) {
-              if (inlineFeedback == null) {
-                return const SizedBox.shrink();
-              }
               return Positioned(
                 top: 8,
                 left: layout.pageHorizontalPadding,
                 right: layout.pageHorizontalPadding,
                 child: IgnorePointer(
                   ignoring: true,
-                  child: _buildInlineFeedbackCard(inlineFeedback),
+                  child: AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 220),
+                    reverseDuration: const Duration(milliseconds: 180),
+                    switchInCurve: Curves.easeOutCubic,
+                    switchOutCurve: Curves.easeInCubic,
+                    transitionBuilder: (child, animation) {
+                      final offsetAnimation = Tween<Offset>(
+                        begin: const Offset(0, -0.06),
+                        end: Offset.zero,
+                      ).animate(
+                        CurvedAnimation(
+                          parent: animation,
+                          curve: Curves.easeOutCubic,
+                          reverseCurve: Curves.easeInCubic,
+                        ),
+                      );
+                      return FadeTransition(
+                        opacity: animation,
+                        child: SlideTransition(
+                          position: offsetAnimation,
+                          child: child,
+                        ),
+                      );
+                    },
+                    child: inlineFeedback == null
+                        ? const SizedBox.shrink()
+                        : KeyedSubtree(
+                            key: ValueKey<String>(
+                              '${inlineFeedback.title}-${inlineFeedback.badgeLabel}-${inlineFeedback.description}-${inlineFeedback.isHealthy}',
+                            ),
+                            child: _buildInlineFeedbackCard(inlineFeedback),
+                          ),
+                  ),
                 ),
               );
             },
@@ -687,7 +762,10 @@ class _SettingsScreenState extends State<SettingsScreen>
     return ValueListenableBuilder<_SettingsMediaPreviewState>(
       valueListenable: _avatarPreviewStateNotifier,
       builder: (context, avatarPreviewState, child) {
-        final summary = _resolveAvatarManagementSummary(avatarPreviewState);
+        final effectiveAvatarPreviewState =
+            _normalizePreviewStateSync(avatarPreviewState);
+        final summary =
+            _resolveAvatarManagementSummary(effectiveAvatarPreviewState);
         return _buildSettingItem(
           context,
           key: const Key('settings-avatar-management-item'),
@@ -696,7 +774,10 @@ class _SettingsScreenState extends State<SettingsScreen>
           subtitle: summary.itemSubtitle,
           badgeLabel: summary.itemBadgeLabel,
           badgeKey: const Key('settings-avatar-management-badge'),
-          trailing: _buildAvatarManagementTrailing(context, avatarPreviewState),
+          trailing: _buildAvatarManagementTrailing(
+            context,
+            effectiveAvatarPreviewState,
+          ),
           onTap: () => _presentAvatarManagementSheet(context),
         );
       },
@@ -707,8 +788,10 @@ class _SettingsScreenState extends State<SettingsScreen>
     return ValueListenableBuilder<_SettingsMediaPreviewState>(
       valueListenable: _backgroundPreviewStateNotifier,
       builder: (context, backgroundPreviewState, child) {
-        final summary =
-            _resolveBackgroundManagementSummary(backgroundPreviewState);
+        final effectiveBackgroundPreviewState =
+            _normalizePreviewStateSync(backgroundPreviewState);
+        final summary = _resolveBackgroundManagementSummary(
+            effectiveBackgroundPreviewState);
         return _buildSettingItem(
           context,
           key: const Key('settings-background-management-item'),
@@ -719,7 +802,7 @@ class _SettingsScreenState extends State<SettingsScreen>
           badgeKey: const Key('settings-background-management-badge'),
           trailing: _buildBackgroundManagementTrailing(
             context,
-            backgroundPreviewState,
+            effectiveBackgroundPreviewState,
           ),
           onTap: () => _presentBackgroundManagementSheet(context),
         );
@@ -739,11 +822,14 @@ class _SettingsScreenState extends State<SettingsScreen>
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          _buildAvatarPreviewSurface(
+          SettingsMediaPreviewSurface(
             key: const Key('settings-avatar-management-preview'),
-            avatarPath: avatarPreviewState.mediaPath,
-            size: layout.isCompact ? 30 : 34,
+            mediaPath: avatarPreviewState.mediaPath,
+            width: layout.isCompact ? 30 : 34,
+            height: layout.isCompact ? 30 : 34,
             iconSize: layout.isCompact ? 16 : 18,
+            fallbackIcon: Icons.person_rounded,
+            isCircular: true,
           ),
           const SizedBox(width: 6),
           const Icon(
@@ -768,12 +854,13 @@ class _SettingsScreenState extends State<SettingsScreen>
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          _buildBackgroundPreviewSurface(
+          SettingsMediaPreviewSurface(
             key: const Key('settings-background-management-preview'),
-            backgroundPath: backgroundPreviewState.mediaPath,
+            mediaPath: backgroundPreviewState.mediaPath,
             width: layout.isCompact ? 34 : 40,
             height: layout.isCompact ? 24 : 28,
             iconSize: layout.isCompact ? 15 : 16,
+            fallbackIcon: Icons.wallpaper_rounded,
           ),
           const SizedBox(width: 6),
           const Icon(
@@ -787,7 +874,8 @@ class _SettingsScreenState extends State<SettingsScreen>
   }
 
   Future<void> _presentAvatarManagementSheet(BuildContext context) async {
-    final avatarPreviewState = await _readAvatarPreviewState();
+    final avatarPreviewState =
+        _normalizePreviewStateSync(await _readAvatarPreviewState());
     final summary = _resolveAvatarManagementSummary(avatarPreviewState);
     if (!context.mounted) return;
 
@@ -834,7 +922,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                         icon: Icons.delete_outline,
                         title: '头像已恢复默认',
                         badgeLabel: '已清空',
-                        description: '当前资料会回到默认头像，如需恢复识别度，可以稍后再重新上传。',
+                        description: '当前资料已恢复默认头像。',
                       ),
                     );
                     AppFeedback.showToast(
@@ -853,7 +941,8 @@ class _SettingsScreenState extends State<SettingsScreen>
   Future<void> _presentBackgroundManagementSheet(
     BuildContext context,
   ) async {
-    final backgroundPreviewState = await _readBackgroundPreviewState();
+    final backgroundPreviewState =
+        _normalizePreviewStateSync(await _readBackgroundPreviewState());
     final summary = _resolveBackgroundManagementSummary(backgroundPreviewState);
     if (!context.mounted) return;
 
@@ -900,7 +989,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                         icon: Icons.delete_outline,
                         title: '背景已恢复默认',
                         badgeLabel: '已清空',
-                        description: '主页氛围已经回到默认状态，后续如果想重新区分，可以再上传新的背景。',
+                        description: '当前主页已恢复默认背景。',
                       ),
                     );
                     AppFeedback.showToast(
@@ -962,67 +1051,23 @@ class _SettingsScreenState extends State<SettingsScreen>
     _SettingsMediaPreviewState avatarPreviewState,
     _SettingsMediaManagementSummary summary,
   ) {
-    return Container(
+    return SettingsMediaManagementPreviewCard(
       key: const Key('settings-avatar-sheet-preview'),
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-      decoration: BoxDecoration(
-        color: AppColors.white05,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.white08),
+      leadingGap: 9,
+      leading: SettingsMediaPreviewSurface(
+        key: const Key('settings-avatar-sheet-avatar'),
+        mediaPath: avatarPreviewState.mediaPath,
+        width: 42,
+        height: 42,
+        iconSize: 18,
+        fallbackIcon: Icons.person_rounded,
+        isCircular: true,
       ),
-      child: Row(
-        children: [
-          _buildAvatarPreviewSurface(
-            key: const Key('settings-avatar-sheet-avatar'),
-            avatarPath: avatarPreviewState.mediaPath,
-            size: 42,
-            iconSize: 18,
-          ),
-          const SizedBox(width: 9),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  summary.previewStatusLabel,
-                  key: const Key('settings-avatar-sheet-status'),
-                  style: const TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w400,
-                    color: AppColors.textPrimary,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 6),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            decoration: BoxDecoration(
-              color: avatarPreviewState.hasMedia
-                  ? AppColors.brandBlue.withValues(alpha: 0.14)
-                  : AppColors.white08,
-              borderRadius: BorderRadius.circular(999),
-              border: Border.all(
-                color: avatarPreviewState.hasMedia
-                    ? AppColors.brandBlue.withValues(alpha: 0.22)
-                    : AppColors.white12,
-              ),
-            ),
-            child: Text(
-              summary.previewBadgeLabel,
-              key: const Key('settings-avatar-sheet-badge'),
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w300,
-                color: avatarPreviewState.hasMedia
-                    ? AppColors.brandBlue
-                    : AppColors.textSecondary,
-              ),
-            ),
-          ),
-        ],
-      ),
+      statusLabel: summary.previewStatusLabel,
+      statusKey: const Key('settings-avatar-sheet-status'),
+      badgeLabel: summary.previewBadgeLabel,
+      badgeKey: const Key('settings-avatar-sheet-badge'),
+      hasMedia: avatarPreviewState.hasMedia,
     );
   }
 
@@ -1030,174 +1075,33 @@ class _SettingsScreenState extends State<SettingsScreen>
     _SettingsMediaPreviewState backgroundPreviewState,
     _SettingsMediaManagementSummary summary,
   ) {
-    return Container(
+    return SettingsMediaManagementPreviewCard(
       key: const Key('settings-background-sheet-preview'),
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-      decoration: BoxDecoration(
-        color: AppColors.white05,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.white08),
+      leading: SettingsMediaPreviewSurface(
+        key: const Key('settings-background-sheet-thumbnail'),
+        mediaPath: backgroundPreviewState.mediaPath,
+        width: 54,
+        height: 36,
+        iconSize: 16,
+        fallbackIcon: Icons.wallpaper_rounded,
       ),
-      child: Row(
-        children: [
-          _buildBackgroundPreviewSurface(
-            key: const Key('settings-background-sheet-thumbnail'),
-            backgroundPath: backgroundPreviewState.mediaPath,
-            width: 54,
-            height: 36,
-            iconSize: 16,
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              summary.previewStatusLabel,
-              key: const Key('settings-background-sheet-status'),
-              style: const TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w400,
-                color: AppColors.textPrimary,
-              ),
-            ),
-          ),
-          const SizedBox(width: 6),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            decoration: BoxDecoration(
-              color: backgroundPreviewState.hasMedia
-                  ? AppColors.brandBlue.withValues(alpha: 0.14)
-                  : AppColors.white08,
-              borderRadius: BorderRadius.circular(999),
-              border: Border.all(
-                color: backgroundPreviewState.hasMedia
-                    ? AppColors.brandBlue.withValues(alpha: 0.22)
-                    : AppColors.white12,
-              ),
-            ),
-            child: Text(
-              summary.previewBadgeLabel,
-              key: const Key('settings-background-sheet-badge'),
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w300,
-                color: backgroundPreviewState.hasMedia
-                    ? AppColors.brandBlue
-                    : AppColors.textSecondary,
-              ),
-            ),
-          ),
-        ],
-      ),
+      statusLabel: summary.previewStatusLabel,
+      statusKey: const Key('settings-background-sheet-status'),
+      badgeLabel: summary.previewBadgeLabel,
+      badgeKey: const Key('settings-background-sheet-badge'),
+      hasMedia: backgroundPreviewState.hasMedia,
     );
   }
 
-  Widget _buildAvatarPreviewSurface({
-    Key? key,
-    required String? avatarPath,
-    required double size,
-    required double iconSize,
-  }) {
-    final previewImage = _buildMediaPreviewImageProvider(avatarPath);
-    return Container(
-      key: key,
-      width: size,
-      height: size,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        color: AppColors.white08,
-        border: Border.all(color: AppColors.white12),
-      ),
-      child: ClipOval(
-        child: previewImage == null
-            ? Center(
-                child: Icon(
-                  Icons.person_rounded,
-                  size: iconSize,
-                  color: AppColors.textTertiary,
-                ),
-              )
-            : Image(
-                image: previewImage,
-                fit: BoxFit.cover,
-                errorBuilder: (context, error, stackTrace) {
-                  return Center(
-                    child: Icon(
-                      Icons.person_rounded,
-                      size: iconSize,
-                      color: AppColors.textTertiary,
-                    ),
-                  );
-                },
-              ),
-      ),
+  _SettingsMediaPreviewState _normalizePreviewStateSync(
+    _SettingsMediaPreviewState previewState,
+  ) {
+    final resolvedState = resolveMediaPreviewState(previewState.mediaPath);
+    return _SettingsMediaPreviewState(
+      mediaPath: resolvedState.mediaPath,
+      hasMedia: resolvedState.hasMedia,
+      isRemote: resolvedState.isRemote,
     );
-  }
-
-  Widget _buildBackgroundPreviewSurface({
-    Key? key,
-    required String? backgroundPath,
-    required double width,
-    required double height,
-    required double iconSize,
-  }) {
-    final previewImage = _buildMediaPreviewImageProvider(backgroundPath);
-    return Container(
-      key: key,
-      width: width,
-      height: height,
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(10),
-        color: AppColors.white08,
-        border: Border.all(color: AppColors.white12),
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(10),
-        child: previewImage == null
-            ? Center(
-                child: Icon(
-                  Icons.wallpaper_rounded,
-                  size: iconSize,
-                  color: AppColors.textTertiary,
-                ),
-              )
-            : Image(
-                image: previewImage,
-                fit: BoxFit.cover,
-                errorBuilder: (context, error, stackTrace) {
-                  return Center(
-                    child: Icon(
-                      Icons.wallpaper_rounded,
-                      size: iconSize,
-                      color: AppColors.textTertiary,
-                    ),
-                  );
-                },
-              ),
-      ),
-    );
-  }
-
-  ImageProvider<Object>? _buildMediaPreviewImageProvider(String? mediaRef) {
-    if (mediaRef == null || mediaRef.trim().isEmpty) {
-      return null;
-    }
-
-    final resolvedPath = _resolveDisplayMediaPath(mediaRef.trim());
-    if (_isRemoteMediaReference(resolvedPath)) {
-      return NetworkImage(resolvedPath);
-    }
-
-    return FileImage(_resolveLocalMediaFile(resolvedPath));
-  }
-
-  String _resolveDisplayMediaPath(String path) {
-    return AppEnv.resolveMediaUrl(path);
-  }
-
-  File _resolveLocalMediaFile(String path) {
-    if (path.startsWith('file://')) {
-      return File.fromUri(Uri.parse(path));
-    }
-    return File(path);
   }
 
   static Widget _buildMediaManagementSheet({
@@ -1359,12 +1263,12 @@ class _SettingsScreenState extends State<SettingsScreen>
     }
 
     try {
-      final mediaRef = await _mediaUploadService.uploadUserMedia(
+      final uploadResult = await _mediaUploadService.uploadUserMediaWithStatus(
         'avatar',
         imageFile,
       );
       await ImageUploadService.saveAvatarReference(
-        mediaRef,
+        uploadResult.mediaRef,
         cleanupLocalPath: imageFile.path,
       );
       await _refreshAvatarPreviewState();
@@ -1374,19 +1278,17 @@ class _SettingsScreenState extends State<SettingsScreen>
       _showInlineFeedback(
         _buildMediaUpdatedFeedback(
           icon: Icons.photo_camera_outlined,
-          title: '头像已经更新',
-          remoteBadgeLabel: '资料已刷新',
-          remoteDescription: '新的头像已经走远端媒体链路保存，消息列表和个人页会优先回显最新资料。',
-          localBadgeLabel: '资料已刷新',
-          localDescription: '新的头像已经写回本地资料缓存，当前页面和“我的”页会继续保持同步。',
-          mediaRef: mediaRef,
+          result: uploadResult,
+          successTitle: '头像已经更新',
+          successBadgeLabel: '资料已刷新',
+          successDescription: '新头像已保存，消息列表和个人页会优先显示最新资料。',
+          localTitle: '头像已保存在本机',
+          localDescription: '当前页和“我的”页会先显示这张头像，联网后会继续同步到服务器。',
+          deferredTitle: '头像已更新，远端同步未完成',
+          deferredDescription: '当前设备已经显示新头像，网络恢复后会继续同步到服务器。',
         ),
       );
-      AppFeedback.showToast(
-        context,
-        AppToastCode.saved,
-        subject: '头像',
-      );
+      _showMediaUploadToast(subject: '头像', result: uploadResult);
     } catch (_) {
       if (!mounted) {
         return;
@@ -1395,14 +1297,14 @@ class _SettingsScreenState extends State<SettingsScreen>
         const _SettingsInlineFeedbackState(
           icon: Icons.photo_camera_outlined,
           title: '头像更新失败',
-          badgeLabel: '稍后重试',
-          description: '这次没有成功保存新头像，可能是网络或上传链路波动，稍后再试一次会更稳。',
+          badgeLabel: '未保存',
+          description: '新头像未保存，请重试。',
         ),
       );
       AppFeedback.showError(
         context,
         AppErrorCode.unknown,
-        detail: '头像更新失败，请稍后重试',
+        detail: '头像未更新，请重试',
       );
     }
   }
@@ -1415,12 +1317,12 @@ class _SettingsScreenState extends State<SettingsScreen>
     }
 
     try {
-      final mediaRef = await _mediaUploadService.uploadUserMedia(
+      final uploadResult = await _mediaUploadService.uploadUserMediaWithStatus(
         'background',
         imageFile,
       );
       await ImageUploadService.saveBackgroundReference(
-        mediaRef,
+        uploadResult.mediaRef,
         cleanupLocalPath: imageFile.path,
       );
       await _refreshBackgroundPreviewState();
@@ -1430,19 +1332,17 @@ class _SettingsScreenState extends State<SettingsScreen>
       _showInlineFeedback(
         _buildMediaUpdatedFeedback(
           icon: Icons.wallpaper_outlined,
-          title: '背景已经更新',
-          remoteBadgeLabel: '氛围已刷新',
-          remoteDescription: '新的背景已经走远端媒体链路保存，别人进入主页时会优先看到最新封面。',
-          localBadgeLabel: '氛围已刷新',
-          localDescription: '新的背景已经写回本地资料缓存，当前主页氛围会继续保持最新状态。',
-          mediaRef: mediaRef,
+          result: uploadResult,
+          successTitle: '背景已经更新',
+          successBadgeLabel: '氛围已刷新',
+          successDescription: '新背景已保存，别人进入主页时会优先看到最新封面。',
+          localTitle: '背景已保存在本机',
+          localDescription: '当前主页会先显示这张背景，联网后会继续同步到服务器。',
+          deferredTitle: '背景已更新，远端同步未完成',
+          deferredDescription: '当前设备已经显示新背景，网络恢复后会继续同步到服务器。',
         ),
       );
-      AppFeedback.showToast(
-        context,
-        AppToastCode.saved,
-        subject: '背景',
-      );
+      _showMediaUploadToast(subject: '背景', result: uploadResult);
     } catch (_) {
       if (!mounted) {
         return;
@@ -1451,64 +1351,101 @@ class _SettingsScreenState extends State<SettingsScreen>
         const _SettingsInlineFeedbackState(
           icon: Icons.wallpaper_outlined,
           title: '背景更新失败',
-          badgeLabel: '稍后重试',
-          description: '这次没有成功保存新背景，可能是网络或上传链路波动，稍后再试一次会更稳。',
+          badgeLabel: '未保存',
+          description: '新背景未保存，请重试。',
         ),
       );
       AppFeedback.showError(
         context,
         AppErrorCode.unknown,
-        detail: '背景更新失败，请稍后重试',
+        detail: '背景未更新，请重试',
       );
     }
   }
 
   _SettingsInlineFeedbackState _buildMediaUpdatedFeedback({
     required IconData icon,
-    required String title,
-    required String remoteBadgeLabel,
-    required String remoteDescription,
-    required String localBadgeLabel,
+    required UserMediaUploadResult result,
+    required String successTitle,
+    required String successBadgeLabel,
+    required String successDescription,
+    required String localTitle,
     required String localDescription,
-    required String mediaRef,
+    required String deferredTitle,
+    required String deferredDescription,
   }) {
-    final isRemoteReference = _isRemoteMediaReference(mediaRef);
+    if (result.remoteSucceeded) {
+      return _SettingsInlineFeedbackState(
+        icon: icon,
+        title: successTitle,
+        badgeLabel: successBadgeLabel,
+        description: successDescription,
+        isHealthy: true,
+      );
+    }
+
+    if (result.localOnly) {
+      return _SettingsInlineFeedbackState(
+        icon: icon,
+        title: localTitle,
+        badgeLabel: '本机已更新',
+        description: localDescription,
+        isHealthy: true,
+      );
+    }
+
     return _SettingsInlineFeedbackState(
       icon: icon,
-      title: title,
-      badgeLabel: isRemoteReference ? remoteBadgeLabel : localBadgeLabel,
-      description: isRemoteReference ? remoteDescription : localDescription,
-      isHealthy: true,
+      title: deferredTitle,
+      badgeLabel: '待联网同步',
+      description: deferredDescription,
+      isHealthy: false,
     );
   }
 
-  bool _isRemoteMediaReference(String mediaRef) {
-    final normalized = mediaRef.trim();
-    return normalized.startsWith('http://') ||
-        normalized.startsWith('https://') ||
-        normalized.startsWith('avatar/') ||
-        normalized.startsWith('background/');
+  void _showMediaUploadToast({
+    required String subject,
+    required UserMediaUploadResult result,
+  }) {
+    if (result.remoteSucceeded) {
+      AppFeedback.showToast(context, AppToastCode.saved, subject: subject);
+      return;
+    }
+
+    if (result.localOnly) {
+      AppToast.show(context, '$subject已保存在本机');
+    }
   }
 
   _SettingsMediaManagementSummary _resolveAvatarManagementSummary(
     _SettingsMediaPreviewState previewState,
   ) {
     if (previewState.hasMedia) {
+      if (!previewState.isRemote) {
+        return const _SettingsMediaManagementSummary(
+          itemSubtitle: '当前设备会先显示这张头像。',
+          itemBadgeLabel: '本机预览中',
+          previewStatusLabel: '头像已保存在本机',
+          previewBadgeLabel: '待联网同步',
+          replaceActionLabel: '更换头像',
+        );
+      }
+
       return const _SettingsMediaManagementSummary(
-        itemSubtitle: '当前头像已经同步到消息列表和个人主页，别人会优先看到这一版资料。',
+        itemSubtitle: '会同步显示到主页和消息列表。',
         itemBadgeLabel: '已同步',
-        previewStatusLabel: '当前头像已经同步',
+        previewStatusLabel: '头像已同步',
         previewBadgeLabel: '展示中',
-        replaceActionLabel: '重新上传头像',
+        replaceActionLabel: '更换头像',
       );
     }
 
     return const _SettingsMediaManagementSummary(
-      itemSubtitle: '当前还在使用默认头像，补一个清晰头像会更容易识别。',
+      itemSubtitle: '当前是默认头像。',
       itemBadgeLabel: '待补充',
-      previewStatusLabel: '当前还在使用默认头像',
+      previewStatusLabel: '正在使用默认头像',
       previewBadgeLabel: '待补充',
-      replaceActionLabel: '补一个头像',
+      replaceActionLabel: '上传头像',
     );
   }
 
@@ -1516,21 +1453,31 @@ class _SettingsScreenState extends State<SettingsScreen>
     _SettingsMediaPreviewState previewState,
   ) {
     if (previewState.hasMedia) {
+      if (!previewState.isRemote) {
+        return const _SettingsMediaManagementSummary(
+          itemSubtitle: '当前主页会先显示这张背景。',
+          itemBadgeLabel: '本机预览中',
+          previewStatusLabel: '背景已保存在本机',
+          previewBadgeLabel: '待联网同步',
+          replaceActionLabel: '更换背景',
+        );
+      }
+
       return const _SettingsMediaManagementSummary(
-        itemSubtitle: '当前背景已经生效在个人主页首屏，别人进入主页时会先看到这张封面。',
+        itemSubtitle: '会显示在主页首屏。',
         itemBadgeLabel: '首屏已生效',
-        previewStatusLabel: '当前背景已经生效',
+        previewStatusLabel: '背景已生效',
         previewBadgeLabel: '首屏展示中',
-        replaceActionLabel: '重新上传背景',
+        replaceActionLabel: '更换背景',
       );
     }
 
     return const _SettingsMediaManagementSummary(
-      itemSubtitle: '当前还是默认背景，补一张更有辨识度的封面会更容易建立第一印象。',
+      itemSubtitle: '当前是默认背景。',
       itemBadgeLabel: '待补充',
-      previewStatusLabel: '当前还在使用默认背景',
+      previewStatusLabel: '正在使用默认背景',
       previewBadgeLabel: '待补充',
-      replaceActionLabel: '补一张背景',
+      replaceActionLabel: '上传背景',
     );
   }
 
@@ -1610,11 +1557,6 @@ class _SettingsScreenState extends State<SettingsScreen>
     final layout = _SettingsLayoutSpec.fromSize(
       MediaQuery.of(context).size,
     );
-    final overviewDescription = layout.isTight
-        ? '先看提醒、账号和展示状态即可'
-        : layout.isCompact
-            ? '把高频状态集中到首页，先看提醒、账号和展示是否已经就绪'
-            : '把高频状态集中放在前面，方便你快速确认账号、安全、展示和通知是否已经就绪';
 
     return Container(
       padding: EdgeInsets.all(layout.overviewPadding),
@@ -1627,25 +1569,12 @@ class _SettingsScreenState extends State<SettingsScreen>
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            '设置总览',
+            '当前设备',
             style: TextStyle(
               fontSize: layout.isCompact ? 17 : 18,
               fontWeight: FontWeight.w400,
               color: AppColors.textPrimary,
             ),
-          ),
-          SizedBox(height: layout.isCompact ? 4 : 6),
-          Text(
-            overviewDescription,
-            style: TextStyle(
-              fontSize: layout.isTight ? 11.5 : (layout.isCompact ? 12 : 13),
-              fontWeight: FontWeight.w300,
-              color: AppColors.textTertiary.withValues(alpha: 0.9),
-              height: layout.isCompact ? 1.35 : 1.45,
-            ),
-            maxLines: layout.isCompact ? 1 : null,
-            overflow:
-                layout.isCompact ? TextOverflow.ellipsis : TextOverflow.visible,
           ),
           SizedBox(height: layout.overviewGap),
           Selector2<AuthProvider, SettingsProvider,
@@ -1659,81 +1588,7 @@ class _SettingsScreenState extends State<SettingsScreen>
             },
           ),
           SizedBox(height: layout.overviewGap),
-          Selector<SettingsProvider, _SettingsViewData>(
-            selector: (context, settingsProvider) =>
-                _selectSettingsViewData(settingsProvider),
-            builder: (context, viewData, child) {
-              return _buildDeviceStatusCard(viewData);
-            },
-          ),
-          SizedBox(height: layout.overviewGap),
-          Selector<SettingsProvider, _SettingsExperiencePresetViewData>(
-            selector: (context, settingsProvider) =>
-                _selectExperiencePresetViewData(settingsProvider),
-            builder: (context, viewData, child) {
-              return _buildExperiencePresetCard(context, viewData);
-            },
-          ),
-          SizedBox(height: layout.overviewGap),
-          Wrap(
-            spacing: layout.isCompact ? 6 : 8,
-            runSpacing: layout.isTight ? 4 : (layout.isCompact ? 6 : 8),
-            children: [
-              Selector<AuthProvider, _SettingsAccountSecurityViewData>(
-                selector: (context, authProvider) =>
-                    _selectAccountSecurityViewData(authProvider),
-                builder: (context, viewData, child) {
-                  return _buildStatusChip(
-                    icon: Icons.phone_iphone_outlined,
-                    label: viewData.hasPhone ? '手机号已绑定' : '手机号待补全',
-                  );
-                },
-              ),
-              Selector<AuthProvider, _SettingsAccountSecurityViewData>(
-                selector: (context, authProvider) =>
-                    _selectAccountSecurityViewData(authProvider),
-                builder: (context, viewData, child) {
-                  return _buildStatusChip(
-                    icon: Icons.badge_outlined,
-                    label: viewData.uid == null ? 'UID 生成中' : 'UID 已可复制',
-                  );
-                },
-              ),
-              Selector<SettingsProvider,
-                  _SettingsOverviewNotificationRuntimeViewData>(
-                selector: (context, settingsProvider) =>
-                    _selectOverviewNotificationRuntimeViewData(
-                  settingsProvider,
-                ),
-                builder: (context, viewData, child) {
-                  final runtimeState =
-                      _resolveNotificationRuntimeStateForValues(
-                    notificationEnabled: viewData.notificationEnabled,
-                    pushPermissionGranted: viewData.pushPermissionGranted,
-                    pushHasDeviceToken: viewData.pushHasDeviceToken,
-                  );
-                  return _buildStatusChip(
-                    icon: Icons.notifications_outlined,
-                    label: runtimeState.statusChipLabel,
-                  );
-                },
-              ),
-              Selector<SettingsProvider, bool>(
-                selector: (context, settingsProvider) =>
-                    settingsProvider.invisibleMode,
-                builder: (context, invisibleMode, child) {
-                  final invisibleSettingHint =
-                      _resolveInvisibleSettingHintForValue(invisibleMode);
-                  return _buildStatusChip(
-                    icon: invisibleMode
-                        ? Icons.visibility_off_outlined
-                        : Icons.visibility_outlined,
-                    label: invisibleSettingHint.badgeLabel,
-                  );
-                },
-              ),
-            ],
-          ),
+          _buildDeviceStatusCard(context),
           SizedBox(height: layout.isCompact ? 10 : 12),
           if (layout.isCompact)
             Column(
@@ -1996,49 +1851,10 @@ class _SettingsScreenState extends State<SettingsScreen>
     );
   }
 
-  Widget _buildDeviceStatusCard(_SettingsViewData viewData) {
+  Widget _buildDeviceStatusCard(BuildContext context) {
     final layout = _SettingsLayoutSpec.fromSize(
       MediaQuery.of(context).size,
     );
-    final invisibleSettingHint = _resolveInvisibleSettingHint(viewData);
-    final vibrationSettingHint = _resolveVibrationSettingHint(viewData);
-    final notificationRuntimeState = _resolveNotificationRuntimeState(
-      viewData,
-    );
-    final statusItems = <_SettingsDeviceStatusItem>[
-      _SettingsDeviceStatusItem(
-        key: const Key('settings-device-status-notification'),
-        icon: notificationRuntimeState.icon,
-        title: '消息通知',
-        badgeLabel: notificationRuntimeState.badgeLabel,
-        description: notificationRuntimeState.description,
-        isHealthy: notificationRuntimeState.isHealthy,
-      ),
-      _SettingsDeviceStatusItem(
-        key: const Key('settings-device-status-presence'),
-        icon: viewData.invisibleMode
-            ? Icons.visibility_off_outlined
-            : Icons.visibility_outlined,
-        title: '展示状态',
-        badgeLabel: invisibleSettingHint.badgeLabel,
-        description: invisibleSettingHint.description,
-        isHealthy: invisibleSettingHint.isHealthy,
-      ),
-      _SettingsDeviceStatusItem(
-        key: const Key('settings-device-status-vibration'),
-        icon: viewData.vibrationEnabled
-            ? Icons.vibration_outlined
-            : Icons.do_not_disturb_on_outlined,
-        title: '震动提醒',
-        badgeLabel: vibrationSettingHint.badgeLabel,
-        description: vibrationSettingHint.description,
-        isHealthy: vibrationSettingHint.isHealthy,
-      ),
-    ];
-    final shouldCondenseCompactStatusCard = layout.isCompact &&
-        notificationRuntimeState.isHealthy &&
-        invisibleSettingHint.isHealthy &&
-        vibrationSettingHint.isHealthy;
 
     return Container(
       key: const Key('settings-device-status-card'),
@@ -2052,57 +1868,90 @@ class _SettingsScreenState extends State<SettingsScreen>
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Text(
-            '设备状态总览',
+            '设备状态',
             style: TextStyle(
               fontSize: 14,
               fontWeight: FontWeight.w400,
               color: AppColors.textPrimary,
             ),
           ),
-          const SizedBox(height: 6),
-          Text(
-            layout.isCompact
-                ? '先判断这台设备现在的通知、展示和提醒是否已经就绪。'
-                : '不用逐项打开开关，也能先判断这台设备现在的通知、展示和提醒是否已经就绪。',
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w300,
-              color: AppColors.textTertiary.withValues(alpha: 0.92),
-              height: 1.4,
-            ),
-            maxLines: layout.isCompact ? 1 : null,
-            overflow:
-                layout.isCompact ? TextOverflow.ellipsis : TextOverflow.visible,
-          ),
-          SizedBox(
-            height: shouldCondenseCompactStatusCard
-                ? 8
-                : (layout.isCompact ? 10 : 12),
-          ),
+          SizedBox(height: layout.isCompact ? 10 : 12),
           if (layout.isCompact)
             Wrap(
               spacing: 8,
               runSpacing: 8,
-              children: statusItems
-                  .map((item) => _buildCompactDeviceStatusChip(item))
-                  .toList(),
+              children: [
+                Selector<SettingsProvider, _SettingsDeviceStatusItem>(
+                  selector: (context, settingsProvider) =>
+                      _selectNotificationStatusItem(settingsProvider),
+                  builder: (context, item, child) {
+                    return _buildCompactDeviceStatusChip(item);
+                  },
+                ),
+                Selector<SettingsProvider, _SettingsDeviceStatusItem>(
+                  selector: (context, settingsProvider) =>
+                      _selectPresenceStatusItem(settingsProvider),
+                  builder: (context, item, child) {
+                    return _buildCompactDeviceStatusChip(item);
+                  },
+                ),
+                Selector<SettingsProvider, _SettingsDeviceStatusItem>(
+                  selector: (context, settingsProvider) =>
+                      _selectVibrationStatusItem(settingsProvider),
+                  builder: (context, item, child) {
+                    return _buildCompactDeviceStatusChip(item);
+                  },
+                ),
+              ],
             )
           else
-            ...statusItems.asMap().entries.map(
-                  (entry) => Padding(
-                    padding: EdgeInsets.only(
-                      bottom: entry.key == statusItems.length - 1 ? 0 : 10,
-                    ),
-                    child: _buildDeviceStatusRow(entry.value),
-                  ),
+            Column(
+              children: [
+                Selector<SettingsProvider, _SettingsDeviceStatusItem>(
+                  selector: (context, settingsProvider) =>
+                      _selectNotificationStatusItem(settingsProvider),
+                  builder: (context, item, child) {
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: _buildDeviceStatusRow(item),
+                    );
+                  },
                 ),
-          if (notificationRuntimeState.followUpDescription != null) ...[
-            SizedBox(height: layout.isCompact ? 10 : 12),
-            _buildNotificationRuntimeCard(
-              context,
-              notificationRuntimeState,
+                Selector<SettingsProvider, _SettingsDeviceStatusItem>(
+                  selector: (context, settingsProvider) =>
+                      _selectPresenceStatusItem(settingsProvider),
+                  builder: (context, item, child) {
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: _buildDeviceStatusRow(item),
+                    );
+                  },
+                ),
+                Selector<SettingsProvider, _SettingsDeviceStatusItem>(
+                  selector: (context, settingsProvider) =>
+                      _selectVibrationStatusItem(settingsProvider),
+                  builder: (context, item, child) {
+                    return _buildDeviceStatusRow(item);
+                  },
+                ),
+              ],
             ),
-          ],
+          Selector<SettingsProvider, _SettingsNotificationRuntimeState>(
+            selector: (context, settingsProvider) =>
+                _selectNotificationRuntimeState(settingsProvider),
+            builder: (context, notificationRuntimeState, child) {
+              if (notificationRuntimeState.followUpDescription == null) {
+                return const SizedBox.shrink();
+              }
+              return Padding(
+                padding: EdgeInsets.only(top: layout.isCompact ? 10 : 12),
+                child: _buildNotificationRuntimeCard(
+                  context,
+                  notificationRuntimeState,
+                ),
+              );
+            },
+          ),
         ],
       ),
     );
@@ -2627,9 +2476,6 @@ class _SettingsScreenState extends State<SettingsScreen>
     );
     final activePreset = viewData.activeExperiencePreset;
     final presetOptions = _experiencePresetOptions;
-    final compactSummary = layout.isCompact
-        ? '按设备情况快速切到主入口、提醒更克制或展示收起的状态。'
-        : currentPresetState.description;
 
     return Container(
       key: const Key('settings-experience-preset-card'),
@@ -2645,7 +2491,7 @@ class _SettingsScreenState extends State<SettingsScreen>
           _buildResponsiveHeader(
             stackOnCompact: true,
             title: const Text(
-              '设备模式预设',
+              '设备模式',
               style: TextStyle(
                 fontSize: 14,
                 fontWeight: FontWeight.w400,
@@ -2663,21 +2509,20 @@ class _SettingsScreenState extends State<SettingsScreen>
                   : AppColors.brandBlue,
             ),
           ),
-          const SizedBox(height: 6),
-          Text(
-            compactSummary,
-            key: const Key('settings-experience-preset-summary'),
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w300,
-              color: AppColors.textTertiary.withValues(alpha: 0.92),
-              height: 1.4,
+          if (!layout.isCompact) ...[
+            const SizedBox(height: 6),
+            Text(
+              currentPresetState.description,
+              key: const Key('settings-experience-preset-summary'),
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w300,
+                color: AppColors.textTertiary.withValues(alpha: 0.92),
+                height: 1.4,
+              ),
             ),
-            maxLines: layout.isCompact ? 2 : null,
-            overflow:
-                layout.isCompact ? TextOverflow.ellipsis : TextOverflow.visible,
-          ),
-          SizedBox(height: layout.isCompact ? 10 : 12),
+          ],
+          SizedBox(height: layout.isCompact ? 8 : 12),
           if (layout.isTight)
             Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -2835,52 +2680,10 @@ class _SettingsScreenState extends State<SettingsScreen>
     );
   }
 
-  Widget _buildStatusChip({
-    required IconData icon,
-    required String label,
-  }) {
-    final layout = _SettingsLayoutSpec.fromSize(
-      MediaQuery.of(context).size,
-    );
-    return Container(
-      padding: EdgeInsets.symmetric(
-        horizontal: layout.isCompact ? 9 : 10,
-        vertical: layout.isCompact ? 6 : 7,
-      ),
-      decoration: BoxDecoration(
-        color: AppColors.white08,
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(
-            icon,
-            size: layout.isCompact ? 13 : 14,
-            color: AppColors.textSecondary,
-          ),
-          SizedBox(width: layout.isCompact ? 5 : 6),
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: layout.isCompact ? 11 : 12,
-              fontWeight: FontWeight.w300,
-              color: AppColors.textSecondary,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   _SettingsToggleHint _resolveInvisibleSettingHintForValue(bool invisibleMode) {
     return _buildToggleHintFromInlineFeedback(
       _buildInvisibleModeFeedback(invisibleMode),
     );
-  }
-
-  _SettingsToggleHint _resolveInvisibleSettingHint(_SettingsViewData viewData) {
-    return _resolveInvisibleSettingHintForValue(viewData.invisibleMode);
   }
 
   _SettingsExperiencePresetState _resolveExperiencePresetState(
@@ -2890,24 +2693,24 @@ class _SettingsScreenState extends State<SettingsScreen>
       case SettingsExperiencePreset.responsive:
         return const _SettingsExperiencePresetState(
           badgeLabel: '主入口',
-          description: '通知、震动和展示都已经恢复，这台设备现在更适合作为主聊天入口。',
+          description: '通知、震动和展示都已打开。',
           isHealthy: true,
         );
       case SettingsExperiencePreset.balanced:
         return const _SettingsExperiencePresetState(
           badgeLabel: '提醒更克制',
-          description: '通知继续保持在线，但震动已经收起，适合通勤或不想被频繁打断时使用。',
+          description: '通知保持在线，震动已收起。',
           isHealthy: true,
         );
       case SettingsExperiencePreset.quietObserve:
         return const _SettingsExperiencePresetState(
           badgeLabel: '展示已收起',
-          description: '通知和震动已经收起，并同步切到了隐身状态，适合短暂离线或先观察。',
+          description: '通知和震动已收起，并切到隐身。',
         );
       case null:
         return const _SettingsExperiencePresetState(
           badgeLabel: '手动调整中',
-          description: '你已经手动组合了通知、隐身和展示设置；如果想快速回到稳定状态，可以直接使用下面的一键预设。',
+          description: '当前为手动组合设置。',
         );
     }
   }
@@ -2919,7 +2722,7 @@ class _SettingsScreenState extends State<SettingsScreen>
           icon: Icons.flash_on_outlined,
           title: '在线回复',
           badgeLabel: '主入口',
-          description: '通知、振动和正常展示全部打开，最适合作为主聊天入口。',
+          description: '通知、震动和展示都打开。',
         ),
         _SettingsExperiencePresetOption(
           key: Key('settings-preset-balanced'),
@@ -2927,7 +2730,7 @@ class _SettingsScreenState extends State<SettingsScreen>
           icon: Icons.tune_outlined,
           title: '低干扰',
           badgeLabel: '提醒更克制',
-          description: '保持消息在线，但收起部分打扰，更适合工作或通勤场景。',
+          description: '消息保持在线，提醒更克制。',
         ),
         _SettingsExperiencePresetOption(
           key: Key('settings-preset-quiet-observe'),
@@ -2935,7 +2738,7 @@ class _SettingsScreenState extends State<SettingsScreen>
           icon: Icons.nightlight_round_outlined,
           title: '安静观察',
           badgeLabel: '展示已收起',
-          description: '关闭通知和振动，并切到隐身状态，适合短暂离线或观察环境。',
+          description: '关闭通知和震动，并切到隐身。',
         ),
       ];
 
@@ -2947,10 +2750,6 @@ class _SettingsScreenState extends State<SettingsScreen>
     );
   }
 
-  _SettingsToggleHint _resolveVibrationSettingHint(_SettingsViewData viewData) {
-    return _resolveVibrationSettingHintForValue(viewData.vibrationEnabled);
-  }
-
   _SettingsOverviewFocusState _resolveOverviewFocusState({
     required _SettingsOverviewFocusViewData viewData,
   }) {
@@ -2958,7 +2757,7 @@ class _SettingsScreenState extends State<SettingsScreen>
       return const _SettingsOverviewFocusState(
         icon: Icons.phone_outlined,
         title: '手机号还没补全',
-        subtitle: '补上后登录找回、异常排查和账号确认都会更顺手，也能减少后续联调歧义。',
+        subtitle: '补全后可用于登录和找回。',
         badgeLabel: '待补全',
       );
     }
@@ -2976,7 +2775,7 @@ class _SettingsScreenState extends State<SettingsScreen>
       return const _SettingsOverviewFocusState(
         icon: Icons.notifications_off_outlined,
         title: '消息提醒当前已收起',
-        subtitle: '新回复会继续留在通知中心；如果这台设备要承担主聊天入口，建议恢复通知。',
+        subtitle: '新回复仍会留在通知中心。',
         badgeLabel: '提醒已收起',
       );
     }
@@ -2985,7 +2784,7 @@ class _SettingsScreenState extends State<SettingsScreen>
       return const _SettingsOverviewFocusState(
         icon: Icons.sync_outlined,
         title: '通知通道正在同步',
-        subtitle: '系统权限已经打开，当前正在等待这台设备的通知通道重新就绪，稍后可以再次刷新确认。',
+        subtitle: '系统权限已开，正在等通道恢复。',
         badgeLabel: '通道同步中',
       );
     }
@@ -2994,7 +2793,7 @@ class _SettingsScreenState extends State<SettingsScreen>
       return const _SettingsOverviewFocusState(
         icon: Icons.visibility_off_outlined,
         title: '展示当前已切到隐身',
-        subtitle: '如果你接下来准备正常使用匹配和聊天，可以恢复展示状态，避免曝光和到达率偏低。',
+        subtitle: '需要时可恢复展示状态。',
         badgeLabel: '展示已收起',
       );
     }
@@ -3002,7 +2801,7 @@ class _SettingsScreenState extends State<SettingsScreen>
     return const _SettingsOverviewFocusState(
       icon: Icons.verified_outlined,
       title: '当前高频状态已经就绪',
-      subtitle: '账号、通知和展示状态都比较完整，这台设备可以继续作为稳定聊天入口使用。',
+      subtitle: '账号、通知和展示都已就绪。',
       badgeLabel: '状态已就绪',
       isHealthy: true,
     );
@@ -3031,8 +2830,8 @@ class _SettingsScreenState extends State<SettingsScreen>
       return const _SettingsNotificationRuntimeState(
         icon: Icons.notifications_off_outlined,
         badgeLabel: '提醒已收起',
-        description: '新消息会保存在通知中心，但锁屏和后台提醒已经收起，适合主动查看型使用。',
-        followUpDescription: '如果你希望这台设备继续承担主聊天入口，建议恢复通知并保持系统权限可用。',
+        description: '新消息仍会保存在通知中心。',
+        followUpDescription: '主设备可恢复通知。',
         statusChipLabel: '提醒已收起',
         actionLabel: '恢复通知',
         actionIcon: Icons.notifications_active_outlined,
@@ -3058,8 +2857,8 @@ class _SettingsScreenState extends State<SettingsScreen>
       return const _SettingsNotificationRuntimeState(
         icon: Icons.sync_outlined,
         badgeLabel: '通道同步中',
-        description: '系统权限已开启，当前正在等待这台设备的通知通道重新就绪，稍后可以再次刷新确认。',
-        followUpDescription: '如果你刚刚改过权限或切换过账号，可以手动刷新一次，确认这台设备已经重新就绪。',
+        description: '系统权限已开，正在等通知通道恢复。',
+        followUpDescription: '刚改过权限时可手动刷新。',
         statusChipLabel: '通道同步中',
         actionLabel: '刷新状态',
         actionIcon: Icons.refresh_outlined,
@@ -3070,7 +2869,7 @@ class _SettingsScreenState extends State<SettingsScreen>
     return const _SettingsNotificationRuntimeState(
       icon: Icons.notifications_active_outlined,
       badgeLabel: '通道已就绪',
-      description: '系统权限和设备通道都已准备好，这台设备适合作为主聊天入口。',
+      description: '系统权限和设备通道都已就绪。',
       statusChipLabel: '通道已就绪',
       actionLabel: '收起通知',
       actionIcon: Icons.notifications_off_outlined,
@@ -3597,8 +3396,8 @@ class _SettingsScreenState extends State<SettingsScreen>
                 const SizedBox(height: 6),
                 Text(
                   hasBlockedUsers
-                      ? '解除拉黑后，会话和历史关系可以恢复，但是否重新联系仍由你决定。'
-                      : '如果之后需要收拢关系边界，可以在聊天页或好友页继续把用户加入黑名单。',
+                      ? '解除拉黑后，会话和关系会恢复，是否重新联系由你决定。'
+                      : '需要收拢关系边界时，可在聊天或好友页继续拉黑。',
                   style: TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w300,
@@ -3651,7 +3450,7 @@ class _SettingsScreenState extends State<SettingsScreen>
             ),
             const SizedBox(height: 6),
             Text(
-              '后续如果遇到不想继续接触的人，可以从聊天或好友入口直接拉黑，再回这里统一管理。',
+              '后续如果遇到不想继续接触的人，可以从聊天或好友入口直接拉黑。',
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontSize: 12,
@@ -3721,7 +3520,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  '当前不会再出现在匹配、好友请求和主动联系入口里。',
+                  '不会再出现在匹配、好友请求和主动联系里。',
                   style: TextStyle(
                     fontSize: 11,
                     fontWeight: FontWeight.w300,
@@ -3750,7 +3549,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                   icon: Icons.person_add_alt_1_outlined,
                   title: '已解除拉黑',
                   badgeLabel: '关系已恢复',
-                  description: '历史关系和会话入口已经恢复，但是否重新联系仍然由你来决定。',
+                  description: '会话和关系已恢复。',
                   isHealthy: true,
                 ),
               );
@@ -3804,9 +3603,9 @@ class _SettingsScreenState extends State<SettingsScreen>
         _showInlineFeedback(
           const _SettingsInlineFeedbackState(
             icon: Icons.notifications_paused_outlined,
-            title: '系统通知权限还没打开',
+            title: NotificationPermissionGuidance.title,
             badgeLabel: '待授权',
-            description: '应用内通知已尝试打开，但系统层还没有授权。可以在上面的通知通道提示里继续处理。',
+            description: NotificationPermissionGuidance.settingsDescription,
           ),
         );
         AppFeedback.showError(context, AppErrorCode.permissionDenied);
@@ -3888,7 +3687,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                 icon: Icons.settings_outlined,
                 title: '未能打开系统设置',
                 badgeLabel: '请手动处理',
-                description: '如果这次没有成功跳到系统设置，请稍后手动打开系统通知权限，再回到应用刷新状态。',
+                description: '未跳转到系统设置，请手动打开通知权限。',
               ),
             );
             return;
@@ -3899,7 +3698,7 @@ class _SettingsScreenState extends State<SettingsScreen>
               icon: Icons.settings_outlined,
               title: '已打开系统设置',
               badgeLabel: '等待返回',
-              description: '处理完系统通知权限后直接回到应用，我们会自动检查这台设备是否已经恢复可触达状态。',
+              description: '处理完权限后返回应用即可。',
             ),
           );
           return;
@@ -3935,14 +3734,14 @@ class _SettingsScreenState extends State<SettingsScreen>
           icon: Icons.sync_outlined,
           title: '通知通道正在同步',
           badgeLabel: '通道同步中',
-          description: '系统权限已开启，当前正在等待这台设备的通知通道重新就绪，稍后可以再次刷新确认。',
+          description: '系统权限已开，正在等通道就绪。',
         ),
       _SettingsNotificationAction.disableNotifications =>
         const _SettingsInlineFeedbackState(
           icon: Icons.notifications_active_outlined,
           title: '通知已经恢复在线',
           badgeLabel: '通道已就绪',
-          description: '系统权限和设备通道都可用，这台设备现在更适合作为主聊天入口。',
+          description: '系统权限和设备通道都已就绪。',
           isHealthy: true,
         ),
       _SettingsNotificationAction.enableNotifications =>
@@ -3950,7 +3749,7 @@ class _SettingsScreenState extends State<SettingsScreen>
           icon: Icons.notifications_off_outlined,
           title: '通知已切到静默',
           badgeLabel: '提醒已收起',
-          description: '新消息还会保存在通知中心，但锁屏和后台提醒已经收起，适合主动查看型使用。',
+          description: '新消息仍会保存在通知中心。',
         ),
     };
   }
@@ -3967,21 +3766,21 @@ class _SettingsScreenState extends State<SettingsScreen>
           icon: Icons.notifications_paused_outlined,
           title: '通知权限仍待授权',
           badgeLabel: NotificationPermissionGuidance.badgeLabel,
-          description: '这次返回后仍未检测到系统通知权限，锁屏和后台提醒暂时还不会生效。',
+          description: '返回后仍未检测到系统通知权限。',
         ),
       _SettingsNotificationAction.refreshRuntimeState =>
         const _SettingsInlineFeedbackState(
           icon: Icons.sync_outlined,
           title: '通知通道正在恢复',
           badgeLabel: '通道同步中',
-          description: '系统通知权限已经打开，当前正在等待这台设备的通知通道重新就绪。',
+          description: '系统权限已开，正在等通道恢复。',
         ),
       _SettingsNotificationAction.disableNotifications =>
         const _SettingsInlineFeedbackState(
           icon: Icons.notifications_active_outlined,
           title: '通知已经恢复在线',
           badgeLabel: '通道已就绪',
-          description: '已检测到系统通知权限已恢复，这台设备现在更适合作为主聊天入口。',
+          description: '系统通知权限已恢复。',
           isHealthy: true,
         ),
       _SettingsNotificationAction.enableNotifications =>
@@ -3989,7 +3788,7 @@ class _SettingsScreenState extends State<SettingsScreen>
           icon: Icons.notifications_off_outlined,
           title: '通知仍处于静默',
           badgeLabel: '提醒已收起',
-          description: '系统通知权限虽然已经恢复，但应用内通知开关当前仍是关闭状态，新的提醒会继续留在通知中心。',
+          description: '系统权限已恢复，应用通知仍关闭。',
         ),
     };
   }
@@ -4009,11 +3808,11 @@ class _SettingsScreenState extends State<SettingsScreen>
           )
         : provider.items.first;
     return _SettingsNotificationCenterDigestState(
-      title: unreadCount > 0 ? '通知中心还有 $unreadCount 条待查看提醒' : '通知中心保留了最近一条提醒',
+      title: unreadCount > 0 ? '还有 $unreadCount 条未读提醒' : '保留最近一条提醒',
       badgeLabel: unreadCount > 0 ? '未读 $unreadCount' : '最近提醒',
       description: unreadCount > 0
-          ? '最新待查看：${_buildNotificationCenterPreview(latestItem)}'
-          : '最近一条：${_buildNotificationCenterPreview(latestItem)}',
+          ? '最新：${_buildNotificationCenterPreview(latestItem)}'
+          : '最近：${_buildNotificationCenterPreview(latestItem)}',
       hasUnread: unreadCount > 0,
       sourceItems: _buildNotificationCenterSourceDigestItems(provider.items),
     );
@@ -4098,9 +3897,17 @@ class _SettingsScreenState extends State<SettingsScreen>
     return '${preview.substring(0, 35)}...';
   }
 
-  void _showInlineFeedback(_SettingsInlineFeedbackState state) {
+  void _showInlineFeedback(
+    _SettingsInlineFeedbackState state, {
+    Duration duration = const Duration(milliseconds: 2400),
+  }) {
     if (!mounted) return;
+    _inlineFeedbackTimer?.cancel();
     _inlineFeedbackNotifier.value = state;
+    _inlineFeedbackTimer = Timer(duration, () {
+      if (!mounted) return;
+      _inlineFeedbackNotifier.value = null;
+    });
   }
 
   void _disposeTextControllersWithDelay(
@@ -4136,13 +3943,13 @@ class _SettingsScreenState extends State<SettingsScreen>
             icon: Icons.visibility_off_outlined,
             title: '展示已切到隐身',
             badgeLabel: '展示已收起',
-            description: '在线可见和匹配曝光会更克制，适合短时观察；准备正常匹配时再切回。',
+            description: '在线可见和匹配曝光会更克制，需要时再切回。',
           )
         : const _SettingsInlineFeedbackState(
             icon: Icons.visibility_outlined,
             title: '展示已经恢复正常',
             badgeLabel: '展示已恢复',
-            description: '在线可见和匹配曝光已恢复，当前更适合作为正常匹配和聊天入口。',
+            description: '在线可见和匹配曝光已恢复，适合正常匹配和聊天。',
             isHealthy: true,
           );
   }
@@ -4153,14 +3960,14 @@ class _SettingsScreenState extends State<SettingsScreen>
             icon: Icons.vibration_outlined,
             title: '震动提醒已经恢复',
             badgeLabel: '提醒已恢复',
-            description: '弱网和锁屏场景下更不容易错过关键消息，适合把这台设备当主聊天入口。',
+            description: '弱网和锁屏场景下更不容易错过消息。',
             isHealthy: true,
           )
         : const _SettingsInlineFeedbackState(
             icon: Icons.do_not_disturb_on_outlined,
             title: '震动提醒已经收起',
             badgeLabel: '提醒已收起',
-            description: '震动已经关闭，适合会议或通勤场景；建议配合通知状态一起观察是否会漏消息。',
+            description: '震动已关闭，适合会议或通勤场景。',
           );
   }
 
@@ -4172,14 +3979,14 @@ class _SettingsScreenState extends State<SettingsScreen>
           icon: Icons.flash_on_outlined,
           title: '体验预设已切到在线回复',
           badgeLabel: '主入口',
-          description: '通知、振动和正常展示都已打开，这台设备现在更适合作为主聊天入口。',
+          description: '通知、震动和展示都已打开，适合作为主聊天入口。',
           isHealthy: true,
         ),
       SettingsExperiencePreset.balanced => const _SettingsInlineFeedbackState(
           icon: Icons.tune_outlined,
           title: '体验预设已切到低干扰',
           badgeLabel: '提醒更克制',
-          description: '你会继续在线接收消息，但提醒频率更克制，适合不想被频繁打断的时候使用。',
+          description: '会继续在线收消息，但提醒更克制。',
           isHealthy: true,
         ),
       SettingsExperiencePreset.quietObserve =>
@@ -4187,7 +3994,7 @@ class _SettingsScreenState extends State<SettingsScreen>
           icon: Icons.nightlight_round_outlined,
           title: '体验预设已切到安静观察',
           badgeLabel: '展示已收起',
-          description: '通知和振动已经关闭，并同步切到了隐身状态，适合短时离线或先观察环境。',
+          description: '通知和震动已关闭，并切到隐身状态。',
         ),
     };
   }
@@ -4199,14 +4006,14 @@ class _SettingsScreenState extends State<SettingsScreen>
         const _SettingsInlineFeedbackState(
           icon: Icons.badge_outlined,
           title: 'UID 还未就绪',
-          badgeLabel: '稍后再试',
-          description: '当前账号标识还在准备中，等生成完成后再复制，会更适合联调和排查问题。',
+          badgeLabel: '生成中',
+          description: '账号标识还在准备中，等生成后再复制。',
         ),
       );
       AppFeedback.showError(
         context,
         AppErrorCode.invalidInput,
-        detail: 'UID生成中，请稍后再试',
+        detail: 'UID生成中，稍后再试',
       );
       return;
     }
@@ -4216,8 +4023,8 @@ class _SettingsScreenState extends State<SettingsScreen>
       const _SettingsInlineFeedbackState(
         icon: Icons.badge_outlined,
         title: 'UID 已复制',
-        badgeLabel: '可用于联调',
-        description: '现在可以把 UID 发给开发、测试或其他账号，用来加好友、排查问题或做联调确认。',
+        badgeLabel: '可复制',
+        description: '现在可以把 UID 发给好友或另一台设备。',
         isHealthy: true,
       ),
     );
@@ -4343,8 +4150,8 @@ class _SettingsScreenState extends State<SettingsScreen>
     if (normalizedNextPhone.isEmpty) {
       return const _SettingsSheetValidationState(
         icon: Icons.phone_outlined,
-        title: '输入新的手机号后再保存',
-        description: '需要先输入 11 位手机号，本次修改才会同步到登录、验证码接收和账号找回。',
+        title: '输入新手机号后再保存',
+        description: '先输入 11 位手机号。',
       );
     }
 
@@ -4353,7 +4160,7 @@ class _SettingsScreenState extends State<SettingsScreen>
       return const _SettingsSheetValidationState(
         icon: Icons.phone_outlined,
         title: '还需要完整的 11 位手机号',
-        description: '当前号码格式还不完整，先补齐后再保存，现有绑定号码不会被覆盖。',
+        description: '补齐后再保存。',
       );
     }
 
@@ -4361,14 +4168,14 @@ class _SettingsScreenState extends State<SettingsScreen>
       return const _SettingsSheetValidationState(
         icon: Icons.info_outline,
         title: '当前号码未发生变化',
-        description: '如果只是确认当前信息，无需重复保存；需要修改时换成新的常用号码即可。',
+        description: '号码未变化，无需保存。',
       );
     }
 
     return const _SettingsSheetValidationState(
       icon: Icons.check_circle_outline,
       title: '可以保存新手机号',
-      description: '保存后会立即更新这台设备的登录、验证码接收和账号找回号码。',
+      description: '保存后会更新登录和找回号码。',
       isReady: true,
     );
   }
@@ -4389,7 +4196,7 @@ class _SettingsScreenState extends State<SettingsScreen>
       return const _SettingsSheetValidationState(
         icon: Icons.lock_outline,
         title: '先完成旧密码校验',
-        description: '需要先输入当前密码，再设置新的密码和确认内容，本次修改才会生效。',
+        description: '先输入当前密码。',
       );
     }
 
@@ -4397,7 +4204,7 @@ class _SettingsScreenState extends State<SettingsScreen>
       return const _SettingsSheetValidationState(
         icon: Icons.lock_outline,
         title: '旧密码还未校验通过',
-        description: '请先输入当前正确密码，再继续保存新密码，避免把这次修改误存进错误账号。',
+        description: '请先输入正确的当前密码。',
       );
     }
 
@@ -4405,7 +4212,7 @@ class _SettingsScreenState extends State<SettingsScreen>
       return const _SettingsSheetValidationState(
         icon: Icons.password_outlined,
         title: '新密码至少需要 6 位',
-        description: '建议重新设置一个更稳妥的新密码，再继续保存。',
+        description: '新密码至少 6 位。',
       );
     }
 
@@ -4413,22 +4220,22 @@ class _SettingsScreenState extends State<SettingsScreen>
       return const _SettingsSheetValidationState(
         icon: Icons.lock_reset_outlined,
         title: '新密码还没有变化',
-        description: '如果要提升安全性，建议换成一个和当前不同的新密码。',
+        description: '请换成不同的新密码。',
       );
     }
 
     if (normalizedConfirmPassword != normalizedNewPassword) {
       return const _SettingsSheetValidationState(
         icon: Icons.rule_folder_outlined,
-        title: '两次输入的新密码还不一致',
-        description: '再确认一次新密码，保持两次输入一致后才会允许保存。',
+        title: '两次新密码还不一致',
+        description: '保持一致后再保存。',
       );
     }
 
     return const _SettingsSheetValidationState(
       icon: Icons.check_circle_outline,
       title: '可以保存新密码',
-      description: '保存后这台设备会立即改用新密码作为本地登录校验。',
+      description: '保存后这台设备会改用新密码。',
       isReady: true,
     );
   }
@@ -4473,7 +4280,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                   children: [
                     _buildAccountSheetHeader(
                       title: '修改手机号',
-                      description: '手机号会影响登录找回、验证码接收和账号确认，建议保持为当前常用号码。',
+                      description: '用于登录和找回账号。',
                       badgeLabel: '登录与找回',
                     ),
                     const SizedBox(height: 14),
@@ -4484,8 +4291,8 @@ class _SettingsScreenState extends State<SettingsScreen>
                           ? '当前已绑定手机号'
                           : '当前还未绑定手机号',
                       description: authProvider.phone?.trim().isNotEmpty == true
-                          ? '更新后，这台设备后续登录和排障都会以新号码为准。'
-                          : '补全后会更方便账号找回和后续联调确认。',
+                          ? '更新后改用新号码登录和找回。'
+                          : '补全后可用于找回和确认账号。',
                     ),
                     const SizedBox(height: 16),
                     TextField(
@@ -4495,7 +4302,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                       maxLength: 11,
                       autofocus: false,
                       decoration: const InputDecoration(
-                        hintText: '请输入新的 11 位手机号',
+                        hintText: '输入新的 11 位手机号',
                         counterText: '',
                       ),
                     ),
@@ -4608,7 +4415,7 @@ class _SettingsScreenState extends State<SettingsScreen>
           icon: Icons.phone_outlined,
           title: '手机号已经更新',
           badgeLabel: '账号已刷新',
-          description: '新的手机号已经写回当前账号资料，后续登录、验证码接收和账号找回都会以它为准。',
+          description: '新手机号已同步到账号资料。',
         ),
       );
       AppFeedback.showToast(context, AppToastCode.saved, subject: '手机号');
@@ -4664,7 +4471,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                   children: [
                     _buildAccountSheetHeader(
                       title: '修改密码',
-                      description: '建议定期更换密码，并避免和其他账号复用，减少测试环境和正式环境串用风险。',
+                      description: '建议定期更换。',
                       badgeLabel: '账号安全',
                     ),
                     const SizedBox(height: 14),
@@ -4672,7 +4479,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                       key: const Key('settings-password-hint-card'),
                       icon: Icons.lock_clock_outlined,
                       title: '本地安全校验',
-                      description: '先确认旧密码，再保存新密码。新的登录密码至少 6 位，并保持两次输入一致。',
+                      description: '先校验旧密码，再保存新密码。',
                     ),
                     const SizedBox(height: 16),
                     TextField(
@@ -4688,7 +4495,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                       controller: newController,
                       obscureText: true,
                       decoration: const InputDecoration(
-                        hintText: '输入新的密码，至少 6 位',
+                        hintText: '输入新密码，至少 6 位',
                       ),
                     ),
                     const SizedBox(height: 10),
@@ -4814,7 +4621,7 @@ class _SettingsScreenState extends State<SettingsScreen>
             icon: Icons.lock_outlined,
             title: '密码已经更新',
             badgeLabel: '安全已刷新',
-            description: '新的本地密码已经写回当前安全设置，后续请优先使用新密码，避免和其他环境复用。',
+            description: '新密码已保存，请改用新密码登录。',
           ),
         );
         AppFeedback.showToast(context, AppToastCode.saved, subject: '密码');
@@ -4831,8 +4638,8 @@ class _SettingsScreenState extends State<SettingsScreen>
     final confirm = await AppDialog.showConfirm(
       context,
       title: '退出登录',
-      content: '这只会退出当前设备上的登录状态。\n你的账号资料、好友关系和聊天记录仍会保留，之后可以重新登录。',
-      confirmText: '退出当前设备',
+      content: '只退出当前设备，聊天记录仍保留。',
+      confirmText: '确认退出',
       isDanger: true,
     );
 
@@ -4846,7 +4653,7 @@ class _SettingsScreenState extends State<SettingsScreen>
     final confirm = await AppDialog.showConfirm(
       context,
       title: '注销账号',
-      content: '注销后将清除账号资料与会话数据，且无法恢复。\n如果只是暂时离开，建议使用“退出登录”。',
+      content: '会清除账号资料和会话数据，且无法恢复。',
       confirmText: '确认注销',
       isDanger: true,
     );
@@ -5220,6 +5027,28 @@ class _SettingsDeviceStatusItem {
   final String badgeLabel;
   final String description;
   final bool isHealthy;
+
+  @override
+  bool operator ==(Object other) {
+    return identical(this, other) ||
+        other is _SettingsDeviceStatusItem &&
+            other.key == key &&
+            other.icon == icon &&
+            other.title == title &&
+            other.badgeLabel == badgeLabel &&
+            other.description == description &&
+            other.isHealthy == isHealthy;
+  }
+
+  @override
+  int get hashCode => Object.hash(
+        key,
+        icon,
+        title,
+        badgeLabel,
+        description,
+        isHealthy,
+      );
 }
 
 class _SettingsExperiencePresetState {
@@ -5256,10 +5085,12 @@ class _SettingsMediaPreviewState {
   const _SettingsMediaPreviewState({
     this.mediaPath,
     this.hasMedia = false,
+    this.isRemote = false,
   });
 
   final String? mediaPath;
   final bool hasMedia;
+  final bool isRemote;
 }
 
 class _SettingsSheetValidationState {
@@ -5337,6 +5168,34 @@ class _SettingsNotificationRuntimeState {
   final _SettingsNotificationAction actionType;
   final String? followUpDescription;
   final bool isHealthy;
+
+  @override
+  bool operator ==(Object other) {
+    return identical(this, other) ||
+        other is _SettingsNotificationRuntimeState &&
+            other.icon == icon &&
+            other.badgeLabel == badgeLabel &&
+            other.description == description &&
+            other.statusChipLabel == statusChipLabel &&
+            other.actionLabel == actionLabel &&
+            other.actionIcon == actionIcon &&
+            other.actionType == actionType &&
+            other.followUpDescription == followUpDescription &&
+            other.isHealthy == isHealthy;
+  }
+
+  @override
+  int get hashCode => Object.hash(
+        icon,
+        badgeLabel,
+        description,
+        statusChipLabel,
+        actionLabel,
+        actionIcon,
+        actionType,
+        followUpDescription,
+        isHealthy,
+      );
 }
 
 class _SettingsNotificationCenterDigestState {

@@ -46,6 +46,21 @@ class ChatImageUploadPreparationResult {
   bool get isSuccess => data != null;
 }
 
+class UserMediaUploadResult {
+  const UserMediaUploadResult({
+    required this.mediaRef,
+    required this.remoteAttempted,
+    required this.remoteSucceeded,
+  });
+
+  final String mediaRef;
+  final bool remoteAttempted;
+  final bool remoteSucceeded;
+
+  bool get remoteFailed => remoteAttempted && !remoteSucceeded;
+  bool get localOnly => !remoteAttempted;
+}
+
 ChatRequestFailure normalizeChatImageUploadFailure({
   required ChatImageUploadFailureStage stage,
   required ChatRequestFailure failure,
@@ -199,9 +214,21 @@ class MediaUploadService {
     String type,
     File imageFile,
   ) async {
+    final result = await uploadUserMediaWithStatus(type, imageFile);
+    return result.mediaRef;
+  }
+
+  Future<UserMediaUploadResult> uploadUserMediaWithStatus(
+    String type,
+    File imageFile,
+  ) async {
     final previewPath = imageFile.path;
     if (!hasSession) {
-      return previewPath;
+      return UserMediaUploadResult(
+        mediaRef: previewPath,
+        remoteAttempted: false,
+        remoteSucceeded: false,
+      );
     }
 
     try {
@@ -230,9 +257,17 @@ class MediaUploadService {
         }),
       );
 
-      return AppEnv.resolveMediaUrl(objectKey);
+      return UserMediaUploadResult(
+        mediaRef: AppEnv.resolveMediaUrl(objectKey),
+        remoteAttempted: true,
+        remoteSucceeded: true,
+      );
     } catch (_) {
-      return previewPath;
+      return UserMediaUploadResult(
+        mediaRef: previewPath,
+        remoteAttempted: true,
+        remoteSucceeded: false,
+      );
     }
   }
 

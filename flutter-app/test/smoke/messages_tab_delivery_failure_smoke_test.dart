@@ -299,7 +299,8 @@ Future<({ChatProvider provider, File imageFile})>
   return (provider: provider, imageFile: imageFile);
 }
 
-Future<({ChatProvider provider, File imageFile})> _buildProviderWithSendFailure({
+Future<({ChatProvider provider, File imageFile})>
+    _buildProviderWithSendFailure({
   required String threadId,
   required String errorCode,
   required String errorMessage,
@@ -405,7 +406,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('图片过大，请重新选图'), findsOneWidget);
+    expect(find.text('图片过大，需重选'), findsOneWidget);
     expect(find.text('图片过大'), findsNWidgets(2));
 
     await _disposeHost(tester, chatProvider, friendProvider);
@@ -436,7 +437,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('图片格式异常，请重新选图'), findsOneWidget);
+    expect(find.text('格式异常，需重选'), findsOneWidget);
     expect(find.text('格式异常'), findsNWidgets(2));
 
     await _disposeHost(tester, chatProvider, friendProvider);
@@ -467,7 +468,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('凭证失效'), findsOneWidget);
+    expect(find.text('上传凭证失效'), findsNWidgets(2));
     expect(find.byIcon(Icons.vpn_key_off_rounded), findsOneWidget);
     expect(find.byIcon(Icons.photo_size_select_large_rounded), findsNothing);
     expect(find.byIcon(Icons.broken_image_outlined), findsNothing);

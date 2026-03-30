@@ -123,14 +123,7 @@ void main() {
       await tester.pump(const Duration(milliseconds: 300));
 
       expect(find.byKey(const Key('app-dialog-confirm')), findsOneWidget);
-      expect(
-        find.textContaining('这只会退出当前设备上的登录状态。'),
-        findsOneWidget,
-      );
-      expect(
-        find.textContaining('你的账号资料、好友关系和聊天记录仍会保留'),
-        findsOneWidget,
-      );
+      expect(find.text('只退出当前设备，聊天记录仍保留。'), findsOneWidget);
       await tester.tap(
         find.byKey(const Key('app-dialog-confirm')),
         warnIfMissed: false,
@@ -212,14 +205,7 @@ void main() {
       await tester.pump(const Duration(milliseconds: 300));
 
       expect(find.byKey(const Key('app-dialog-confirm')), findsOneWidget);
-      expect(
-        find.textContaining('注销后将清除账号资料与会话数据'),
-        findsOneWidget,
-      );
-      expect(
-        find.textContaining('如果只是暂时离开，建议使用“退出登录”'),
-        findsOneWidget,
-      );
+      expect(find.text('会清除账号资料和会话数据，且无法恢复。'), findsOneWidget);
       await tester.tap(
         find.byKey(const Key('app-dialog-confirm')),
         warnIfMissed: false,

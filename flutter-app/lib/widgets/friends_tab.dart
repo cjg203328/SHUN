@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
@@ -9,6 +9,7 @@ import '../providers/friend_provider.dart';
 import '../providers/chat_provider.dart';
 import '../providers/notification_center_provider.dart';
 import '../models/models.dart';
+import 'app_user_avatar.dart';
 import 'app_toast.dart';
 
 class _FriendsLayoutSpec {
@@ -427,18 +428,19 @@ class _UidSearchSheetState extends State<_UidSearchSheet> {
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Container(
+                                    key: const Key(
+                                      'friends-uid-search-result-avatar',
+                                    ),
                                     width: 42,
                                     height: 42,
                                     decoration: const BoxDecoration(
                                       shape: BoxShape.circle,
                                       color: AppColors.white08,
                                     ),
-                                    child: Center(
-                                      child: Text(
-                                        resultUser.avatar ?? '👤',
-                                        style: const TextStyle(
-                                          fontSize: 20,
-                                        ),
+                                    child: AppUserAvatar(
+                                      avatar: resultUser.avatar,
+                                      textStyle: const TextStyle(
+                                        fontSize: 20,
                                       ),
                                     ),
                                   ),
@@ -493,17 +495,18 @@ class _UidSearchSheetState extends State<_UidSearchSheet> {
                         : Row(
                             children: [
                               Container(
+                                key: const Key(
+                                  'friends-uid-search-result-avatar',
+                                ),
                                 width: 42,
                                 height: 42,
                                 decoration: const BoxDecoration(
                                   shape: BoxShape.circle,
                                   color: AppColors.white08,
                                 ),
-                                child: Center(
-                                  child: Text(
-                                    resultUser.avatar ?? '👤',
-                                    style: const TextStyle(fontSize: 20),
-                                  ),
+                                child: AppUserAvatar(
+                                  avatar: resultUser.avatar,
+                                  textStyle: const TextStyle(fontSize: 20),
                                 ),
                               ),
                               const SizedBox(width: 10),
@@ -1100,6 +1103,7 @@ class FriendsTab extends StatelessWidget {
                         bottom: layout.isCompact ? 14 : 18,
                       ),
                       child: Container(
+                        key: Key('friends-profile-avatar-${friend.id}'),
                         width: layout.isCompact ? 76 : 88,
                         height: layout.isCompact ? 76 : 88,
                         decoration: BoxDecoration(
@@ -1110,12 +1114,10 @@ class FriendsTab extends StatelessWidget {
                             width: 3,
                           ),
                         ),
-                        child: Center(
-                          child: Text(
-                            friend.user.avatar ?? '👤',
-                            style: TextStyle(
-                              fontSize: layout.isCompact ? 34 : 40,
-                            ),
+                        child: AppUserAvatar(
+                          avatar: friend.user.avatar,
+                          textStyle: TextStyle(
+                            fontSize: layout.isCompact ? 34 : 40,
                           ),
                         ),
                       ),
@@ -1571,6 +1573,7 @@ class _FriendItem extends StatelessWidget {
           children: [
             // 头像
             Container(
+              key: Key('friends-item-avatar-${friend.id}'),
               width: layout.itemAvatarSize,
               height: layout.itemAvatarSize,
               decoration: BoxDecoration(
@@ -1581,13 +1584,11 @@ class _FriendItem extends StatelessWidget {
                   width: 2,
                 ),
               ),
-              child: Center(
-                child: Text(
-                  friend.user.avatar ?? '👤',
-                  style: TextStyle(
-                    fontSize: layout.itemAvatarFontSize,
-                    color: AppColors.textPrimary,
-                  ),
+              child: AppUserAvatar(
+                avatar: friend.user.avatar,
+                textStyle: TextStyle(
+                  fontSize: layout.itemAvatarFontSize,
+                  color: AppColors.textPrimary,
                 ),
               ),
             ),
@@ -1662,17 +1663,16 @@ class _FriendRequestItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final avatar = Container(
+      key: Key('friends-request-avatar-${request.id}'),
       width: layout.requestAvatarSize,
       height: layout.requestAvatarSize,
       decoration: const BoxDecoration(
         shape: BoxShape.circle,
         color: AppColors.white08,
       ),
-      child: Center(
-        child: Text(
-          request.fromUser.avatar ?? '👤',
-          style: TextStyle(fontSize: layout.requestAvatarFontSize),
-        ),
+      child: AppUserAvatar(
+        avatar: request.fromUser.avatar,
+        textStyle: TextStyle(fontSize: layout.requestAvatarFontSize),
       ),
     );
 

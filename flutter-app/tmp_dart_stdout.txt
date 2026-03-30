@@ -1,0 +1,1 @@
+Dart SDK version: 3.6.0 (stable) (Thu Dec 5 07:46:24 2024 -0800) on "windows_x64"

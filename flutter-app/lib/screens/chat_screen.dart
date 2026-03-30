@@ -23,6 +23,7 @@ import '../utils/image_helper.dart';
 import '../utils/notification_permission_guidance.dart';
 import '../utils/permission_manager.dart';
 import '../services/screenshot_guard.dart';
+import '../widgets/app_user_avatar.dart';
 import '../widgets/chat_delivery_status.dart';
 import '../widgets/notification_permission_notice_card.dart';
 
@@ -545,6 +546,7 @@ class _ChatIntimacyChangeState {
 
 class _ChatScreenState extends State<ChatScreen> {
   static const int _messageMaxLength = 300;
+  static const double _snapScrollToBottomDistance = 96;
   final TextEditingController _inputController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   ChatProvider? _chatProvider;
@@ -559,8 +561,11 @@ class _ChatScreenState extends State<ChatScreen> {
       <String, OutgoingDeliveryObservation>{};
   final ValueNotifier<bool> _burnAfterReadEnabledNotifier =
       ValueNotifier<bool>(false);
+  OutgoingDeliveryFeedback? _pendingOutgoingDeliveryFeedback;
   bool _scrollToBottomQueued = false;
+  bool _outgoingDeliveryFeedbackQueued = false;
   bool _canonicalRouteSyncQueued = false;
+  bool _suspendDraftSync = false;
   bool _didActivateInitialThread = false;
   int _lastObservedThreadInteractionRevision = 0;
   String? _lastObservedCanonicalThreadId;
@@ -620,6 +625,9 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   void _handleInputChanged() {
+    if (_suspendDraftSync) {
+      return;
+    }
     _chatProvider?.saveDraft(widget.threadId, _inputController.text);
   }
 
@@ -669,10 +677,16 @@ class _ChatScreenState extends State<ChatScreen> {
     if (_inputController.text == draft) {
       return;
     }
+    _replaceComposerText(draft);
+  }
+
+  void _replaceComposerText(String text) {
+    _suspendDraftSync = true;
     _inputController.value = TextEditingValue(
-      text: draft,
-      selection: TextSelection.collapsed(offset: draft.length),
+      text: text,
+      selection: TextSelection.collapsed(offset: text.length),
     );
+    _suspendDraftSync = false;
   }
 
   void _resetTransientComposerStateForThreadChange() {
@@ -681,7 +695,9 @@ class _ChatScreenState extends State<ChatScreen> {
     _intimacyChangeNotifier.value = null;
     _deliveryStateSnapshot.clear();
     _burnAfterReadEnabledNotifier.value = false;
+    _pendingOutgoingDeliveryFeedback = null;
     _scrollToBottomQueued = false;
+    _outgoingDeliveryFeedbackQueued = false;
     _clearCurrentThreadViewCaches();
   }
 
@@ -1066,6 +1082,13 @@ class _ChatScreenState extends State<ChatScreen> {
     return resolution.feedback;
   }
 
+  bool _shouldSurfaceOutgoingDeliveryFeedback(
+    OutgoingDeliveryFeedback feedback,
+  ) {
+    // 成功态已经由我方消息气泡内联展示，避免再叠加 toast 打断操作。
+    return feedback.isError;
+  }
+
   void _showOutgoingDeliveryFeedback(OutgoingDeliveryFeedback feedback) {
     if (!mounted) {
       return;
@@ -1077,12 +1100,47 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
+  void _scheduleOutgoingDeliveryFeedback(OutgoingDeliveryFeedback feedback) {
+    if (!_shouldSurfaceOutgoingDeliveryFeedback(feedback)) {
+      return;
+    }
+    _pendingOutgoingDeliveryFeedback = feedback;
+    if (_outgoingDeliveryFeedbackQueued) {
+      return;
+    }
+    _outgoingDeliveryFeedbackQueued = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _outgoingDeliveryFeedbackQueued = false;
+      final pendingFeedback = _pendingOutgoingDeliveryFeedback;
+      _pendingOutgoingDeliveryFeedback = null;
+      if (!mounted || pendingFeedback == null) {
+        return;
+      }
+      _showOutgoingDeliveryFeedback(pendingFeedback);
+    });
+  }
+
   void _scrollToBottom() {
     if (!mounted || !_scrollController.hasClients) return;
+    final position = _scrollController.position;
+    final targetOffset = position.maxScrollExtent;
+    final distanceToBottom = (targetOffset - position.pixels).abs();
+
+    if (distanceToBottom <= 1) {
+      return;
+    }
+
+    if (distanceToBottom <= _snapScrollToBottomDistance) {
+      _scrollController.jumpTo(targetOffset);
+      return;
+    }
+
     _scrollController.animateTo(
-      _scrollController.position.maxScrollExtent,
-      duration: const Duration(milliseconds: 300),
-      curve: Curves.easeOut,
+      targetOffset,
+      duration: Duration(
+        milliseconds: distanceToBottom <= 320 ? 180 : 300,
+      ),
+      curve: Curves.easeOutCubic,
     );
   }
 
@@ -1215,7 +1273,7 @@ class _ChatScreenState extends State<ChatScreen> {
       _scheduleScrollToBottom();
     }
     if (deliveryFeedback != null) {
-      _showOutgoingDeliveryFeedback(deliveryFeedback);
+      _scheduleOutgoingDeliveryFeedback(deliveryFeedback);
     }
   }
 
@@ -1231,26 +1289,25 @@ class _ChatScreenState extends State<ChatScreen> {
         );
 
     if (queued) {
-      _inputController.clear();
+      _replaceComposerText('');
       context.read<ChatProvider>().clearDraft(widget.threadId);
-      _scheduleScrollToBottom();
       return;
     }
 
     AppFeedback.showError(
       context,
       AppErrorCode.sendFailed,
-      detail: '消息没有发出去，你可以稍后重试。',
+      detail: '消息未发出，请重试。',
     );
   }
 
   Widget _buildEmptyConversationState(ChatThread? thread) {
-    final title = thread == null ? '会话暂不可用' : '现在发第一句，会更容易聊起来';
+    final title = thread == null ? '会话暂不可用' : '发一句开场白吧';
     final subtitle = thread == null
-        ? '请返回消息列表后重新进入这个会话。'
+        ? '返回消息列表后再试。'
         : thread.otherUser.isOnline
-            ? '对方此刻在线，适合先发一句轻松自然的问候。'
-            : '对方暂时不在线，留一句舒服的话，回来时会先看到。';
+            ? '对方在线，可以先打个招呼。'
+            : '对方暂时不在线，也可以先留句话。';
     final suggestions = thread == null
         ? const <String>['返回上一页', '重新进入会话']
         : thread.otherUser.isOnline
@@ -1700,13 +1757,11 @@ class _ChatScreenState extends State<ChatScreen> {
                     shape: BoxShape.circle,
                     color: AppColors.white08,
                   ),
-                  child: Center(
-                    child: Text(
-                      headerData.avatarText,
-                      style: TextStyle(
-                        fontSize: screenLayout.isCompact ? 16 : 18,
-                        color: AppColors.textPrimary,
-                      ),
+                  child: AppUserAvatar(
+                    avatar: headerData.avatarText,
+                    textStyle: TextStyle(
+                      fontSize: screenLayout.isCompact ? 16 : 18,
+                      color: AppColors.textPrimary,
                     ),
                   ),
                 ),
@@ -1978,7 +2033,7 @@ class _ChatScreenState extends State<ChatScreen> {
                   ),
                 ),
 
-                // 亲密度变化动�?
+                // 亲密度变化动画
                 ValueListenableBuilder<_ChatIntimacyChangeState?>(
                   valueListenable: _intimacyChangeNotifier,
                   builder: (context, intimacyChange, child) {
@@ -2250,11 +2305,6 @@ class _ChatScreenState extends State<ChatScreen> {
       }
       return;
     }
-    AppFeedback.showToast(
-      context,
-      AppToastCode.sent,
-      subject: burnAfterReadEnabled ? '闪图（对方可看5秒）' : '图片',
-    );
 
     if (burnAfterReadEnabled) {
       _burnAfterReadEnabledNotifier.value = false;
@@ -2272,8 +2322,8 @@ class _ChatScreenState extends State<ChatScreen> {
         final rawThread = chatProvider.getThread(threadId);
         final detail =
             rawThread != null && !rawThread.isFriend && rawThread.isExpired
-                ? '当前会话已过期，请返回消息列表重新进入'
-                : '当前会话不可用，请返回消息列表重新进入';
+                ? '会话已过期，请返回列表重试'
+                : '会话不可用，请返回列表重试';
         AppFeedback.showError(
           context,
           AppErrorCode.invalidInput,
@@ -2797,6 +2847,7 @@ class _ChatScreenState extends State<ChatScreen> {
                         alignment: Alignment.bottomCenter,
                         padding: const EdgeInsets.only(bottom: 22),
                         child: Container(
+                          key: Key('chat-user-profile-avatar-${user.id}'),
                           width: 92,
                           height: 92,
                           decoration: BoxDecoration(
@@ -2805,11 +2856,9 @@ class _ChatScreenState extends State<ChatScreen> {
                             border: Border.all(
                                 color: AppColors.pureBlack, width: 3),
                           ),
-                          child: Center(
-                            child: Text(
-                              user.avatar ?? '👤',
-                              style: const TextStyle(fontSize: 42),
-                            ),
+                          child: AppUserAvatar(
+                            avatar: user.avatar,
+                            textStyle: const TextStyle(fontSize: 42),
                           ),
                         ),
                       ),
@@ -3178,6 +3227,7 @@ class _VoiceCallSheetState extends State<_VoiceCallSheet> {
           mainAxisSize: MainAxisSize.min,
           children: [
             Container(
+              key: Key('voice-call-avatar-${widget.user.id}'),
               width: 72,
               height: 72,
               decoration: BoxDecoration(
@@ -3185,11 +3235,9 @@ class _VoiceCallSheetState extends State<_VoiceCallSheet> {
                 color: AppColors.white08,
                 border: Border.all(color: AppColors.white12, width: 1),
               ),
-              child: Center(
-                child: Text(
-                  widget.user.avatar ?? '👤',
-                  style: const TextStyle(fontSize: 34),
-                ),
+              child: AppUserAvatar(
+                avatar: widget.user.avatar,
+                textStyle: const TextStyle(fontSize: 34),
               ),
             ),
             const SizedBox(height: 12),
@@ -3376,7 +3424,7 @@ class _MessageBubbleState extends State<_MessageBubble>
               message.isMe ? MainAxisAlignment.end : MainAxisAlignment.start,
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [
-            // 发送失败的感叹号（仅自己的消息�?
+            // 发送失败的感叹号（仅自己的消息）
             if (_showLegacyDeliveryFallback &&
                 message.isMe &&
                 message.status == MessageStatus.failed) ...[
@@ -3484,7 +3532,7 @@ class _MessageBubbleState extends State<_MessageBubble>
                               AppFeedback.showError(
                                 context,
                                 AppErrorCode.notSupported,
-                                detail: '图片消息暂不支持复制',
+                                detail: '图片暂不支持复制',
                               );
                               return;
                             }
@@ -3683,31 +3731,31 @@ class _MessageBubbleState extends State<_MessageBubble>
 
     switch (failureState) {
       case ChatDeliveryFailureState.imageUploadFileTooLarge:
-        title = '图片体积过大';
-        description = '这张图片已经超过当前上传大小限制，继续重试通常不会成功，建议先压缩、裁剪或换一张更小的图片。';
+        title = '图片太大';
+        description = '图片超过大小限制';
         primaryTip = (
           icon: Icons.compress_outlined,
-          title: '先压缩后再发送',
-          detail: '优先选择压缩图，或者在系统相册里编辑后再发送，成功率会更高。',
+          title: '先压缩再发送',
+          detail: '压缩后更容易发送',
         );
         secondaryTip = (
           icon: Icons.crop_outlined,
-          title: '裁剪掉不必要区域',
-          detail: '减少分辨率和画面范围后，往往就能满足上传限制。',
+          title: '裁剪后再发送',
+          detail: '裁掉一部分再试',
         );
         break;
       case ChatDeliveryFailureState.imageUploadUnsupportedFormat:
-        title = '图片格式暂不支持';
-        description = '当前文件没有通过图片格式校验，通常是文件格式异常、文件损坏，或并非标准图片文件。';
+        title = '图片格式不支持';
+        description = '当前图片格式不支持';
         primaryTip = (
           icon: Icons.photo_library_outlined,
-          title: '重新选择常见图片格式',
-          detail: '优先从系统相册中选择 JPG、JPEG 或 PNG 图片后再发送。',
+          title: '换 JPG/PNG',
+          detail: '优先选 JPG、PNG',
         );
         secondaryTip = (
           icon: Icons.auto_fix_high_outlined,
-          title: '先重新保存一遍图片',
-          detail: '重新编辑、导出或截图后再发送，能避开一部分格式兼容问题。',
+          title: '重新保存后再发',
+          detail: '重新保存或截图后再试',
         );
         break;
       case ChatDeliveryFailureState.retryable:
@@ -3719,17 +3767,17 @@ class _MessageBubbleState extends State<_MessageBubble>
       case ChatDeliveryFailureState.blockedRelation:
       case ChatDeliveryFailureState.networkIssue:
       case ChatDeliveryFailureState.retryUnavailable:
-        title = '图片需要重新选择';
-        description = '这次发送依赖的原图已经不可用，系统无法直接帮你重试。';
+        title = '图片需要重选';
+        description = '原图已不可用';
         primaryTip = (
           icon: Icons.photo_library_outlined,
-          title: '回到输入区重新选图',
-          detail: '重新选择图片后再发送，通常是最稳妥的处理方式。',
+          title: '重新选图',
+          detail: '选好后再发送',
         );
         secondaryTip = (
           icon: Icons.compress_outlined,
-          title: '弱网时优先发送压缩图',
-          detail: '压缩后的图片更容易上传成功，也更容易更快送达。',
+          title: '先发压缩图',
+          detail: '弱网下更容易发出',
         );
         break;
     }

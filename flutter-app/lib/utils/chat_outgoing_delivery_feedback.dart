@@ -62,11 +62,11 @@ Map<String, OutgoingDeliveryObservation> captureOutgoingDeliverySnapshot(
   final outgoingMessages = messages.where((message) => message.isMe).toList();
   return Map<String, OutgoingDeliveryObservation>.fromEntries(
     outgoingMessages.asMap().entries.map(
-      (entry) => MapEntry(
-        buildOutgoingDeliveryTrackingKey(entry.key, entry.value),
-        OutgoingDeliveryObservation.fromMessage(entry.value),
-      ),
-    ),
+          (entry) => MapEntry(
+            buildOutgoingDeliveryTrackingKey(entry.key, entry.value),
+            OutgoingDeliveryObservation.fromMessage(entry.value),
+          ),
+        ),
   );
 }
 
@@ -101,7 +101,7 @@ OutgoingDeliveryFeedbackResolution resolveOutgoingDeliveryFeedback({
         previous.isRetryTransition) {
       feedbacks.add(
         OutgoingDeliveryFeedback(
-          message: '重试未成功，请稍后再试',
+          message: '重试失败，请重试',
           isError: true,
           priority: 4,
           timestamp: message.timestamp,

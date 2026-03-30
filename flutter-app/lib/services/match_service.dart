@@ -122,7 +122,7 @@ class MatchService {
       if (userJson == null) {
         return const MatchStartAttempt.failure(
           errorCode: 'MATCH_RESPONSE_INVALID',
-          errorMessage: '匹配服务返回了不完整的数据，请稍后再试',
+          errorMessage: '匹配结果不完整，请重试',
         );
       }
 
@@ -157,7 +157,7 @@ class MatchService {
     } catch (_) {
       return const MatchStartAttempt.failure(
         errorCode: 'MATCH_START_FAILED',
-        errorMessage: '匹配暂时不可用，请稍后重试',
+        errorMessage: '匹配暂不可用，请重试',
       );
     }
   }

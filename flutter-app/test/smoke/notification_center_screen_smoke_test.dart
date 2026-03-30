@@ -174,7 +174,7 @@ void main() {
         find.byKey(const Key('notification-center-permission-banner')),
         findsOneWidget,
       );
-      expect(find.text('系统通知权限还没打开'), findsOneWidget);
+      expect(find.text('系统通知未打开'), findsOneWidget);
 
       final settingsAction = find.byKey(
         const Key('notification-center-permission-action'),

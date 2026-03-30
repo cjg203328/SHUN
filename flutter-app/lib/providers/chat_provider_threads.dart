@@ -459,6 +459,7 @@ extension ChatProviderThreads on ChatProvider {
     bool? isFriend,
     bool? isUnfollowed,
     int? messagesSinceUnfollow,
+    bool markInteraction = true,
     bool notify = true,
   }) {
     threadId = _resolveThreadId(threadId);
@@ -494,7 +495,9 @@ extension ChatProviderThreads on ChatProvider {
       isUnfollowed: nextIsUnfollowed,
       messagesSinceUnfollow: nextMessagesSinceUnfollow,
     );
-    _markThreadInteractionChanged(threadId);
+    if (markInteraction) {
+      _markThreadInteractionChanged(threadId);
+    }
     _markThreadComposerDirtyIfChanged(threadId, previousComposerFingerprint);
     _markThreadListPresentationDirtyIfChanged(threadId, previousFingerprint);
     _markThreadHeaderDirtyIfChanged(threadId, previousHeaderFingerprint);
@@ -510,7 +513,12 @@ extension ChatProviderThreads on ChatProvider {
     final previousFingerprint = _threadListPresentationFingerprint(threadId);
     _messages[threadId] = <Message>[];
     _lastRemoteMessageSyncAt.remove(threadId);
-    _updateThread(threadId, unreadCount: 0, notify: false);
+    _updateThread(
+      threadId,
+      unreadCount: 0,
+      markInteraction: false,
+      notify: false,
+    );
     _deletedThreads[threadId] = true;
     _markThreadInteractionChanged(threadId);
     _markThreadOutgoingDeliveryDirtyIfChanged(
@@ -527,15 +535,18 @@ extension ChatProviderThreads on ChatProvider {
 
   bool restoreThread(String threadId, {bool notify = true}) {
     threadId = _resolveThreadId(threadId);
-    final previousFingerprint = _threadListPresentationFingerprint(threadId);
     final wasDeleted = _deletedThreads[threadId] ?? false;
+    if (!wasDeleted) {
+      return false;
+    }
+    final previousFingerprint = _threadListPresentationFingerprint(threadId);
     _deletedThreads[threadId] = false;
     _markThreadInteractionChanged(threadId);
     _markThreadListPresentationDirtyIfChanged(threadId, previousFingerprint);
-    if (wasDeleted && notify) {
+    if (notify) {
       notifyListeners();
     }
-    return wasDeleted;
+    return true;
   }
 
   String? _resolveThreadIdByUserId(String userId) {

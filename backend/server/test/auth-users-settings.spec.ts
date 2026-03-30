@@ -43,6 +43,7 @@ describe('Auth + Users + Settings (integration)', () => {
     process.env.USER_STORE_DRIVER = 'memory';
     process.env.AUTH_RUNTIME_DRIVER = 'memory';
     process.env.RUNTIME_STATE_DRIVER = 'memory';
+    process.env.OTP_OVERRIDE = '123456';
 
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
@@ -54,6 +55,7 @@ describe('Auth + Users + Settings (integration)', () => {
   });
 
   afterAll(async () => {
+    delete process.env.OTP_OVERRIDE;
     await app.close();
   });
 
@@ -66,7 +68,7 @@ describe('Auth + Users + Settings (integration)', () => {
     uidB = userB.user.uid;
 
     expect(uidB).toContain('SN');
-    expect(accessToken).toContain('atk_');
+    expect(accessToken.split('.')).toHaveLength(3);
   });
 
   it('should read and update profile', async () => {
@@ -152,6 +154,34 @@ describe('Auth + Users + Settings (integration)', () => {
       .expect(200);
     expect(getAvatarRes.body.data.avatarUrl).toBe(
       avatarUploadTokenRes.body.data.objectKey,
+    );
+
+    const backgroundUploadTokenRes = await request(app.getHttpServer())
+      .post('/api/v1/users/me/background/upload-token')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .expect(201);
+    expect(backgroundUploadTokenRes.body.data.objectKey).toContain(
+      'background/',
+    );
+
+    const backgroundUploadRes = await request(app.getHttpServer())
+      .post('/api/v1/users/me/background/upload')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .field('uploadToken', backgroundUploadTokenRes.body.data.uploadToken)
+      .field('objectKey', backgroundUploadTokenRes.body.data.objectKey)
+      .attach('file', Buffer.from([0xff, 0xd8, 0xff, 0xd9]), {
+        filename: 'background-test.jpg',
+        contentType: 'image/jpeg',
+      })
+      .expect(201);
+    expect(backgroundUploadRes.body.data.uploaded).toBe(true);
+
+    const getProfileMediaRes = await request(app.getHttpServer())
+      .get('/api/v1/users/me')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .expect(200);
+    expect(getProfileMediaRes.body.data.backgroundUrl).toBe(
+      backgroundUploadTokenRes.body.data.objectKey,
     );
   });
 

@@ -84,14 +84,13 @@ ChatDeliveryStatusSpec? resolveChatDeliveryStatus(
   if (message.status == MessageStatus.failed) {
     if (failureState == ChatDeliveryFailureState.threadExpired) {
       return ChatDeliveryStatusSpec(
-        previewText: '会话已过期，当前不能重试',
+        previewText: '会话已过期，暂不可重试',
         previewColor: AppColors.warning.withValues(alpha: 0.92),
         badgeLabel: '会话已过期',
         badgeColor: AppColors.warning,
         badgeIcon: Icons.hourglass_disabled_outlined,
         cardLabel: '会话已过期',
-        cardDetail:
-            isImage ? '这条图片消息所在的会话已经到期，当前不能继续重试。' : '这条消息所在的会话已经到期，当前不能继续重试。',
+        cardDetail: '会话已过期，请返回列表重试',
         cardColor: AppColors.warning,
         cardIcon: Icons.hourglass_disabled_outlined,
       );
@@ -99,14 +98,13 @@ ChatDeliveryStatusSpec? resolveChatDeliveryStatus(
 
     if (failureState == ChatDeliveryFailureState.blockedRelation) {
       return ChatDeliveryStatusSpec(
-        previewText: '关系受限，当前不能继续发送',
+        previewText: '关系受限，暂不能发送',
         previewColor: AppColors.warning.withValues(alpha: 0.92),
         badgeLabel: '关系受限',
         badgeColor: AppColors.warning,
         badgeIcon: Icons.block_outlined,
         cardLabel: '关系受限',
-        cardDetail:
-            isImage ? '你和对方当前处于拉黑关系，图片暂时不能继续发送。' : '你和对方当前处于拉黑关系，消息暂时不能继续发送。',
+        cardDetail: '当前关系受限，暂不能发送',
         cardColor: AppColors.warning,
         cardIcon: Icons.block_outlined,
       );
@@ -114,13 +112,13 @@ ChatDeliveryStatusSpec? resolveChatDeliveryStatus(
 
     if (failureState == ChatDeliveryFailureState.imageUploadPreparationFailed) {
       return ChatDeliveryStatusSpec(
-        previewText: '上传准备失败，图片可稍后重试',
+        previewText: '准备失败，可重试',
         previewColor: AppColors.warning.withValues(alpha: 0.92),
         badgeLabel: '上传准备失败',
         badgeColor: AppColors.warning,
         badgeIcon: Icons.cloud_off_rounded,
         cardLabel: '上传准备失败',
-        cardDetail: '服务端暂时无法完成图片上传准备，建议稍后重新发送这张图片。',
+        cardDetail: '图片准备失败，请重试',
         cardColor: AppColors.warning,
         cardIcon: Icons.cloud_off_rounded,
         actionLabel: '立即重试',
@@ -130,13 +128,13 @@ ChatDeliveryStatusSpec? resolveChatDeliveryStatus(
 
     if (failureState == ChatDeliveryFailureState.imageUploadInterrupted) {
       return ChatDeliveryStatusSpec(
-        previewText: '上传中断，图片可重新发送',
+        previewText: '上传中断，可重试',
         previewColor: AppColors.warning.withValues(alpha: 0.92),
         badgeLabel: '上传中断',
         badgeColor: AppColors.warning,
         badgeIcon: Icons.upload_file_rounded,
         cardLabel: '上传中断',
-        cardDetail: '图片上传过程中已中断，建议检查网络后重新投递这张图片。',
+        cardDetail: '网络中断，请重试',
         cardColor: AppColors.warning,
         cardIcon: Icons.upload_file_rounded,
         actionLabel: '立即重试',
@@ -146,13 +144,13 @@ ChatDeliveryStatusSpec? resolveChatDeliveryStatus(
 
     if (failureState == ChatDeliveryFailureState.imageUploadTokenInvalid) {
       return ChatDeliveryStatusSpec(
-        previewText: '上传凭证已失效，可立即重试',
+        previewText: '凭证失效，可重试',
         previewColor: AppColors.warning.withValues(alpha: 0.92),
         badgeLabel: '上传凭证失效',
         badgeColor: AppColors.warning,
         badgeIcon: Icons.vpn_key_off_rounded,
         cardLabel: '上传凭证失效',
-        cardDetail: '这次图片上传使用的凭证已经失效，再试一次会刷新上传凭证后重新提交。',
+        cardDetail: '上传凭证失效，请重试',
         cardColor: AppColors.warning,
         cardIcon: Icons.vpn_key_off_rounded,
         actionLabel: '立即重试',
@@ -162,13 +160,13 @@ ChatDeliveryStatusSpec? resolveChatDeliveryStatus(
 
     if (failureState == ChatDeliveryFailureState.imageUploadFileTooLarge) {
       return const ChatDeliveryStatusSpec(
-        previewText: '图片过大，请重新选图',
+        previewText: '图片过大，需重选',
         previewColor: AppColors.warning,
         badgeLabel: '图片过大',
         badgeColor: AppColors.warning,
         badgeIcon: Icons.photo_size_select_large_rounded,
         cardLabel: '图片过大',
-        cardDetail: '当前图片已超过上传大小限制，建议更换更小的图片或使用压缩图后再发送。',
+        cardDetail: '图片超过大小限制，请换一张再发。',
         cardColor: AppColors.warning,
         cardIcon: Icons.photo_size_select_large_rounded,
         actionLabel: '查看说明',
@@ -179,13 +177,13 @@ ChatDeliveryStatusSpec? resolveChatDeliveryStatus(
 
     if (failureState == ChatDeliveryFailureState.imageUploadUnsupportedFormat) {
       return const ChatDeliveryStatusSpec(
-        previewText: '图片格式异常，请重新选图',
+        previewText: '格式异常，需重选',
         previewColor: AppColors.warning,
         badgeLabel: '格式异常',
         badgeColor: AppColors.warning,
         badgeIcon: Icons.broken_image_outlined,
         cardLabel: '格式异常',
-        cardDetail: '当前文件没有通过图片校验，请重新选择常见图片格式后再发送。',
+        cardDetail: '图片校验未通过，请换常见格式。',
         cardColor: AppColors.warning,
         cardIcon: Icons.broken_image_outlined,
         actionLabel: '查看说明',
@@ -197,14 +195,13 @@ ChatDeliveryStatusSpec? resolveChatDeliveryStatus(
 
     if (failureState == ChatDeliveryFailureState.networkIssue) {
       return ChatDeliveryStatusSpec(
-        previewText: isImage ? '网络波动，图片可稍后重试' : '网络波动，消息可稍后重试',
+        previewText: '网络异常，可重试',
         previewColor: AppColors.warning.withValues(alpha: 0.92),
         badgeLabel: '网络波动',
         badgeColor: AppColors.warning,
         badgeIcon: Icons.wifi_off_rounded,
         cardLabel: '网络波动',
-        cardDetail:
-            isImage ? '当前连接不稳定，建议检查网络后重新投递这张图片。' : '当前连接不稳定，建议检查网络后重新发送这条消息。',
+        cardDetail: '网络异常，请重试',
         cardColor: AppColors.warning,
         cardIcon: Icons.wifi_off_rounded,
         actionLabel: '立即重试',
@@ -214,15 +211,13 @@ ChatDeliveryStatusSpec? resolveChatDeliveryStatus(
 
     if (failureState == ChatDeliveryFailureState.retryUnavailable) {
       return ChatDeliveryStatusSpec(
-        previewText: '当前不可重试，请稍后确认会话状态',
+        previewText: '当前不可重试',
         previewColor: AppColors.warning.withValues(alpha: 0.92),
         badgeLabel: '暂不可重试',
         badgeColor: AppColors.warning,
         badgeIcon: Icons.block_outlined,
         cardLabel: '暂不可重试',
-        cardDetail: isImage
-            ? '这条图片消息当前不满足重试条件，建议先确认会话状态后再处理。'
-            : '这条消息当前不满足重试条件，建议先确认会话状态后再处理。',
+        cardDetail: '当前不可重试，请确认会话状态',
         cardColor: AppColors.warning,
         cardIcon: Icons.block_outlined,
       );
@@ -244,8 +239,8 @@ ChatDeliveryStatusSpec? resolveChatDeliveryStatus(
           needsReselect ? Icons.photo_library_outlined : Icons.error_outline,
       cardLabel: needsReselect ? '重选图片' : '发送失败',
       cardDetail: needsReselect
-          ? '原图失效，请重新选择图片'
-          : (isImage ? '点击重试后重新投递图片' : '点击重试后继续发送'),
+          ? '原图失效，请重选图片'
+          : (isImage ? '点击重试后重新发送图片' : '点击重试后继续发送'),
       cardColor: AppColors.error,
       cardIcon:
           needsReselect ? Icons.photo_library_outlined : Icons.error_outline,

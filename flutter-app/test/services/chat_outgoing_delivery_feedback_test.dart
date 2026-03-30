@@ -52,7 +52,8 @@ void main() {
     expect(resolution.feedback!.isError, isFalse);
   });
 
-  test('resolveOutgoingDeliveryFeedback emits retry success after recovery', () {
+  test('resolveOutgoingDeliveryFeedback emits retry success after recovery',
+      () {
     final failedSnapshot = captureOutgoingDeliverySnapshot([
       _buildMessage(id: 'outgoing-1', status: MessageStatus.failed),
     ]);
@@ -103,13 +104,15 @@ void main() {
     );
 
     expect(failedAgainResolution.feedback, isNotNull);
-    expect(failedAgainResolution.feedback!.message, '重试未成功，请稍后再试');
+    expect(failedAgainResolution.feedback!.message, '重试失败，请重试');
     expect(failedAgainResolution.feedback!.isError, isTrue);
   });
 
-  test('resolveOutgoingDeliveryFeedback prefers read confirmation over sent', () {
+  test('resolveOutgoingDeliveryFeedback prefers read confirmation over sent',
+      () {
     final previousSnapshot = captureOutgoingDeliverySnapshot([
-      _buildMessage(id: 'outgoing-1', status: MessageStatus.sending, isRead: false),
+      _buildMessage(
+          id: 'outgoing-1', status: MessageStatus.sending, isRead: false),
     ]);
 
     final resolution = resolveOutgoingDeliveryFeedback(

@@ -156,7 +156,7 @@ class _ChatDeliveryStatsDebugSheetState
               ),
               const SizedBox(height: 6),
               Text(
-                '仅在调试模式显示，用于观察发送成功率、失败率和最近一次状态流转。',
+                '仅调试可见。',
                 style: TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.w300,
@@ -351,7 +351,7 @@ class _ChatDeliveryStatsDebugSheetState
             children: [
               Expanded(
                 child: Text(
-                  '当前诊断结论',
+                  '诊断结论',
                   style: TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w500,
@@ -383,7 +383,7 @@ class _ChatDeliveryStatsDebugSheetState
           ),
           const SizedBox(height: 4),
           Text(
-            '原因说明：${summary.reason}',
+            '原因：${summary.reason}',
             style: TextStyle(
               fontSize: 12,
               fontWeight: FontWeight.w400,
@@ -433,7 +433,7 @@ class _ChatDeliveryStatsDebugSheetState
           ),
           const SizedBox(height: 4),
           Text(
-            '保留最近 20 条发送事件，可按失败、重试和图片快速筛查。',
+            '保留最近 20 条轨迹。',
             style: TextStyle(
               fontSize: 12,
               fontWeight: FontWeight.w300,
@@ -999,26 +999,26 @@ class _ChatDeliveryStatsDebugSheetState
   String _deliveryGroupLatestStatusLabel(ChatDeliveryStatEvent event) {
     switch (_resolveDeliveryEventLevel(event)) {
       case _DeliveryEventLevelFilter.recovered:
-        return '最新状态：已恢复送达';
+        return '状态：已恢复送达';
       case _DeliveryEventLevelFilter.blocked:
-        return '最新状态：发送阻断';
+        return '状态：发送阻断';
       case _DeliveryEventLevelFilter.reselect:
-        return '最新状态：需重新选图';
+        return '状态：需重新选图';
       case _DeliveryEventLevelFilter.all:
-        return '最新状态：常规记录';
+        return '状态：常规记录';
     }
   }
 
   String _deliveryGroupRecommendedActionLabel(ChatDeliveryStatEvent event) {
     switch (_resolveDeliveryEventLevel(event)) {
       case _DeliveryEventLevelFilter.recovered:
-        return '建议：已恢复送达，无需处理';
+        return '已恢复送达，无需处理';
       case _DeliveryEventLevelFilter.blocked:
-        return '建议：稍后重试或检查网络';
+        return '稍后重试或检查网络';
       case _DeliveryEventLevelFilter.reselect:
-        return '建议：重新选择图片后再发送';
+        return '重新选图后再发送';
       case _DeliveryEventLevelFilter.all:
-        return '建议：继续观察后续状态';
+        return '继续观察';
     }
   }
 
@@ -1127,7 +1127,7 @@ class _ChatDeliveryStatsDebugSheetState
       return '暂无最近发送轨迹';
     }
     if (totalEvents == 0) {
-      return '统计已保留，但最近还没有新的轨迹记录';
+      return '统计已保留，最近还没有新轨迹';
     }
     if (selectedViewMode == _DeliveryTimelineViewMode.recentAnomalies) {
       return '当前条件下暂无最近异常轨迹';
@@ -1207,11 +1207,11 @@ class _ChatDeliveryStatsDebugSheetState
         '当前筛选：${_deliveryTimelineFilterLabel(_selectedFilter)} / ${_deliveryLevelFilterLabel(_selectedLevelFilter)} / ${_deliverySortModeLabel(_selectedSortMode)} / ${_deliveryViewModeLabel(_selectedViewMode)}',
       )
       ..writeln('')
-      ..writeln('当前结论')
+      ..writeln('诊断结论')
       ..writeln('- ${diagnosticSummary.headline}')
-      ..writeln('- 处理状态：${diagnosticSummary.actionLabel}')
-      ..writeln('- ${diagnosticSummary.actionDetail}')
-      ..writeln('- 原因说明：${diagnosticSummary.reason}')
+      ..writeln('- 建议：${diagnosticSummary.actionLabel}')
+      ..writeln('- 状态：${diagnosticSummary.actionDetail}')
+      ..writeln('- 原因：${diagnosticSummary.reason}')
       ..writeln('- ${diagnosticSummary.detail}')
       ..writeln('')
       ..writeln('统计概览');
@@ -1247,7 +1247,7 @@ class _ChatDeliveryStatsDebugSheetState
       for (var index = 0; index < groupedEvents.length; index++) {
         final group = groupedEvents[index];
         buffer.writeln(
-          '${index + 1}. ${group.familyLabel}｜${group.summaryLabel}｜${group.latestStatusLabel.replaceFirst('最新状态：', '')}｜${group.recommendedActionLabel.replaceFirst('建议：', '')}',
+          '${index + 1}. ${group.familyLabel}｜${group.summaryLabel}｜${group.latestStatusLabel.replaceFirst('状态：', '')}｜${group.recommendedActionLabel}',
         );
       }
       return buffer.toString().trimRight();
@@ -1279,9 +1279,9 @@ class _ChatDeliveryStatsDebugSheetState
   }) {
     if (!hasData) {
       return const _DeliveryDiagnosticSummary(
-        headline: '当前没有可诊断的发送数据',
-        reason: '最近还没有形成有效的发送反馈样本。',
-        detail: '面板会在出现发送、失败、重试或重选图片后生成诊断结论。',
+        headline: '当前没有可诊断数据',
+        reason: '最近还没有形成有效样本。',
+        detail: '有新轨迹后，这里会生成结论。',
         actionLabel: '等待数据',
         actionDetail: '当前还没有可分诊的异常轨迹。',
         accent: AppColors.textSecondary,
@@ -1291,7 +1291,7 @@ class _ChatDeliveryStatsDebugSheetState
     if (totalEvents == 0 || visibleEvents.isEmpty) {
       return _DeliveryDiagnosticSummary(
         headline: '当前筛选下没有命中轨迹',
-        reason: '当前筛选条件没有覆盖到可展示的发送事件。',
+        reason: '当前筛选没有命中可展示事件。',
         detail: _deliveryTimelineEmptyText(
           hasData: hasData,
           selectedFilter: _selectedFilter,
@@ -1300,7 +1300,7 @@ class _ChatDeliveryStatsDebugSheetState
           totalEvents: totalEvents,
         ),
         actionLabel: '调整筛选',
-        actionDetail: '当前筛选没有命中需要处理的发送轨迹。',
+        actionDetail: '当前筛选没有命中需处理轨迹。',
         accent: AppColors.textSecondary,
       );
     }
@@ -1310,10 +1310,10 @@ class _ChatDeliveryStatsDebugSheetState
       final focusEvent = focusGroup.events.first;
       return _DeliveryDiagnosticSummary(
         headline:
-            '最值得处理：${focusGroup.familyLabel}${focusGroup.latestStatusLabel.replaceFirst('最新状态：', '')}',
+            '优先处理：${focusGroup.familyLabel}${focusGroup.latestStatusLabel.replaceFirst('状态：', '')}',
         reason:
             _diagnosticReasonForLevel(_resolveDeliveryEventLevel(focusEvent)),
-        detail: focusGroup.recommendedActionLabel.replaceFirst('建议：', '处理建议：'),
+        detail: _diagnosticDetailForGroup(focusGroup),
         actionLabel: _diagnosticActionLabelForLevel(
           _resolveDeliveryEventLevel(focusEvent),
         ),
@@ -1334,16 +1334,16 @@ class _ChatDeliveryStatsDebugSheetState
     final topEvent = prioritizedEvents.first;
     final level = _resolveDeliveryEventLevel(topEvent);
     final headline = switch (level) {
-      _DeliveryEventLevelFilter.reselect => '最值得处理：图片需重新选择',
-      _DeliveryEventLevelFilter.blocked => '最值得处理：发送阻断待恢复',
-      _DeliveryEventLevelFilter.recovered => '最近出现重试恢复成功',
-      _DeliveryEventLevelFilter.all => '当前以常规发送轨迹为主',
+      _DeliveryEventLevelFilter.reselect => '优先处理：图片需重选',
+      _DeliveryEventLevelFilter.blocked => '优先处理：发送待恢复',
+      _DeliveryEventLevelFilter.recovered => '最近已恢复送达',
+      _DeliveryEventLevelFilter.all => '当前以常规发送为主',
     };
     final detail = switch (level) {
-      _DeliveryEventLevelFilter.reselect => '处理建议：原图已失效，建议重新选择图片后再发送。',
-      _DeliveryEventLevelFilter.blocked => '处理建议：优先检查网络或稍后重试，避免连续失败。',
-      _DeliveryEventLevelFilter.recovered => '处理建议：当前链路已恢复，可继续观察是否再次失败。',
-      _DeliveryEventLevelFilter.all => '处理建议：暂无阻断异常，建议继续观察后续发送表现。',
+      _DeliveryEventLevelFilter.reselect => '重新选图后再发送',
+      _DeliveryEventLevelFilter.blocked => '先检查网络或稍后重试',
+      _DeliveryEventLevelFilter.recovered => '已恢复送达，继续观察',
+      _DeliveryEventLevelFilter.all => '暂无阻断异常，继续观察',
     };
     return _DeliveryDiagnosticSummary(
       headline: headline,
@@ -1371,30 +1371,41 @@ class _ChatDeliveryStatsDebugSheetState
   String _diagnosticReasonForLevel(_DeliveryEventLevelFilter level) {
     switch (level) {
       case _DeliveryEventLevelFilter.reselect:
-        return '原图资源已经失效，原消息无法直接恢复发送。';
+        return '原图资源已失效，原消息无法直接恢复。';
       case _DeliveryEventLevelFilter.blocked:
         return '消息停在失败阻断态，通常与网络或投递失败有关。';
       case _DeliveryEventLevelFilter.recovered:
-        return '最近一次异常已经通过重试恢复，当前链路重新回到可用状态。';
+        return '最近一次异常已恢复，当前链路重新可用。';
       case _DeliveryEventLevelFilter.all:
-        return '最近以常规发送记录为主，没有更高优先级的异常浮现。';
+        return '最近以常规发送记录为主，没有更高优先级异常。';
     }
   }
 
   String _diagnosticActionDetailForEvent(ChatDeliveryStatEvent event) {
     switch (event.code) {
       case ChatDeliveryStatsService.imageReselectRequiredKey:
-        return '处理状态说明：原图已失效，本次需要改为重新选图。';
+        return '原图已失效，需要重选。';
       case ChatDeliveryStatsService.retriesFailedKey:
-        return '处理状态说明：最近一次重试仍未送达，优先排查网络波动。';
+        return '最近一次重试仍未送达。';
       case ChatDeliveryStatsService.imageFailedKey:
-        return '处理状态说明：图片发送仍处于阻断态，可先检查网络再决定是否重试。';
+        return '图片发送仍处于阻断。';
       case ChatDeliveryStatsService.textFailedKey:
-        return '处理状态说明：当前是普通发送阻断，可先检查网络后再重试。';
+        return '当前发送仍处于阻断。';
       case ChatDeliveryStatsService.retriesSucceededKey:
-        return '处理状态说明：最近一次重试已经恢复送达，暂时无需处理。';
+        return '最近一次重试已恢复送达。';
       default:
-        return '处理状态说明：当前没有更高优先级异常，继续观察即可。';
+        return '当前没有更高优先级异常。';
+    }
+  }
+
+  String _diagnosticDetailForGroup(_DeliveryTimelineGroup group) {
+    switch (group.actionPriority) {
+      case _DeliveryTimelineActionPriority.needsAction:
+        return '异常集中在${group.familyLabel}，共${group.summaryLabel}。';
+      case _DeliveryTimelineActionPriority.monitoring:
+        return '当前主要是${group.familyLabel}常规发送，共${group.summaryLabel}。';
+      case _DeliveryTimelineActionPriority.resolved:
+        return '异常已在${group.familyLabel}恢复，共${group.summaryLabel}。';
     }
   }
 }

@@ -65,7 +65,7 @@ void main() {
   });
 
   testWidgets(
-      'match tab should show actionable failure guidance when match service is unavailable',
+      'match tab should reveal failure guidance when match service is unavailable',
       (tester) async {
     tester.view.physicalSize = const Size(430, 960);
     tester.view.devicePixelRatio = 1.0;
@@ -98,7 +98,8 @@ void main() {
     );
     await tester.pump();
 
-    expect(find.byKey(const Key('match-guide-card')), findsOneWidget);
+    expect(find.byKey(const Key('match-guide-card')), findsNothing);
+    expect(find.byKey(const Key('match-status-chip')), findsOneWidget);
     expect(find.byKey(const Key('match-primary-action')), findsOneWidget);
 
     await tester.ensureVisible(find.byKey(const Key('match-primary-action')));
@@ -107,9 +108,10 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 200));
 
-    expect(find.text('当前环境还没有可用匹配对象，请先完成联调配置。'), findsWidgets);
-    expect(find.textContaining('建议先检查当前服务环境是否可用'), findsOneWidget);
-    expect(find.textContaining('准备好后可再次点击开始匹配'), findsOneWidget);
+    expect(find.byKey(const Key('match-guide-card')), findsOneWidget);
+    expect(find.text('当前暂无合适对象，请稍后再试。'), findsWidgets);
+    expect(find.textContaining('先检查服务状态'), findsOneWidget);
+    expect(find.textContaining('准备好后再开始匹配'), findsOneWidget);
 
     await _disposeHost(
       tester,
@@ -153,6 +155,7 @@ void main() {
     await tester.pump();
 
     expect(find.byKey(const Key('match-status-chip')), findsOneWidget);
+    expect(find.byKey(const Key('match-guide-card')), findsNothing);
     expect(find.byKey(const Key('match-primary-action')), findsOneWidget);
 
     final buttonRect =
@@ -228,6 +231,68 @@ void main() {
         tester.getRect(find.byKey(const Key('match-result-actions')));
     expect(actionsRect.bottom, lessThanOrEqualTo(640));
     expect(tester.takeException(), isNull);
+
+    await _disposeHost(
+      tester,
+      matchProvider,
+      chatProvider,
+      friendProvider,
+    );
+  });
+
+  testWidgets('match tab should render remote avatar image when available',
+      (tester) async {
+    final matchProvider = MatchProvider(
+      matchService: _FakeMatchService(
+        startMatchHandler: (_) async => MatchStartAttempt.success(
+          MatchResult(
+            matchId: 'match-remote-avatar',
+            threadId: 'thread-remote-avatar',
+            user: User(
+              id: 'u_match_remote_avatar',
+              uid: 'SNF0A398',
+              nickname: 'Remote Avatar Match',
+              avatar: 'avatar/u_match_remote_avatar/profile.jpg',
+              distance: '3km',
+              status: 'ready to chat',
+              isOnline: true,
+              hasLocationPermission: true,
+            ),
+            remaining: 19,
+            createdAt: DateTime(2026, 3, 18, 10),
+            expiresAt: DateTime(2026, 3, 19, 10),
+          ),
+        ),
+      ),
+      allowMockFallback: false,
+    );
+    final chatProvider = ChatProvider(
+      enableRealtime: false,
+      enableRemoteHydration: false,
+    );
+    final friendProvider = FriendProvider(enableRemoteHydration: false);
+
+    await tester.pumpWidget(
+      _buildHost(
+        matchProvider: matchProvider,
+        chatProvider: chatProvider,
+        friendProvider: friendProvider,
+      ),
+    );
+    await tester.pump();
+
+    await tester.tap(find.byKey(const Key('match-primary-action')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 200));
+
+    expect(find.byKey(const Key('match-result-card')), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byKey(const Key('match-result-avatar')),
+        matching: find.byType(Image),
+      ),
+      findsOneWidget,
+    );
 
     await _disposeHost(
       tester,

@@ -221,7 +221,7 @@ class _ReportScreenState extends State<ReportScreen> {
           AppFeedback.showError(
             context,
             AppErrorCode.sendFailed,
-            detail: '提交过于频繁，请稍后再试',
+            detail: '提交频繁，请稍后重试',
           );
           break;
         case ReportSubmissionStatus.ignoredSelf:

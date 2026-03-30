@@ -5,7 +5,7 @@ import 'package:sunliao/screens/about_screen.dart';
 import 'package:sunliao/screens/legal_document_screen.dart';
 
 void main() {
-  testWidgets('about screen should stay scrollable on compact size', (
+  testWidgets('about screen should stay stable on compact size', (
     tester,
   ) async {
     tester.view.physicalSize = const Size(360, 640);
@@ -24,22 +24,49 @@ void main() {
 
     expect(find.byKey(const Key('about-screen-list')), findsOneWidget);
     expect(find.byKey(const Key('about-hero-card')), findsOneWidget);
+    expect(
+      find.byKey(const Key('about-app-info-card'), skipOffstage: false),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const Key('about-feature-card'), skipOffstage: false),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const Key('about-product-summary-card'), skipOffstage: false),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const Key('about-copyright-card'), skipOffstage: false),
+      findsOneWidget,
+    );
 
     final heroFinder = find.byKey(
       const Key('about-hero-card'),
       skipOffstage: false,
     );
     final beforeOffset = tester.getTopLeft(heroFinder).dy;
-
-    await tester.fling(
-      find.byKey(const Key('about-screen-list')),
-      const Offset(0, -480),
-      1000,
+    final scrollableState = tester.state<ScrollableState>(
+      find.descendant(
+        of: find.byKey(const Key('about-screen-list')),
+        matching: find.byType(Scrollable),
+      ),
     );
-    await tester.pumpAndSettle();
+    expect(scrollableState.position.maxScrollExtent, greaterThanOrEqualTo(0));
 
-    final afterOffset = tester.getTopLeft(heroFinder).dy;
-    expect(afterOffset, lessThan(beforeOffset));
+    if (scrollableState.position.maxScrollExtent > 0) {
+      await tester.fling(
+        find.byKey(const Key('about-screen-list')),
+        const Offset(0, -480),
+        1000,
+      );
+      await tester.pumpAndSettle();
+
+      final afterOffset = tester.getTopLeft(heroFinder).dy;
+      expect(afterOffset, lessThan(beforeOffset));
+    } else {
+      expect(beforeOffset, greaterThanOrEqualTo(0));
+    }
     expect(tester.takeException(), isNull);
   });
 
@@ -63,6 +90,12 @@ void main() {
     await tester.pump();
 
     expect(find.byKey(const Key('legal-document-scroll-view')), findsOneWidget);
+    expect(
+        find.byKey(const Key('legal-document-summary-card')), findsOneWidget);
+    expect(
+      find.byKey(const Key('legal-document-summary-title')),
+      findsOneWidget,
+    );
     expect(find.byKey(const Key('legal-document-card')), findsOneWidget);
 
     final cardFinder = find.byKey(

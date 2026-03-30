@@ -8,6 +8,7 @@ type UserRow = {
   phone: string;
   nickname: string;
   avatar_url: string | null;
+  background_url: string | null;
   signature: string;
   status: string;
   created_at: Date;
@@ -43,13 +44,14 @@ export class PostgresUserSettingsStore implements UserSettingsStore {
     await this.pool.query(
       `
       INSERT INTO users (
-        id, uid, phone, nickname, avatar_url, signature, status, created_at, updated_at
-      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+        id, uid, phone, nickname, avatar_url, background_url, signature, status, created_at, updated_at
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
       ON CONFLICT (id) DO UPDATE SET
         uid = EXCLUDED.uid,
         phone = EXCLUDED.phone,
         nickname = EXCLUDED.nickname,
         avatar_url = EXCLUDED.avatar_url,
+        background_url = EXCLUDED.background_url,
         signature = EXCLUDED.signature,
         status = EXCLUDED.status,
         updated_at = EXCLUDED.updated_at
@@ -60,6 +62,7 @@ export class PostgresUserSettingsStore implements UserSettingsStore {
         user.phone,
         user.nickname,
         user.avatarUrl ?? null,
+        user.backgroundUrl ?? null,
         user.signature,
         user.status,
         user.createdAt,
@@ -155,6 +158,7 @@ export class PostgresUserSettingsStore implements UserSettingsStore {
       phone: row.phone,
       nickname: row.nickname,
       avatarUrl: row.avatar_url ?? undefined,
+      backgroundUrl: row.background_url ?? undefined,
       signature: row.signature,
       status: row.status,
       createdAt: row.created_at.toISOString(),
@@ -162,4 +166,3 @@ export class PostgresUserSettingsStore implements UserSettingsStore {
     };
   }
 }
-

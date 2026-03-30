@@ -309,7 +309,11 @@ class ChatService {
   }
 
   String _mapAvatar(String? avatarUrl) {
-    return avatarUrl?.isNotEmpty == true ? '👤' : '👤';
+    final normalizedAvatar = avatarUrl?.trim();
+    if (normalizedAvatar == null || normalizedAvatar.isEmpty) {
+      return '👤';
+    }
+    return normalizedAvatar;
   }
 
   String getMockReply() {

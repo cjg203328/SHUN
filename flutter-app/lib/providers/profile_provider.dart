@@ -25,65 +25,103 @@ class ProfileProvider extends ChangeNotifier {
   bool get portraitFullscreenBackground => _portraitFullscreenBackground;
 
   Future<void> _loadProfile() async {
-    _applyProfile(_profileService.loadProfile());
-    notifyListeners();
+    _notifyIfChanged(_applyProfile(_profileService.loadProfile()));
 
     try {
       final profile = await _profileService.refreshProfile();
-      _applyProfile(profile);
-      notifyListeners();
+      _notifyIfChanged(_applyProfile(profile));
     } catch (_) {}
   }
 
   Future<void> refreshFromRemote() async {
-    final profile = await _profileService.refreshProfile();
-    _applyProfile(profile);
-    notifyListeners();
+    await refreshFromRemoteWithStatus();
   }
 
-  void _applyProfile(ProfileStateSnapshot profile) {
+  Future<ProfileRefreshResult> refreshFromRemoteWithStatus() async {
+    final result = await _profileService.refreshProfileWithStatus();
+    _notifyIfChanged(_applyProfile(result.snapshot));
+    return result;
+  }
+
+  bool _applyProfile(ProfileStateSnapshot profile) {
+    final didChange = _nickname != profile.nickname ||
+        _avatar != profile.avatar ||
+        _status != profile.status ||
+        _signature != profile.signature ||
+        _transparentHomepage != profile.transparentHomepage ||
+        _portraitFullscreenBackground != profile.portraitFullscreenBackground;
+
+    if (!didChange) {
+      return false;
+    }
+
     _nickname = profile.nickname;
     _avatar = profile.avatar;
     _status = profile.status;
     _signature = profile.signature;
     _transparentHomepage = profile.transparentHomepage;
     _portraitFullscreenBackground = profile.portraitFullscreenBackground;
+    return true;
+  }
+
+  void _notifyIfChanged(bool didChange) {
+    if (didChange) {
+      notifyListeners();
+    }
   }
 
   Future<void> updateNickname(String nickname) async {
     final profile = await _profileService.saveNickname(nickname);
-    _applyProfile(profile);
-    notifyListeners();
+    _notifyIfChanged(_applyProfile(profile));
+  }
+
+  Future<ProfileSaveResult> updateNicknameWithStatus(String nickname) async {
+    final result = await _profileService.saveNicknameWithStatus(nickname);
+    _notifyIfChanged(_applyProfile(result.snapshot));
+    return result;
   }
 
   Future<void> updateAvatar(String avatar) async {
+    if (_avatar == avatar) {
+      return;
+    }
+
     _avatar = avatar;
-    await _profileService.saveAvatar(avatar);
     notifyListeners();
+    await _profileService.saveAvatar(avatar);
   }
 
   Future<void> updateStatus(String status) async {
     final profile = await _profileService.saveStatus(status);
-    _applyProfile(profile);
-    notifyListeners();
+    _notifyIfChanged(_applyProfile(profile));
+  }
+
+  Future<ProfileSaveResult> updateStatusWithStatus(String status) async {
+    final result = await _profileService.saveStatusWithStatus(status);
+    _notifyIfChanged(_applyProfile(result.snapshot));
+    return result;
   }
 
   Future<void> updateSignature(String signature) async {
     final profile = await _profileService.saveSignature(signature);
-    _applyProfile(profile);
-    notifyListeners();
+    _notifyIfChanged(_applyProfile(profile));
+  }
+
+  Future<ProfileSaveResult> updateSignatureWithStatus(String signature) async {
+    final result = await _profileService.saveSignatureWithStatus(signature);
+    _notifyIfChanged(_applyProfile(result.snapshot));
+    return result;
   }
 
   Future<void> updateTransparentHomepage(bool enabled) async {
     final normalized = _portraitFullscreenBackground ? enabled : false;
     final profile = await _profileService.saveTransparentHomepage(normalized);
-    _applyProfile(profile);
-    notifyListeners();
+    _notifyIfChanged(_applyProfile(profile));
   }
 
   Future<void> updatePortraitFullscreenBackground(bool enabled) async {
-    final profile = await _profileService.savePortraitFullscreenBackground(enabled);
-    _applyProfile(profile);
-    notifyListeners();
+    final profile =
+        await _profileService.savePortraitFullscreenBackground(enabled);
+    _notifyIfChanged(_applyProfile(profile));
   }
 }

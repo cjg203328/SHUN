@@ -187,11 +187,11 @@ class MatchProvider extends ChangeNotifier {
   String _resolveMatchFailureMessage(MatchStartAttempt attempt) {
     switch (attempt.errorCode) {
       case 'MATCH_UNAVAILABLE':
-        return '当前环境还没有可用匹配对象，请先完成联调配置。';
+        return '当前暂无合适对象，请稍后再试。';
       case 'MATCH_SESSION_MISSING':
-        return '登录状态已失效，请重新进入后再试。';
+        return '登录状态已失效，请重新进入。';
       default:
-        return attempt.errorMessage ?? '匹配暂时不可用，请稍后重试。';
+        return attempt.errorMessage ?? '匹配暂不可用，请重试。';
     }
   }
 

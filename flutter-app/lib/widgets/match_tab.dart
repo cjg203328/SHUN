@@ -10,6 +10,7 @@ import '../providers/friend_provider.dart';
 import '../models/models.dart';
 import '../core/feedback/app_feedback.dart';
 import '../utils/permission_manager.dart';
+import 'app_user_avatar.dart';
 
 class MatchTab extends StatefulWidget {
   const MatchTab({super.key});
@@ -392,6 +393,8 @@ class _MatchTabState extends State<MatchTab>
           return LayoutBuilder(
             builder: (context, constraints) {
               final layout = _MatchLayoutSpec.fromConstraints(constraints);
+              final shouldShowGuideCard =
+                  _shouldShowMatchingGuide(matchProvider);
               return SingleChildScrollView(
                 padding: EdgeInsets.symmetric(
                   horizontal: layout.horizontalPadding,
@@ -412,11 +415,20 @@ class _MatchTabState extends State<MatchTab>
                       // 顶部情感化文案 + 次数显示
                       _buildHeader(matchProvider, layout),
 
-                      SizedBox(height: layout.headerToGuideSpacing),
+                      SizedBox(
+                        height: shouldShowGuideCard
+                            ? layout.headerToGuideSpacing
+                            : (layout.isCompact ? 10 : 14),
+                      ),
 
-                      _buildMatchingGuide(matchProvider, layout),
+                      if (shouldShowGuideCard)
+                        _buildMatchingGuide(matchProvider, layout),
 
-                      SizedBox(height: layout.guideToOrbSpacing),
+                      SizedBox(
+                        height: shouldShowGuideCard
+                            ? layout.guideToOrbSpacing
+                            : (layout.isCompact ? 18 : 28),
+                      ),
 
                       // 光球
                       _buildMatchOrb(matchProvider, layout),
@@ -538,8 +550,8 @@ class _MatchTabState extends State<MatchTab>
       label = '未开位置也能继续匹配';
       tint = AppColors.textSecondary.withValues(alpha: 0.9);
     } else {
-      icon = Icons.auto_awesome_outlined;
-      label = '先发第一句，回复率更高';
+      icon = Icons.play_arrow_rounded;
+      label = '可开始匹配';
       tint = AppColors.textPrimary.withValues(alpha: 0.92);
     }
 
@@ -591,6 +603,16 @@ class _MatchTabState extends State<MatchTab>
     );
   }
 
+  bool _shouldShowMatchingGuide(MatchProvider provider) {
+    final failureMessage = provider.lastFailureMessage;
+    final hasFailureMessage =
+        failureMessage != null && failureMessage.trim().isNotEmpty;
+    return _isPreparingMatch ||
+        provider.isMatching ||
+        provider.matchCount <= 0 ||
+        hasFailureMessage;
+  }
+
   Widget _buildMatchingGuide(MatchProvider provider, _MatchLayoutSpec layout) {
     final failureMessage = provider.lastFailureMessage;
     final isFailureState = !provider.isMatching &&
@@ -604,8 +626,8 @@ class _MatchTabState extends State<MatchTab>
             : isFailureState
                 ? <String>[
                     failureMessage,
-                    '建议先检查当前服务环境是否可用',
-                    '准备好后可再次点击开始匹配',
+                    '先检查服务状态',
+                    '准备好后再开始匹配',
                   ]
                 : const ['点击下方开始匹配', '匹配成功后先发一句话', '回复率会更高'];
 
@@ -898,6 +920,7 @@ class _MatchTabState extends State<MatchTab>
                                 Stack(
                                   children: [
                                     Container(
+                                      key: const Key('match-result-avatar'),
                                       width: isCompact ? 74 : 80,
                                       height: isCompact ? 74 : 80,
                                       decoration: BoxDecoration(
@@ -911,12 +934,10 @@ class _MatchTabState extends State<MatchTab>
                                           width: 2,
                                         ),
                                       ),
-                                      child: Center(
-                                        child: Text(
-                                          user.avatar ?? '馃懁',
-                                          style: TextStyle(
-                                            fontSize: isCompact ? 36 : 40,
-                                          ),
+                                      child: AppUserAvatar(
+                                        avatar: user.avatar,
+                                        textStyle: TextStyle(
+                                          fontSize: isCompact ? 36 : 40,
                                         ),
                                       ),
                                     ),
@@ -1123,6 +1144,7 @@ class _MatchTabState extends State<MatchTab>
                 Stack(
                   children: [
                     Container(
+                      key: const Key('match-result-avatar'),
                       width: 80,
                       height: 80,
                       decoration: BoxDecoration(
@@ -1135,11 +1157,9 @@ class _MatchTabState extends State<MatchTab>
                           width: 2,
                         ),
                       ),
-                      child: Center(
-                        child: Text(
-                          user.avatar ?? '👤',
-                          style: const TextStyle(fontSize: 40),
-                        ),
+                      child: AppUserAvatar(
+                        avatar: user.avatar,
+                        textStyle: TextStyle(fontSize: 40),
                       ),
                     ),
                     // 在线绿点
@@ -1261,7 +1281,7 @@ class _MatchTabState extends State<MatchTab>
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const Text(
-          '先发一句轻松的开场白',
+          '发一句招呼',
           style: TextStyle(
             fontSize: 15,
             fontWeight: FontWeight.w300,
@@ -1269,17 +1289,7 @@ class _MatchTabState extends State<MatchTab>
             letterSpacing: 1,
           ),
         ),
-        const SizedBox(height: 6),
-        Text(
-          user.isOnline ? '对方现在在线，简短一点更容易立刻收到回复。' : '先留下一句舒服的话，等 TA 回来时会第一眼看到。',
-          style: TextStyle(
-            fontSize: 12,
-            fontWeight: FontWeight.w300,
-            color: AppColors.textTertiary.withValues(alpha: 0.9),
-            height: 1.45,
-          ),
-        ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 14),
         if (_greetingController.text.isEmpty)
           Wrap(
             spacing: 8,
@@ -1318,42 +1328,12 @@ class _MatchTabState extends State<MatchTab>
           ),
         if (_selectedQuickGreeting == null) ...[
           const SizedBox(height: 12),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-            decoration: BoxDecoration(
-              color: AppColors.white05,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: AppColors.white08),
-            ),
-            child: Row(
-              children: [
-                const Icon(
-                  Icons.lightbulb_outline,
-                  size: 16,
-                  color: AppColors.textTertiary,
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    '建议别太正式，像“嗨，今天过得怎么样”这种最自然。',
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w300,
-                      color: AppColors.textTertiary.withValues(alpha: 0.92),
-                      height: 1.4,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 12),
           TextField(
             controller: _greetingController,
             maxLength: 25,
             maxLines: 2,
             decoration: InputDecoration(
-              hintText: '或者自己写一句更像你的开场白...',
+              hintText: '也可以自己写一句',
               hintStyle: const TextStyle(
                 fontSize: 13,
                 color: AppColors.textTertiary,
@@ -1607,7 +1587,7 @@ class _MatchTabState extends State<MatchTab>
 
   Widget _buildMatchButton(MatchProvider provider, _MatchLayoutSpec layout) {
     String buttonText;
-    String helperText;
+    String? helperText;
     final bool isIdle =
         !_isPreparingMatch && !provider.isMatching && provider.matchCount > 0;
 
@@ -1622,11 +1602,8 @@ class _MatchTabState extends State<MatchTab>
       helperText = '明日 9:00 自动恢复';
     } else {
       buttonText = '开始匹配';
-      helperText = '先发一句，回复率更高';
+      helperText = null;
     }
-
-    final showLocationTip =
-        PermissionManager.getSessionLocationPermission() == false;
 
     return Column(
       children: [
@@ -1720,22 +1697,24 @@ class _MatchTabState extends State<MatchTab>
             ),
           ),
         ),
-        SizedBox(height: layout.buttonToHelperSpacing),
-        AnimatedSwitcher(
-          duration: const Duration(milliseconds: 200),
-          child: Text(
-            showLocationTip && isIdle ? '未开启位置也可以匹配 · $helperText' : helperText,
-            key: ValueKey(helperText),
-            style: TextStyle(
-              fontSize: layout.helperTextSize,
-              fontWeight: FontWeight.w300,
-              color: AppColors.textTertiary.withValues(alpha: 0.75),
-              height: 1.45,
-              letterSpacing: 0.3,
+        if (helperText != null) ...[
+          SizedBox(height: layout.buttonToHelperSpacing),
+          AnimatedSwitcher(
+            duration: const Duration(milliseconds: 200),
+            child: Text(
+              helperText,
+              key: ValueKey(helperText),
+              style: TextStyle(
+                fontSize: layout.helperTextSize,
+                fontWeight: FontWeight.w300,
+                color: AppColors.textTertiary.withValues(alpha: 0.75),
+                height: 1.45,
+                letterSpacing: 0.3,
+              ),
+              textAlign: TextAlign.center,
             ),
-            textAlign: TextAlign.center,
           ),
-        ),
+        ],
       ],
     );
   }
@@ -1817,9 +1796,7 @@ class _MatchTabState extends State<MatchTab>
   }
 
   Widget _buildMatchedUserHint(User user) {
-    final hint = user.isOnline
-        ? '对方现在在线，建议直接发一句轻松的开场白，通常更容易接上话。'
-        : '对方当前不在线，留一句自然一点的话，回来后会先看到你的消息。';
+    final hint = user.isOnline ? 'TA 在线，适合直接发消息。' : 'TA 当前不在线，消息会先留在这里。';
 
     return Container(
       width: double.infinity,

@@ -61,6 +61,10 @@
 - 当前常用命令：
   - `D:\flutter_windows_3.27.1-stable\flutter\bin\flutter.bat analyze`
   - `D:\flutter_windows_3.27.1-stable\flutter\bin\flutter.bat test --reporter expanded`
+- 重要运行备注：
+  - 当前仓库里 `flutter` 命令存在已知“沙箱内假死”风险，根因是 SDK 在工作区外且会写 `bin\cache\lockfile`
+  - 任何 `flutter test / analyze / build` 若长时间无输出，默认先查残留 `dart/flutter` 进程，再切到沙箱外执行
+  - 详细快排见 `ENVIRONMENT_SETUP.md` 的“Flutter 命令假死快排”
 - 环境分层和构建方式详见：
   - `ENVIRONMENT_SETUP.md`
   - `RELEASE_CHECKLIST.md`

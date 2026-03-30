@@ -153,7 +153,11 @@ class ImageUploadService {
 
     if (!hasPermission) {
       if (context.mounted) {
-        AppFeedback.showError(context, AppErrorCode.permissionDenied);
+        AppFeedback.showError(
+          context,
+          AppErrorCode.permissionDenied,
+          detail: '未开启图片权限，请先授权',
+        );
       }
       return null;
     }
@@ -179,7 +183,11 @@ class ImageUploadService {
     } catch (e) {
       debugPrint('选择头像失败: $e');
       if (context.mounted) {
-        AppFeedback.showError(context, AppErrorCode.unknown);
+        AppFeedback.showError(
+          context,
+          AppErrorCode.unknown,
+          detail: '头像选择失败，请重试',
+        );
       }
       return null;
     }
@@ -212,7 +220,11 @@ class ImageUploadService {
 
     if (!hasPermission) {
       if (context.mounted) {
-        AppFeedback.showError(context, AppErrorCode.permissionDenied);
+        AppFeedback.showError(
+          context,
+          AppErrorCode.permissionDenied,
+          detail: '未开启图片权限，请先授权',
+        );
       }
       return null;
     }
@@ -239,7 +251,11 @@ class ImageUploadService {
     } catch (e) {
       debugPrint('选择背景失败: $e');
       if (context.mounted) {
-        AppFeedback.showError(context, AppErrorCode.unknown);
+        AppFeedback.showError(
+          context,
+          AppErrorCode.unknown,
+          detail: '背景选择失败，请重试',
+        );
       }
       return null;
     }

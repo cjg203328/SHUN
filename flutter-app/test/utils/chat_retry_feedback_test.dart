@@ -10,14 +10,14 @@ void main() {
         ChatDeliveryFailureState.retryable,
         isImage: false,
       ),
-      '消息发送失败，请检查网络后立即重试。',
+      '消息发送失败，请重试',
     );
     expect(
       deliveryRetryErrorDetailFor(
         ChatDeliveryFailureState.retryable,
         isImage: true,
       ),
-      '图片发送失败，请检查网络后立即重试。',
+      '图片发送失败，请重试',
     );
   });
 

@@ -19,6 +19,7 @@ import 'package:sunliao/services/image_upload_service.dart';
 import 'package:sunliao/services/media_upload_service.dart';
 import 'package:sunliao/services/push_notification_service.dart';
 import 'package:sunliao/services/storage_service.dart';
+import 'package:sunliao/widgets/chat_delivery_debug_sheet.dart';
 import 'package:sunliao/config/app_env.dart';
 
 import '../helpers/test_bootstrap.dart';
@@ -81,10 +82,44 @@ class _FakeMediaUploadService extends MediaUploadService {
     }
     return imageFile.path;
   }
+
+  @override
+  Future<UserMediaUploadResult> uploadUserMediaWithStatus(
+    String type,
+    File imageFile,
+  ) async {
+    final mediaRef = await uploadUserMedia(type, imageFile);
+    final remoteSucceeded = mediaRef != imageFile.path;
+    return UserMediaUploadResult(
+      mediaRef: mediaRef,
+      remoteAttempted: remoteSucceeded,
+      remoteSucceeded: remoteSucceeded,
+    );
+  }
 }
 
 void main() {
   String? clipboardText;
+
+  Future<void> revealInSettingsList(
+    WidgetTester tester,
+    Finder target, {
+    double step = 220,
+    int maxScrolls = 12,
+    bool reverse = false,
+  }) async {
+    final scrollable = find.byType(Scrollable).first;
+    for (var index = 0;
+        index < maxScrolls && target.evaluate().isEmpty;
+        index++) {
+      await tester.drag(scrollable, Offset(0, reverse ? step : -step));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+    }
+    expect(target, findsOneWidget);
+    await tester.ensureVisible(target);
+    await tester.pumpAndSettle();
+  }
 
   setUp(() async {
     await initTestAppStorage();
@@ -220,8 +255,8 @@ void main() {
       await tester.pump();
       await tester.fling(find.byType(ListView), const Offset(0, -2000), 3000);
       await tester.pump(const Duration(milliseconds: 300));
-      await tester.longPress(
-        find.byKey(const ValueKey<String>('settings-debug-version-trigger')),
+      showChatDeliveryStatsDebugSheet(
+        tester.element(find.byType(SettingsScreen)),
       );
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));
@@ -244,10 +279,10 @@ void main() {
       expect(find.text('阻断'), findsOneWidget);
       expect(find.text('重选'), findsOneWidget);
       expect(find.text('常规'), findsOneWidget);
-      expect(find.text('当前诊断结论'), findsOneWidget);
-      expect(find.text('最值得处理：图片需重新选择'), findsOneWidget);
-      expect(find.text('处理状态说明：原图已失效，本次需要改为重新选图。'), findsOneWidget);
-      expect(find.text('处理建议：原图已失效，建议重新选择图片后再发送。'), findsOneWidget);
+      expect(find.text('诊断结论'), findsOneWidget);
+      expect(find.text('优先处理：图片需重选'), findsOneWidget);
+      expect(find.text('原图已失效，需要重选。'), findsOneWidget);
+      expect(find.text('重新选图后再发送'), findsOneWidget);
       expect(find.text('建议重选图片'), findsOneWidget);
 
       final latestTextY = tester.getTopLeft(find.text('文本发送成功')).dy;
@@ -265,13 +300,13 @@ void main() {
       expect(find.text('已恢复'), findsOneWidget);
       expect(find.text('优先处理'), findsOneWidget);
       expect(find.text('2步'), findsOneWidget);
-      expect(find.textContaining('最新状态：需重新选图'), findsOneWidget);
-      expect(find.textContaining('最新状态：已恢复送达'), findsOneWidget);
-      expect(find.text('建议：重新选择图片后再发送'), findsOneWidget);
-      expect(find.text('建议：已恢复送达，无需处理'), findsOneWidget);
+      expect(find.textContaining('状态：需重新选图'), findsOneWidget);
+      expect(find.textContaining('状态：已恢复送达'), findsOneWidget);
+      expect(find.text('异常集中在图片链路，共2步。'), findsOneWidget);
+      expect(find.text('已恢复送达，无需处理'), findsOneWidget);
       expect(find.text('文本发送成功'), findsNothing);
-      expect(find.text('最值得处理：图片链路需重新选图'), findsOneWidget);
-      expect(find.text('处理建议：重新选择图片后再发送'), findsOneWidget);
+      expect(find.text('优先处理：图片链路需重新选图'), findsOneWidget);
+      expect(find.text('重新选图后再发送'), findsOneWidget);
       expect(find.text('建议重选图片'), findsWidgets);
 
       final pendingGroupY = tester.getTopLeft(find.text('图片链路')).dy;
@@ -285,11 +320,11 @@ void main() {
       await tester.pump(const Duration(milliseconds: 300));
 
       expect(clipboardText, contains('发送反馈统计'));
-      expect(clipboardText, contains('当前结论'));
-      expect(clipboardText, contains('最值得处理：图片链路需重新选图'));
-      expect(clipboardText, contains('处理状态：建议重选图片'));
-      expect(clipboardText, contains('处理状态说明：原图已失效，本次需要改为重新选图。'));
-      expect(clipboardText, contains('处理建议：重新选择图片后再发送'));
+      expect(clipboardText, contains('诊断结论'));
+      expect(clipboardText, contains('优先处理：图片链路需重新选图'));
+      expect(clipboardText, contains('建议：建议重选图片'));
+      expect(clipboardText, contains('状态：原图已失效，需要重选。'));
+      expect(clipboardText, contains('异常集中在图片链路，共2步。'));
       expect(clipboardText, contains('当前筛选：全部 / 全部级别 / 最新优先 / 最近异常'));
       expect(clipboardText, contains('图片链路｜2步｜需重新选图'));
       expect(clipboardText, contains('重试链路｜1步｜已恢复送达'));
@@ -434,15 +469,15 @@ void main() {
       await tester.pump();
       await tester.fling(find.byType(ListView), const Offset(0, -2000), 3000);
       await tester.pump(const Duration(milliseconds: 300));
-      await tester.longPress(
-        find.byKey(const ValueKey<String>('settings-debug-version-trigger')),
+      showChatDeliveryStatsDebugSheet(
+        tester.element(find.byType(SettingsScreen)),
       );
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));
 
-      expect(find.text('当前诊断结论'), findsOneWidget);
+      expect(find.text('诊断结论'), findsOneWidget);
       expect(find.text('建议检查网络'), findsOneWidget);
-      expect(find.text('处理状态说明：最近一次重试仍未送达，优先排查网络波动。'), findsOneWidget);
+      expect(find.text('最近一次重试仍未送达。'), findsOneWidget);
 
       await tester.tap(
         find.byKey(const ValueKey<String>('chat-delivery-copy-summary')),
@@ -450,8 +485,8 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));
 
-      expect(clipboardText, contains('处理状态：建议检查网络'));
-      expect(clipboardText, contains('处理状态说明：最近一次重试仍未送达，优先排查网络波动。'));
+      expect(clipboardText, contains('建议：建议检查网络'));
+      expect(clipboardText, contains('状态：最近一次重试仍未送达。'));
     },
   );
 
@@ -495,10 +530,6 @@ void main() {
         findsOneWidget,
       );
       expect(
-        find.byKey(const Key('settings-experience-preset-card')),
-        findsOneWidget,
-      );
-      expect(
         find.byKey(const Key('settings-device-status-notification')),
         findsOneWidget,
       );
@@ -522,6 +553,14 @@ void main() {
         find.byKey(const Key('settings-overview-notification-action')),
         findsOneWidget,
       );
+      await revealInSettingsList(
+        tester,
+        find.byKey(const Key('settings-experience-preset-card')),
+      );
+      expect(
+        find.byKey(const Key('settings-experience-preset-card')),
+        findsOneWidget,
+      );
       expect(
           find.byKey(const Key('settings-preset-responsive')), findsOneWidget);
       expect(find.byKey(const Key('settings-preset-balanced')), findsOneWidget);
@@ -532,12 +571,11 @@ void main() {
       final avatarManagementFinder = find.byKey(
         const Key('settings-avatar-management-item'),
       );
-      await tester.scrollUntilVisible(
+      await revealInSettingsList(
+        tester,
         avatarManagementFinder,
-        120,
-        scrollable: find.byType(Scrollable).first,
+        reverse: true,
       );
-      await tester.pumpAndSettle();
       expect(
         find.descendant(
           of: avatarManagementFinder,
@@ -566,7 +604,7 @@ void main() {
         tester
             .widget<Text>(find.byKey(const Key('settings-avatar-sheet-status')))
             .data,
-        '当前还在使用默认头像',
+        '正在使用默认头像',
       );
       expect(
         tester
@@ -574,7 +612,7 @@ void main() {
             .data,
         '待补充',
       );
-      expect(find.text('补一个头像'), findsOneWidget);
+      expect(find.text('上传头像'), findsOneWidget);
     },
   );
 
@@ -844,11 +882,18 @@ void main() {
             .data,
         '\u63d0\u9192\u5df2\u6536\u8d77',
       );
+
+      await tester.pump(const Duration(milliseconds: 2600));
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const Key('settings-inline-feedback-card')),
+        findsNothing,
+      );
     },
   );
 
   testWidgets(
-    'settings screen should apply experience preset from overview card',
+    'settings screen should apply experience preset from device mode card',
     (tester) async {
       final chatProvider = ChatProvider(
         enableRealtime: false,
@@ -881,8 +926,7 @@ void main() {
       final quietObservePreset = find.byKey(
         const Key('settings-preset-quiet-observe'),
       );
-      await tester.ensureVisible(quietObservePreset);
-      await tester.pumpAndSettle();
+      await revealInSettingsList(tester, quietObservePreset);
       await tester.tap(quietObservePreset, warnIfMissed: false);
       await tester.pump();
       await tester.pumpAndSettle();
@@ -921,12 +965,11 @@ void main() {
             .data,
         '\u5c55\u793a\u5df2\u6536\u8d77',
       );
-      await tester.scrollUntilVisible(
+      await revealInSettingsList(
+        tester,
         find.byKey(const Key('settings-invisible-mode-item')),
-        120,
-        scrollable: find.byType(Scrollable).first,
+        reverse: true,
       );
-      await tester.pumpAndSettle();
       expect(
         find.byKey(const Key('settings-invisible-mode-badge')),
         findsOneWidget,
@@ -939,7 +982,7 @@ void main() {
   );
 
   testWidgets(
-    'settings screen should ignore tapping active experience preset',
+    'settings screen should ignore tapping active experience preset in device mode card',
     (tester) async {
       final chatProvider = ChatProvider(
         enableRealtime: false,
@@ -977,8 +1020,7 @@ void main() {
       final responsivePreset = find.byKey(
         const Key('settings-preset-responsive'),
       );
-      await tester.ensureVisible(responsivePreset);
-      await tester.pumpAndSettle();
+      await revealInSettingsList(tester, responsivePreset);
       await tester.tap(responsivePreset, warnIfMissed: false);
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));
@@ -1032,7 +1074,7 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));
 
-      expect(find.text('系统通知权限还没打开'), findsOneWidget);
+      expect(find.text('系统通知未打开'), findsOneWidget);
       expect(
         find.byKey(const Key('settings-notification-runtime-card')),
         findsOneWidget,
@@ -1058,7 +1100,6 @@ void main() {
         findsOneWidget,
       );
       expect(find.text('去系统设置'), findsWidgets);
-      expect(find.text('通知待授权'), findsOneWidget);
     },
   );
 
@@ -1289,7 +1330,7 @@ void main() {
               ),
             )
             .data,
-        '通知中心还有 $unreadCount 条待查看提醒',
+        '还有 $unreadCount 条未读提醒',
       );
       expect(
         tester
@@ -1523,7 +1564,7 @@ void main() {
               find.byKey(const Key('settings-inline-feedback-badge')),
             )
             .data,
-        '\u53ef\u7528\u4e8e\u8054\u8c03',
+        '\u53ef\u590d\u5236',
       );
       expect(
         tester
@@ -1595,7 +1636,7 @@ void main() {
               find.byKey(const Key('settings-inline-feedback-badge')),
             )
             .data,
-        '\u7a0d\u540e\u518d\u8bd5',
+        '\u751f\u6210\u4e2d',
       );
     },
   );
@@ -1673,7 +1714,7 @@ void main() {
               find.byKey(const Key('settings-inline-feedback-description')),
             )
             .data,
-        contains('\u81ea\u52a8\u68c0\u67e5'),
+        contains('\u8fd4\u56de\u5e94\u7528'),
       );
       expect(
         find.byKey(const Key('settings-notification-runtime-card')),
@@ -1775,8 +1816,7 @@ void main() {
               find.byKey(const Key('settings-inline-feedback-description')),
             )
             .data,
-        contains(
-            '\u68c0\u6d4b\u5230\u7cfb\u7edf\u901a\u77e5\u6743\u9650\u5df2\u6062\u590d'),
+        contains('\u7cfb\u7edf\u901a\u77e5\u6743\u9650\u5df2\u6062\u590d'),
       );
     },
   );
@@ -1965,7 +2005,7 @@ void main() {
               find.byKey(const Key('settings-inline-feedback-description')),
             )
             .data,
-        contains('\u804a\u5929\u5165\u53e3'),
+        contains('\u90fd\u5df2\u5c31\u7eea'),
       );
     },
   );
@@ -2169,7 +2209,7 @@ void main() {
         tester
             .widget<Text>(find.byKey(const Key('settings-avatar-sheet-status')))
             .data,
-        '当前头像已经同步',
+        '头像已同步',
       );
       expect(
         tester
@@ -2177,7 +2217,7 @@ void main() {
             .data,
         '展示中',
       );
-      expect(find.text('重新上传头像'), findsOneWidget);
+      expect(find.text('更换头像'), findsOneWidget);
 
       await tester.tap(
         find.byKey(const Key('settings-avatar-delete-action')),
@@ -2255,7 +2295,7 @@ void main() {
               find.byKey(const Key('settings-background-sheet-status')),
             )
             .data,
-        '当前背景已经生效',
+        '背景已生效',
       );
       expect(
         tester
@@ -2265,7 +2305,7 @@ void main() {
             .data,
         '首屏展示中',
       );
-      expect(find.text('重新上传背景'), findsOneWidget);
+      expect(find.text('更换背景'), findsOneWidget);
 
       await tester.tap(
         find.byKey(const Key('settings-background-delete-action')),
@@ -2363,7 +2403,7 @@ void main() {
       await tester.tap(avatarManagementItem, warnIfMissed: false);
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));
-      expect(find.text('补一个头像'), findsOneWidget);
+      expect(find.text('上传头像'), findsOneWidget);
 
       await tester.tap(
         find.byKey(const Key('settings-avatar-replace-action')),
@@ -2429,7 +2469,7 @@ void main() {
       await tester.tap(backgroundManagementItem, warnIfMissed: false);
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));
-      expect(find.text('补一张背景'), findsOneWidget);
+      expect(find.text('上传背景'), findsOneWidget);
 
       await tester.tap(
         find.byKey(const Key('settings-background-replace-action')),
@@ -2573,7 +2613,7 @@ void main() {
             )
             .data,
         contains(
-            '\u65b0\u7684\u624b\u673a\u53f7\u5df2\u7ecf\u5199\u56de\u5f53\u524d\u8d26\u53f7\u8d44\u6599'),
+            '\u65b0\u624b\u673a\u53f7\u5df2\u540c\u6b65\u5230\u8d26\u53f7\u8d44\u6599'),
       );
 
       final passwordItem = find.byKey(const Key('settings-password-item'));
@@ -2658,8 +2698,7 @@ void main() {
               find.byKey(const Key('settings-inline-feedback-description')),
             )
             .data,
-        contains(
-            '\u65b0\u7684\u672c\u5730\u5bc6\u7801\u5df2\u7ecf\u5199\u56de\u5f53\u524d\u5b89\u5168\u8bbe\u7f6e'),
+        contains('\u65b0\u5bc6\u7801\u5df2\u4fdd\u5b58'),
       );
     },
   );
@@ -2835,6 +2874,9 @@ void main() {
       final notificationAction = find.byKey(
         const Key('settings-overview-notification-action'),
       );
+      final phoneAction = find.byKey(
+        const Key('settings-overview-phone-action'),
+      );
       await tester.scrollUntilVisible(
         notificationAction,
         120,
@@ -2843,16 +2885,18 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(
-        find.byKey(const Key('settings-overview-phone-action')),
+        phoneAction,
         findsOneWidget,
       );
       expect(
         notificationAction,
         findsOneWidget,
       );
+      final actionRect = tester.getRect(notificationAction);
       final responsivePreset = find.byKey(
         const Key('settings-preset-responsive'),
       );
+      await revealInSettingsList(tester, responsivePreset);
       final balancedPreset = find.byKey(
         const Key('settings-preset-balanced'),
       );
@@ -2873,7 +2917,6 @@ void main() {
       expect(balancedRect.height, lessThanOrEqualTo(60));
       expect(quietObserveRect.height, lessThanOrEqualTo(60));
 
-      final actionRect = tester.getRect(notificationAction);
       expect(actionRect.width, greaterThanOrEqualTo(220));
       expect(actionRect.bottom, lessThanOrEqualTo(640));
 
@@ -2944,22 +2987,22 @@ void main() {
       final phoneAction = find.byKey(
         const Key('settings-overview-phone-action'),
       );
-      final presetResponsive = find.byKey(
-        const Key('settings-preset-responsive'),
-      );
-
       await tester.scrollUntilVisible(
-        presetResponsive,
+        phoneAction,
         100,
         scrollable: find.byType(Scrollable).first,
       );
       await tester.pumpAndSettle();
+      final phoneActionRect = tester.getRect(phoneAction);
+      final presetResponsive = find.byKey(
+        const Key('settings-preset-responsive'),
+      );
 
-      expect(phoneAction, findsOneWidget);
+      await revealInSettingsList(tester, presetResponsive, step: 160);
+
       expect(presetResponsive, findsOneWidget);
       expect(tester.takeException(), isNull);
 
-      final phoneActionRect = tester.getRect(phoneAction);
       final presetRect = tester.getRect(presetResponsive);
 
       expect(phoneActionRect.width, greaterThanOrEqualTo(240));

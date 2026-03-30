@@ -224,7 +224,49 @@ void main() {
     await _disposeHost(tester, chatProvider, friendProvider);
   });
 
-  testWidgets('messages tab should show delivered and read badges',
+  testWidgets(
+      'messages tab should prefer failure priority over draft summary tag',
+      (tester) async {
+    final chatProvider = ChatProvider();
+    final friendProvider = FriendProvider();
+
+    final thread = _buildThread('u_messages_failed_with_draft');
+    chatProvider.addThread(thread);
+    chatProvider.getMessages(thread.id).add(
+          Message(
+            id: 'failed-message',
+            content: '这条消息发送失败了',
+            isMe: true,
+            timestamp: DateTime.parse('2026-03-13T11:00:20.000'),
+            status: MessageStatus.failed,
+          ),
+        );
+    chatProvider.saveDraft(thread.id, '这是一条新的草稿');
+
+    await tester.pumpWidget(
+      _buildHost(
+        chatProvider: chatProvider,
+        friendProvider: friendProvider,
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('草稿'), findsOneWidget);
+    expect(find.text('这是一条新的草稿'), findsOneWidget);
+    expect(
+      find.byKey(
+        const Key('messages-thread-priority-u_messages_failed_with_draft'),
+      ),
+      findsOneWidget,
+    );
+    expect(find.text('发送失败'), findsOneWidget);
+    expect(find.text('草稿待发送'), findsNothing);
+
+    await _disposeHost(tester, chatProvider, friendProvider);
+  });
+
+  testWidgets(
+      'messages tab should keep delivered and read preview without success badges',
       (tester) async {
     final chatProvider = ChatProvider();
     final friendProvider = FriendProvider();
@@ -263,8 +305,8 @@ void main() {
     );
     await tester.pump();
 
-    expect(find.text('已送达'), findsOneWidget);
-    expect(find.text('已读'), findsOneWidget);
+    expect(find.text('已送达'), findsNothing);
+    expect(find.text('已读'), findsNothing);
     expect(find.text('这条消息已经送达'), findsOneWidget);
     expect(find.text('这条消息对方已读'), findsOneWidget);
 
@@ -272,7 +314,7 @@ void main() {
   });
 
   testWidgets(
-      'messages tab should show priority tags for unread expiring threads',
+      'messages tab should keep expiring tag without unread priority duplication',
       (tester) async {
     final chatProvider = ChatProvider();
     final friendProvider = FriendProvider();
@@ -306,12 +348,160 @@ void main() {
 
     expect(
       find.byKey(const Key('messages-thread-priority-u_messages_priority')),
-      findsOneWidget,
+      findsNothing,
     );
     expect(
       find.byKey(const Key('messages-thread-expiring-u_messages_priority')),
       findsOneWidget,
     );
+    expect(
+      find.byKey(const Key('messages-thread-unread-u_messages_priority')),
+      findsOneWidget,
+    );
+
+    await _disposeHost(tester, chatProvider, friendProvider);
+  });
+
+  testWidgets('messages tab should render remote avatar image when available',
+      (tester) async {
+    final chatProvider = ChatProvider();
+    final friendProvider = FriendProvider();
+
+    final thread = ChatThread(
+      id: 'u_messages_remote_avatar',
+      otherUser: User(
+        id: 'u_messages_remote_avatar',
+        uid: 'SNREMOTEAVATAR',
+        nickname: 'Remote Avatar User',
+        avatar: 'avatar/u_messages_remote_avatar/profile.jpg',
+        distance: '2km',
+        status: 'available',
+        isOnline: true,
+      ),
+      createdAt: DateTime.now().subtract(const Duration(minutes: 10)),
+      expiresAt: DateTime.now().add(const Duration(hours: 24)),
+      intimacyPoints: 60,
+    );
+    chatProvider.addThread(thread);
+    chatProvider.getMessages(thread.id).add(
+          Message(
+            id: 'remote-avatar-message',
+            content: '远端头像应该显示成图片',
+            isMe: false,
+            timestamp: DateTime.now(),
+            status: MessageStatus.sent,
+          ),
+        );
+
+    await tester.pumpWidget(
+      _buildHost(
+        chatProvider: chatProvider,
+        friendProvider: friendProvider,
+      ),
+    );
+    await tester.pump();
+
+    expect(
+      find.descendant(
+        of: find.byKey(
+          const Key('messages-thread-avatar-u_messages_remote_avatar'),
+        ),
+        matching: find.byType(Image),
+      ),
+      findsOneWidget,
+    );
+
+    await _disposeHost(tester, chatProvider, friendProvider);
+  });
+
+  testWidgets(
+      'messages tab should still show online priority for clean online thread',
+      (tester) async {
+    final chatProvider = ChatProvider();
+    final friendProvider = FriendProvider();
+
+    final thread = ChatThread(
+      id: 'u_messages_online',
+      otherUser: _buildUser('u_messages_online').copyWith(isOnline: true),
+      createdAt: DateTime.now().subtract(const Duration(minutes: 20)),
+      expiresAt: DateTime.now().add(const Duration(hours: 10)),
+      intimacyPoints: 18,
+    );
+    chatProvider.addThread(thread);
+    chatProvider.getMessages(thread.id).add(
+          Message(
+            id: 'online-message',
+            content: '这条消息没有草稿也没有失败态',
+            isMe: false,
+            timestamp: DateTime.now(),
+            status: MessageStatus.sent,
+          ),
+        );
+
+    await tester.pumpWidget(
+      _buildHost(
+        chatProvider: chatProvider,
+        friendProvider: friendProvider,
+      ),
+    );
+    await tester.pump();
+
+    expect(
+      find.byKey(const Key('messages-thread-priority-u_messages_online')),
+      findsOneWidget,
+    );
+    expect(find.text('对方在线可聊'), findsOneWidget);
+
+    await _disposeHost(tester, chatProvider, friendProvider);
+  });
+
+  testWidgets(
+      'messages tab should prefer expiring tag over online priority when near expiry',
+      (tester) async {
+    final chatProvider = ChatProvider();
+    final friendProvider = FriendProvider();
+
+    final thread = ChatThread(
+      id: 'u_messages_online_expiring',
+      otherUser: _buildUser(
+        'u_messages_online_expiring',
+      ).copyWith(isOnline: true),
+      createdAt: DateTime.now().subtract(const Duration(hours: 22)),
+      expiresAt: DateTime.now().add(const Duration(hours: 1, minutes: 30)),
+      intimacyPoints: 22,
+    );
+    chatProvider.addThread(thread);
+    chatProvider.getMessages(thread.id).add(
+          Message(
+            id: 'online-expiring-message',
+            content: '这条消息需要更突出会话时效',
+            isMe: false,
+            timestamp: DateTime.now(),
+            status: MessageStatus.sent,
+          ),
+        );
+
+    await tester.pumpWidget(
+      _buildHost(
+        chatProvider: chatProvider,
+        friendProvider: friendProvider,
+      ),
+    );
+    await tester.pump();
+
+    expect(
+      find.byKey(
+        const Key('messages-thread-priority-u_messages_online_expiring'),
+      ),
+      findsNothing,
+    );
+    expect(
+      find.byKey(
+        const Key('messages-thread-expiring-u_messages_online_expiring'),
+      ),
+      findsOneWidget,
+    );
+    expect(find.text('对方在线可聊'), findsNothing);
 
     await _disposeHost(tester, chatProvider, friendProvider);
   });

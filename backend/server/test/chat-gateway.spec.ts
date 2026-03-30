@@ -87,6 +87,7 @@ describe('Chat Gateway (integration)', () => {
     process.env.USER_STORE_DRIVER = 'memory';
     process.env.AUTH_RUNTIME_DRIVER = 'memory';
     process.env.RUNTIME_STATE_DRIVER = 'memory';
+    process.env.OTP_OVERRIDE = '123456';
 
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
@@ -110,6 +111,7 @@ describe('Chat Gateway (integration)', () => {
 
   afterAll(async () => {
     disconnectSockets();
+    delete process.env.OTP_OVERRIDE;
     await app.close();
   });
 

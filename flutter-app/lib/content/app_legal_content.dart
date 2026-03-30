@@ -40,6 +40,37 @@ class AppLegalContent {
     }
   }
 
+  static String updateDateOf(LegalDocumentType type) {
+    switch (type) {
+      case LegalDocumentType.userAgreement:
+      case LegalDocumentType.privacyPolicy:
+      case LegalDocumentType.safetyTips:
+        return '2026年3月18日';
+    }
+  }
+
+  static String badgeLabelOf(LegalDocumentType type) {
+    switch (type) {
+      case LegalDocumentType.userAgreement:
+        return '服务条款';
+      case LegalDocumentType.privacyPolicy:
+        return '数据与隐私';
+      case LegalDocumentType.safetyTips:
+        return '安全提醒';
+    }
+  }
+
+  static String summaryOf(LegalDocumentType type) {
+    switch (type) {
+      case LegalDocumentType.userAgreement:
+        return '集中查看账号、使用规范和服务边界。';
+      case LegalDocumentType.privacyPolicy:
+        return '集中查看数据收集、使用和删除规则。';
+      case LegalDocumentType.safetyTips:
+        return '集中查看防骗、举报和账号保护建议。';
+    }
+  }
+
   static String contentOf(LegalDocumentType type) {
     switch (type) {
       case LegalDocumentType.userAgreement:

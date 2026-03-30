@@ -27,26 +27,18 @@ String deliveryRetryErrorDetailFor(
   required bool isImage,
 }) {
   return switch (failureState) {
-    ChatDeliveryFailureState.threadExpired =>
-      isImage ? '这条图片消息所在的会话已经到期，当前不能继续重试。' : '这条消息所在的会话已经到期，当前不能继续重试。',
-    ChatDeliveryFailureState.blockedRelation =>
-      isImage ? '你和对方当前处于拉黑关系，图片暂时不能继续发送。' : '你和对方当前处于拉黑关系，消息暂时不能继续发送。',
-    ChatDeliveryFailureState.imageUploadPreparationFailed =>
-      '图片上传准备失败，服务端暂时无法完成上传准备，请稍后重新发送。',
+    ChatDeliveryFailureState.threadExpired => '会话已过期，请返回列表重试',
+    ChatDeliveryFailureState.blockedRelation => '当前关系受限，暂不能发送',
+    ChatDeliveryFailureState.imageUploadPreparationFailed => '图片准备失败，请重试',
     ChatDeliveryFailureState.imageUploadInterrupted =>
-      '图片上传过程中已中断，建议检查网络后重新投递。',
-    ChatDeliveryFailureState.imageUploadTokenInvalid =>
-      '图片上传凭证已失效，再试一次就会重新刷新凭证后再提交。',
-    ChatDeliveryFailureState.imageUploadFileTooLarge =>
-      '当前图片已超过上传大小限制，请更换更小的图片或使用压缩图后再发送。',
-    ChatDeliveryFailureState.imageUploadUnsupportedFormat =>
-      '当前文件没有通过图片校验，请重新选择常见图片格式后再发送。',
+      isImage ? '网络中断，请重试图片' : '网络中断，请重试',
+    ChatDeliveryFailureState.imageUploadTokenInvalid => '上传凭证失效，请重试',
+    ChatDeliveryFailureState.imageUploadFileTooLarge => '图片过大，请换一张',
+    ChatDeliveryFailureState.imageUploadUnsupportedFormat => '格式不支持，请换张图片',
     ChatDeliveryFailureState.networkIssue =>
-      isImage ? '网络连接不稳定，建议检查网络后重新投递图片。' : '网络连接不稳定，建议检查网络后重新发送消息。',
-    ChatDeliveryFailureState.imageReselectRequired => '图片发送失败，原图失效后请重新选择图片再发送。',
-    ChatDeliveryFailureState.retryUnavailable =>
-      isImage ? '图片当前暂不可重试，请先确认会话状态后再处理。' : '消息当前暂不可重试，请先确认会话状态后再处理。',
-    ChatDeliveryFailureState.retryable =>
-      isImage ? '图片发送失败，请检查网络后立即重试。' : '消息发送失败，请检查网络后立即重试。',
+      isImage ? '网络异常，请重试图片' : '网络异常，请重试消息',
+    ChatDeliveryFailureState.imageReselectRequired => '原图失效，请重选图片',
+    ChatDeliveryFailureState.retryUnavailable => '当前不可重试，请确认会话状态',
+    ChatDeliveryFailureState.retryable => isImage ? '图片发送失败，请重试' : '消息发送失败，请重试',
   };
 }

@@ -108,7 +108,12 @@ extension ChatProviderRealtime on ChatProvider {
       messages[index] = _mergeRemoteMessage(previous, event.message);
       if (previous.status != MessageStatus.sent) {
         _clearDeliveryFailureState(event.threadId, previous.id);
-        _addIntimacy(event.threadId, previous.content, true);
+        _addIntimacy(
+          event.threadId,
+          previous.content,
+          true,
+          markInteraction: false,
+        );
         _recordDeliverySuccess(previous.type, previous.id);
       }
     } else if (!messages.any((msg) => msg.id == event.message.id)) {
@@ -158,7 +163,12 @@ extension ChatProviderRealtime on ChatProvider {
       event.threadId,
       previousFingerprint,
     );
-    _addIntimacy(event.threadId, event.message.content, false);
+    _addIntimacy(
+      event.threadId,
+      event.message.content,
+      false,
+      markInteraction: false,
+    );
 
     final hadUnread = (_threads[event.threadId]?.unreadCount ?? 0) > 0;
     restoreThread(event.threadId, notify: false);
@@ -171,6 +181,7 @@ extension ChatProviderRealtime on ChatProvider {
       _updateThread(
         event.threadId,
         unreadCount: (_threads[event.threadId]?.unreadCount ?? 0) + 1,
+        markInteraction: false,
         notify: false,
       );
       unawaited(
@@ -206,7 +217,12 @@ extension ChatProviderRealtime on ChatProvider {
       messages[localIndex] = _mergeRemoteMessage(previous, remoteMessage);
       if (previous.status != MessageStatus.sent) {
         _clearDeliveryFailureState(threadId, previous.id);
-        _addIntimacy(threadId, previous.content, true);
+        _addIntimacy(
+          threadId,
+          previous.content,
+          true,
+          markInteraction: false,
+        );
         _recordDeliverySuccess(previous.type, previous.id);
       }
     } else if (!messages.any((msg) => msg.id == remoteMessage.id)) {

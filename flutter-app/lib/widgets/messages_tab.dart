@@ -14,6 +14,7 @@ import '../providers/friend_provider.dart';
 import '../providers/notification_center_provider.dart';
 import '../utils/chat_delivery_state.dart';
 import 'app_toast.dart';
+import 'app_user_avatar.dart';
 import 'chat_delivery_status.dart';
 
 class MessagesTab extends StatefulWidget {
@@ -935,6 +936,9 @@ class _ThreadItem extends StatelessWidget {
     final moveUnreadBadgeToMetaRow =
         layout.isCompact && viewData.unreadCount > 0;
     final deliveryState = viewData.deliveryState;
+    final showDeliveryBadge = !viewData.hasDraft &&
+        deliveryState.hasBadge &&
+        !deliveryState.isSuccessState;
     final lastMessage = viewData.lastMessage;
     final priority = _resolvePriorityState(viewData: viewData);
     final accentColor = priority?.color ??
@@ -1078,7 +1082,7 @@ class _ThreadItem extends StatelessWidget {
                                 overflow: TextOverflow.ellipsis,
                               ),
                       ),
-                      if (!viewData.hasDraft && deliveryState.hasBadge) ...[
+                      if (showDeliveryBadge) ...[
                         const SizedBox(width: 8),
                         ChatDeliveryBadge(
                           label: deliveryState.badgeLabel!,
@@ -1108,10 +1112,16 @@ class _ThreadItem extends StatelessWidget {
                       final currentTime = nowProvider();
                       final timeRemaining =
                           viewData.expiresAt.difference(currentTime);
-                      final showUrgencyHint = !viewData.isFriend &&
+                      final baseShowUrgencyHint = !viewData.isFriend &&
                           timeRemaining.inMinutes > 0 &&
                           timeRemaining.inMinutes <= 120;
-                      if (priority == null && !showUrgencyHint) {
+                      final displayPriority = baseShowUrgencyHint &&
+                              _shouldShowOnlinePriority(viewData)
+                          ? null
+                          : priority;
+                      final showUrgencyHint =
+                          baseShowUrgencyHint && displayPriority == null;
+                      if (displayPriority == null && !showUrgencyHint) {
                         return const SizedBox.shrink();
                       }
                       return Padding(
@@ -1121,15 +1131,16 @@ class _ThreadItem extends StatelessWidget {
                           spacing: layout.tagSpacing,
                           runSpacing: 6,
                           children: [
-                            if (priority != null)
+                            if (displayPriority != null)
                               _TinyTag(
                                 key: Key(
                                   'messages-thread-priority-${viewData.threadId}',
                                 ),
-                                label: priority.label,
-                                background:
-                                    priority.color.withValues(alpha: 0.14),
-                                foreground: priority.color,
+                                label: displayPriority.label,
+                                background: displayPriority.color.withValues(
+                                  alpha: 0.14,
+                                ),
+                                foreground: displayPriority.color,
                               ),
                             if (showUrgencyHint)
                               _TinyTag(
@@ -1213,16 +1224,10 @@ class _ThreadItem extends StatelessWidget {
   _ThreadPriorityState? _resolvePriorityState({
     required _MessagesThreadSummaryViewData viewData,
   }) {
-    if (viewData.hasDraft) {
-      return const _ThreadPriorityState(
-        label: '草稿待发送',
-        color: AppColors.warning,
-      );
-    }
     if (viewData.deliveryFailureState ==
         ChatDeliveryFailureState.threadExpired) {
       return const _ThreadPriorityState(
-        label: '会话过期',
+        label: '会话已过期',
         color: AppColors.warning,
       );
     }
@@ -1236,7 +1241,7 @@ class _ThreadItem extends StatelessWidget {
     if (viewData.deliveryFailureState ==
         ChatDeliveryFailureState.imageUploadTokenInvalid) {
       return const _ThreadPriorityState(
-        label: '凭证失效',
+        label: '上传凭证失效',
         color: AppColors.warning,
       );
     }
@@ -1250,7 +1255,7 @@ class _ThreadItem extends StatelessWidget {
     if (viewData.deliveryFailureState ==
         ChatDeliveryFailureState.imageUploadPreparationFailed) {
       return const _ThreadPriorityState(
-        label: '上传失败',
+        label: '上传准备失败',
         color: AppColors.error,
       );
     }
@@ -1277,7 +1282,7 @@ class _ThreadItem extends StatelessWidget {
     }
     if (viewData.deliveryState.actionType == ChatDeliveryAction.retry) {
       return const _ThreadPriorityState(
-        label: '发送失败待处理',
+        label: '发送失败',
         color: AppColors.error,
       );
     }
@@ -1301,19 +1306,28 @@ class _ThreadItem extends StatelessWidget {
         color: AppColors.error,
       );
     }
-    if (viewData.unreadCount > 0) {
+    if (viewData.hasDraft) {
       return const _ThreadPriorityState(
-        label: '有未读消息',
-        color: AppColors.brandBlue,
+        label: '草稿待发送',
+        color: AppColors.warning,
       );
     }
-    if (!viewData.isFriend && viewData.isOnline) {
+    if (_shouldShowOnlinePriority(viewData)) {
       return const _ThreadPriorityState(
         label: '对方在线可聊',
         color: AppColors.success,
       );
     }
     return null;
+  }
+
+  bool _shouldShowOnlinePriority(_MessagesThreadSummaryViewData viewData) {
+    return !viewData.isFriend &&
+        viewData.isOnline &&
+        viewData.unreadCount == 0 &&
+        !viewData.hasDraft &&
+        viewData.deliveryFailureState == null &&
+        viewData.deliveryState.actionType == null;
   }
 
   String _formatTime(
@@ -1434,6 +1448,7 @@ class _ThreadAvatar extends StatelessWidget {
     return Stack(
       children: [
         Container(
+          key: Key('messages-thread-avatar-${viewData.threadId}'),
           width: layout.avatarSize,
           height: layout.avatarSize,
           decoration: BoxDecoration(
@@ -1446,13 +1461,11 @@ class _ThreadAvatar extends StatelessWidget {
               width: 2,
             ),
           ),
-          child: Center(
-            child: Text(
-              viewData.avatar ?? '👤',
-              style: TextStyle(
-                fontSize: layout.avatarTextSize,
-                color: AppColors.pureBlack,
-              ),
+          child: AppUserAvatar(
+            avatar: viewData.avatar,
+            textStyle: TextStyle(
+              fontSize: layout.avatarTextSize,
+              color: AppColors.pureBlack,
             ),
           ),
         ),

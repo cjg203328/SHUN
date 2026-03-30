@@ -1,5 +1,8 @@
+import 'package:flutter/foundation.dart';
+
 import '../repositories/app_data_repository.dart';
 import 'api_client.dart';
+import 'image_upload_service.dart';
 import 'storage_service.dart';
 
 class ProfileService {
@@ -17,11 +20,24 @@ class ProfileService {
   }
 
   Future<ProfileStateSnapshot> refreshProfile() async {
-    if (!_hasSession) return loadProfile();
+    final result = await refreshProfileWithStatus();
+    return result.snapshot;
+  }
+
+  Future<ProfileRefreshResult> refreshProfileWithStatus() async {
+    if (!_hasSession) {
+      return ProfileRefreshResult(
+        snapshot: loadProfile(),
+        remoteAttempted: false,
+        remoteSucceeded: false,
+      );
+    }
 
     try {
       final user = await _apiClient.get<Map<String, dynamic>>('/users/me');
-      final settings = await _apiClient.get<Map<String, dynamic>>('/settings/me');
+      final settings =
+          await _apiClient.get<Map<String, dynamic>>('/settings/me');
+      await syncRemoteMediaReferences(user);
 
       final nickname = user['nickname']?.toString().trim();
       final status = user['status']?.toString().trim();
@@ -42,12 +58,26 @@ class ProfileService {
       await _repository.savePortraitFullscreenBackground(
         settings['portraitFullscreenBackground'] == true,
       );
-    } catch (_) {}
-
-    return loadProfile();
+      return ProfileRefreshResult(
+        snapshot: loadProfile(),
+        remoteAttempted: true,
+        remoteSucceeded: true,
+      );
+    } catch (_) {
+      return ProfileRefreshResult(
+        snapshot: loadProfile(),
+        remoteAttempted: true,
+        remoteSucceeded: false,
+      );
+    }
   }
 
   Future<ProfileStateSnapshot> saveNickname(String nickname) async {
+    final result = await saveNicknameWithStatus(nickname);
+    return result.snapshot;
+  }
+
+  Future<ProfileSaveResult> saveNicknameWithStatus(String nickname) async {
     final normalized = nickname.trim().isEmpty ? '神秘人' : nickname.trim();
     if (_hasSession) {
       try {
@@ -60,12 +90,20 @@ class ProfileService {
               ? user['nickname'].toString().trim()
               : normalized,
         );
-        return loadProfile();
+        return ProfileSaveResult(
+          snapshot: loadProfile(),
+          remoteAttempted: true,
+          remoteSucceeded: true,
+        );
       } catch (_) {}
     }
 
     await _repository.saveNickname(normalized);
-    return loadProfile();
+    return ProfileSaveResult(
+      snapshot: loadProfile(),
+      remoteAttempted: _hasSession,
+      remoteSucceeded: false,
+    );
   }
 
   Future<void> saveAvatar(String avatar) async {
@@ -73,6 +111,11 @@ class ProfileService {
   }
 
   Future<ProfileStateSnapshot> saveStatus(String status) async {
+    final result = await saveStatusWithStatus(status);
+    return result.snapshot;
+  }
+
+  Future<ProfileSaveResult> saveStatusWithStatus(String status) async {
     final normalized = status.trim().isEmpty ? '想找人聊聊' : status.trim();
     if (_hasSession) {
       try {
@@ -85,15 +128,28 @@ class ProfileService {
               ? user['status'].toString().trim()
               : normalized,
         );
-        return loadProfile();
+        return ProfileSaveResult(
+          snapshot: loadProfile(),
+          remoteAttempted: true,
+          remoteSucceeded: true,
+        );
       } catch (_) {}
     }
 
     await _repository.saveStatus(normalized);
-    return loadProfile();
+    return ProfileSaveResult(
+      snapshot: loadProfile(),
+      remoteAttempted: _hasSession,
+      remoteSucceeded: false,
+    );
   }
 
   Future<ProfileStateSnapshot> saveSignature(String signature) async {
+    final result = await saveSignatureWithStatus(signature);
+    return result.snapshot;
+  }
+
+  Future<ProfileSaveResult> saveSignatureWithStatus(String signature) async {
     final normalized =
         signature.trim().isEmpty ? defaultSignature : signature.trim();
 
@@ -108,12 +164,20 @@ class ProfileService {
               ? user['signature'].toString().trim()
               : normalized,
         );
-        return loadProfile();
+        return ProfileSaveResult(
+          snapshot: loadProfile(),
+          remoteAttempted: true,
+          remoteSucceeded: true,
+        );
       } catch (_) {}
     }
 
     await _repository.saveSignature(normalized);
-    return loadProfile();
+    return ProfileSaveResult(
+      snapshot: loadProfile(),
+      remoteAttempted: _hasSession,
+      remoteSucceeded: false,
+    );
   }
 
   Future<ProfileStateSnapshot> saveTransparentHomepage(bool enabled) async {
@@ -132,7 +196,8 @@ class ProfileService {
     return loadProfile();
   }
 
-  Future<ProfileStateSnapshot> savePortraitFullscreenBackground(bool enabled) async {
+  Future<ProfileStateSnapshot> savePortraitFullscreenBackground(
+      bool enabled) async {
     if (_hasSession) {
       try {
         final settings = await _apiClient.patch<Map<String, dynamic>>(
@@ -148,6 +213,19 @@ class ProfileService {
     return loadProfile();
   }
 
+  @visibleForTesting
+  Future<void> syncRemoteMediaReferences(Map<String, dynamic> user) async {
+    final avatarUrl = user['avatarUrl']?.toString().trim();
+    if (avatarUrl != null && avatarUrl.isNotEmpty) {
+      await ImageUploadService.saveAvatarReference(avatarUrl);
+    }
+
+    final backgroundUrl = user['backgroundUrl']?.toString().trim();
+    if (backgroundUrl != null && backgroundUrl.isNotEmpty) {
+      await ImageUploadService.saveBackgroundReference(backgroundUrl);
+    }
+  }
+
   bool get _hasSession {
     final token = StorageService.getToken();
     return token != null && token.isNotEmpty;
@@ -161,4 +239,33 @@ class ProfileService {
       settings['portraitFullscreenBackground'] == true,
     );
   }
+}
+
+class ProfileRefreshResult {
+  const ProfileRefreshResult({
+    required this.snapshot,
+    required this.remoteAttempted,
+    required this.remoteSucceeded,
+  });
+
+  final ProfileStateSnapshot snapshot;
+  final bool remoteAttempted;
+  final bool remoteSucceeded;
+
+  bool get remoteFailed => remoteAttempted && !remoteSucceeded;
+}
+
+class ProfileSaveResult {
+  const ProfileSaveResult({
+    required this.snapshot,
+    required this.remoteAttempted,
+    required this.remoteSucceeded,
+  });
+
+  final ProfileStateSnapshot snapshot;
+  final bool remoteAttempted;
+  final bool remoteSucceeded;
+
+  bool get remoteFailed => remoteAttempted && !remoteSucceeded;
+  bool get localOnly => !remoteAttempted;
 }

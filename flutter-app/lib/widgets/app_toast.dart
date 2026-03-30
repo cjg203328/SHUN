@@ -23,40 +23,40 @@ class AppToast {
     final mediaQuery = MediaQuery.of(context);
     final safeBottom = mediaQuery.viewPadding.bottom;
     final keyboardInset = mediaQuery.viewInsets.bottom;
-    final bottomInset = (keyboardInset > 0 ? keyboardInset : safeBottom) + 84;
+    final bottomInset = (keyboardInset > 0 ? keyboardInset : safeBottom) + 76;
     ScaffoldMessenger.of(context).hideCurrentSnackBar();
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Row(
           children: [
             Container(
-              width: 3,
-              height: 36,
+              width: 2.5,
+              height: 28,
               decoration: BoxDecoration(
                 color: isError ? AppColors.error : AppColors.brandBlue,
                 borderRadius: BorderRadius.circular(3),
               ),
             ),
-            const SizedBox(width: 12),
+            const SizedBox(width: 10),
             Icon(
               isError
                   ? Icons.error_outline_rounded
                   : Icons.check_circle_outline_rounded,
-              size: 18,
+              size: 16,
               color: isError
                   ? AppColors.error.withValues(alpha: 0.9)
                   : AppColors.brandBlue.withValues(alpha: 0.9),
             ),
-            const SizedBox(width: 10),
+            const SizedBox(width: 8),
             Expanded(
               child: Text(
                 message,
                 style: TextStyle(
-                  fontSize: 13.5,
+                  fontSize: 13,
                   fontWeight: FontWeight.w300,
                   color: AppColors.textPrimary,
-                  letterSpacing: 0.3,
-                  height: 1.4,
+                  letterSpacing: 0.15,
+                  height: 1.3,
                 ),
               ),
             ),
@@ -78,10 +78,10 @@ class AppToast {
           bottom: bottomInset,
         ),
         padding: const EdgeInsets.symmetric(
-          horizontal: 16,
-          vertical: 14,
+          horizontal: 14,
+          vertical: 12,
         ),
-        duration: const Duration(milliseconds: 2400),
+        duration: const Duration(milliseconds: 2000),
         elevation: 0,
       ),
     );
@@ -155,7 +155,8 @@ class AppDialog {
       builder: (context) {
         final maxSheetHeight = MediaQuery.sizeOf(context).height * 0.72;
         return buildSheetSurface(
-          padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+          showHandle: false,
+          padding: const EdgeInsets.fromLTRB(24, 20, 24, 20),
           child: ConstrainedBox(
             constraints: BoxConstraints(maxHeight: maxSheetHeight),
             child: SingleChildScrollView(
@@ -165,28 +166,28 @@ class AppDialog {
                   Text(
                     title,
                     style: const TextStyle(
-                      fontSize: 17,
+                      fontSize: 16,
                       fontWeight: FontWeight.w400,
                       color: AppColors.textPrimary,
-                      letterSpacing: 0.5,
+                      letterSpacing: 0.2,
                     ),
                     textAlign: TextAlign.center,
                   ),
                   if (content != null) ...[
-                    const SizedBox(height: 12),
+                    const SizedBox(height: 10),
                     Text(
                       content,
                       style: const TextStyle(
-                        fontSize: 14,
+                        fontSize: 13.5,
                         fontWeight: FontWeight.w300,
                         color: AppColors.textSecondary,
-                        letterSpacing: 0.3,
-                        height: 1.5,
+                        letterSpacing: 0.15,
+                        height: 1.4,
                       ),
                       textAlign: TextAlign.center,
                     ),
                   ],
-                  const SizedBox(height: 30),
+                  const SizedBox(height: 22),
                   Row(
                     children: [
                       Expanded(
@@ -194,7 +195,7 @@ class AppDialog {
                           key: const Key('app-dialog-cancel'),
                           onPressed: () => Navigator.pop(context, false),
                           style: TextButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(vertical: 16),
+                            padding: const EdgeInsets.symmetric(vertical: 14),
                             backgroundColor: AppColors.white05,
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(12),
@@ -206,7 +207,7 @@ class AppDialog {
                               fontSize: 15,
                               fontWeight: FontWeight.w300,
                               color: AppColors.textSecondary,
-                              letterSpacing: 1,
+                              letterSpacing: 0.4,
                             ),
                           ),
                         ),
@@ -217,7 +218,7 @@ class AppDialog {
                           key: const Key('app-dialog-confirm'),
                           onPressed: () => Navigator.pop(context, true),
                           style: TextButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(vertical: 16),
+                            padding: const EdgeInsets.symmetric(vertical: 14),
                             backgroundColor: isDanger
                                 ? AppColors.error.withValues(alpha: 0.15)
                                 : AppColors.white12,
@@ -233,7 +234,7 @@ class AppDialog {
                               color: isDanger
                                   ? AppColors.error
                                   : AppColors.textPrimary,
-                              letterSpacing: 1,
+                              letterSpacing: 0.4,
                             ),
                           ),
                         ),

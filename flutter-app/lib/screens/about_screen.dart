@@ -6,6 +6,15 @@ import '../config/theme.dart';
 class AboutScreen extends StatelessWidget {
   const AboutScreen({super.key});
 
+  static const _supportedFeatures = [
+    '登录',
+    '匹配',
+    '聊天',
+    '好友',
+    '通知',
+    '资料管理',
+  ];
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -17,7 +26,7 @@ class AboutScreen extends StatelessWidget {
           onPressed: () => context.pop(),
         ),
         title: const Text(
-          '关于瞬',
+          '关于瞬聊',
           style: TextStyle(
             fontSize: 20,
             fontWeight: FontWeight.w400,
@@ -50,7 +59,7 @@ class AboutScreen extends StatelessWidget {
                 ),
                 SizedBox(height: 16),
                 Text(
-                  '瞬',
+                  '瞬聊',
                   style: TextStyle(
                     fontSize: 24,
                     fontWeight: FontWeight.w400,
@@ -60,7 +69,7 @@ class AboutScreen extends StatelessWidget {
                 ),
                 SizedBox(height: 8),
                 Text(
-                  '24小时限时匿名社交',
+                  '轻量、克制的即时社交',
                   style: TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.w300,
@@ -68,38 +77,39 @@ class AboutScreen extends StatelessWidget {
                     letterSpacing: 0.5,
                   ),
                 ),
-                SizedBox(height: 6),
-                Text(
-                  '每个夜晚都是新的开始',
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w300,
-                    color: AppColors.textTertiary,
-                  ),
+                SizedBox(height: 14),
+                _AboutBadge(
+                  label: 'V1.0.4',
                 ),
               ],
             ),
           ),
           const SizedBox(height: 16),
           _InfoCard(
-            title: '版本信息',
+            key: const Key('about-app-info-card'),
+            title: '应用信息',
             lines: const [
-              '当前版本：V1.0.3',
-              '交付形态：正式发布版',
-              '支持能力：登录、匹配、聊天、好友、通知、资料管理',
+              '当前版本：V1.0.4',
+              '当前构建：移动端体验版',
+              '当前形态：本地交互体验版',
+            ],
+          ),
+          const SizedBox(height: 16),
+          _FeatureCard(
+            features: _supportedFeatures,
+          ),
+          const SizedBox(height: 16),
+          _InfoCard(
+            key: const Key('about-product-summary-card'),
+            title: '产品定位',
+            lines: const [
+              '主打轻量、克制和隐私感。',
+              '核心入口集中在匹配、聊天、消息和个人资料。',
             ],
           ),
           const SizedBox(height: 16),
           _InfoCard(
-            title: '产品说明',
-            lines: const [
-              '瞬致力于打造轻量、克制、注重隐私的即时社交体验。',
-              '你可以在这里完成随机匹配、建立好友关系，以及进行实时聊天互动。',
-              '应用已支持基础账号体系、媒体上传、消息通知与设置管理。',
-            ],
-          ),
-          const SizedBox(height: 16),
-          _InfoCard(
+            key: const Key('about-copyright-card'),
             title: '版权信息',
             lines: const [
               'Copyright © 2026 瞬团队',
@@ -114,6 +124,7 @@ class AboutScreen extends StatelessWidget {
 
 class _InfoCard extends StatelessWidget {
   const _InfoCard({
+    super.key,
     required this.title,
     required this.lines,
   });
@@ -150,11 +161,85 @@ class _InfoCard extends StatelessWidget {
                   fontSize: 14,
                   fontWeight: FontWeight.w300,
                   color: AppColors.textSecondary,
-                  height: 1.7,
+                  height: 1.55,
                 ),
               ),
             ),
         ],
+      ),
+    );
+  }
+}
+
+class _FeatureCard extends StatelessWidget {
+  const _FeatureCard({
+    required this.features,
+  });
+
+  final List<String> features;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      key: const Key('about-feature-card'),
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: AppColors.white05,
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            '支持能力',
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w400,
+              color: AppColors.textPrimary,
+            ),
+          ),
+          const SizedBox(height: 14),
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: features
+                .map(
+                  (feature) => _AboutBadge(
+                    label: feature,
+                  ),
+                )
+                .toList(growable: false),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AboutBadge extends StatelessWidget {
+  const _AboutBadge({
+    required this.label,
+  });
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+      decoration: BoxDecoration(
+        color: AppColors.white08,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: AppColors.white12),
+      ),
+      child: Text(
+        label,
+        style: const TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w300,
+          color: AppColors.textSecondary,
+          letterSpacing: 0.2,
+        ),
       ),
     );
   }

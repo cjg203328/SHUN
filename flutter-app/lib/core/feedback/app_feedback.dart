@@ -27,19 +27,19 @@ class AppFeedback {
   }) {
     switch (code) {
       case AppErrorCode.permissionDenied:
-        return '未开启权限，请在设置中授权后重试';
+        return '未开启权限，请先授权';
       case AppErrorCode.sendFailed:
-        return detail ?? '发送失败，请检查网络后重试';
+        return detail ?? '发送失败，请重试';
       case AppErrorCode.unlockRequired:
         return detail ?? '继续互动解锁该功能';
       case AppErrorCode.blocked:
         return detail ?? '当前不可操作，请先解除拉黑';
       case AppErrorCode.invalidInput:
-        return detail ?? '输入内容不符合要求，请修改后重试';
+        return detail ?? '输入有误，请检查后重试';
       case AppErrorCode.notSupported:
-        return detail ?? '当前版本暂不支持该操作';
+        return detail ?? '当前不支持该操作';
       case AppErrorCode.unknown:
-        return detail ?? '操作失败，请稍后重试';
+        return detail ?? '操作失败，请重试';
     }
   }
 

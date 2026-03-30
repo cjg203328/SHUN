@@ -205,6 +205,48 @@ void main() {
     await _disposeHost(tester, chatProvider, friendProvider);
   });
 
+  testWidgets('chat screen should render remote avatar image in header',
+      (tester) async {
+    final chatProvider = ChatProvider();
+    final friendProvider = FriendProvider();
+
+    final thread = ChatThread(
+      id: 'u_chat_remote_avatar',
+      otherUser: User(
+        id: 'u_chat_remote_avatar',
+        uid: 'SNCHATAVATAR',
+        nickname: 'Remote Header Avatar',
+        avatar: 'avatar/u_chat_remote_avatar/profile.jpg',
+        distance: '2km',
+        status: 'available',
+        isOnline: true,
+      ),
+      createdAt: DateTime.now().subtract(const Duration(minutes: 10)),
+      expiresAt: DateTime.now().add(const Duration(hours: 24)),
+      intimacyPoints: 60,
+    );
+    chatProvider.addThread(thread);
+
+    await tester.pumpWidget(
+      _ChatScreenHost(
+        threadId: thread.id,
+        chatProvider: chatProvider,
+        friendProvider: friendProvider,
+      ),
+    );
+    await tester.pump();
+
+    expect(
+      find.descendant(
+        of: find.byKey(const Key('chat-header-avatar')),
+        matching: find.byType(Image),
+      ),
+      findsOneWidget,
+    );
+
+    await _disposeHost(tester, chatProvider, friendProvider);
+  });
+
   testWidgets('chat screen should stay usable after local thread upgrades',
       (tester) async {
     final localThread = _buildThread('u_chat_screen_upgrade_local');
@@ -330,7 +372,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('重选图片'), findsOneWidget);
-    expect(find.text('原图失效，请重新选择图片'), findsOneWidget);
+    expect(find.text('原图失效，请重选图片'), findsOneWidget);
     expect(
       find.byKey(
         const ValueKey<String>('chat-delivery-status-action:showGuide'),
@@ -345,8 +387,8 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('图片需要重新选择'), findsOneWidget);
-    expect(find.text('回到输入区重新选图'), findsOneWidget);
+    expect(find.text('图片需要重选'), findsOneWidget);
+    expect(find.text('重新选图'), findsOneWidget);
     expect(find.byIcon(Icons.compress_outlined), findsOneWidget);
 
     await _disposeHost(tester, chatProvider, friendProvider);
@@ -408,7 +450,8 @@ void main() {
     await _disposeHost(tester, chatProvider, friendProvider);
   });
 
-  testWidgets('chat screen should show delivery confirmation toast',
+  testWidgets(
+      'chat screen should rely on inline delivery status without success toast',
       (tester) async {
     final chatProvider = ChatProvider();
     final friendProvider = FriendProvider();
@@ -438,8 +481,10 @@ void main() {
     messages[0] = messages[0].copyWith(status: MessageStatus.sent);
     chatProvider.notifyListeners();
     await tester.pump();
+    await tester.pump();
 
-    expect(find.text('消息已送达'), findsOneWidget);
+    expect(find.text('消息已送达'), findsNothing);
+    expect(find.text('已送达'), findsOneWidget);
 
     await _disposeHost(tester, chatProvider, friendProvider);
   });
@@ -659,7 +704,7 @@ void main() {
   });
 
   testWidgets(
-      'chat screen should show retry success feedback after failed message recovers',
+      'chat screen should update retry success inline without success toast',
       (tester) async {
     final chatProvider = ChatProvider();
     final friendProvider = FriendProvider();
@@ -696,8 +741,10 @@ void main() {
     messages[0] = messages[0].copyWith(status: MessageStatus.sent);
     chatProvider.notifyListeners();
     await tester.pump();
+    await tester.pump();
 
-    expect(find.text('重试成功，已送达'), findsOneWidget);
+    expect(find.text('重试成功，已送达'), findsNothing);
+    expect(find.text('已送达'), findsOneWidget);
 
     await _disposeHost(tester, chatProvider, friendProvider);
   });
@@ -741,8 +788,9 @@ void main() {
     messages[0] = messages[0].copyWith(status: MessageStatus.failed);
     chatProvider.notifyListeners();
     await tester.pump();
+    await tester.pump();
 
-    expect(find.text('重试未成功，请稍后再试'), findsOneWidget);
+    expect(find.text('重试失败，请重试'), findsOneWidget);
 
     await _disposeHost(tester, chatProvider, friendProvider);
   });

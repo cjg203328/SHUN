@@ -177,6 +177,38 @@ void main() {
     await _disposeHost(tester, friendProvider);
   });
 
+  testWidgets('friends tab should render remote avatar image when available',
+      (tester) async {
+    final friendProvider = FriendProvider(enableRemoteHydration: false);
+
+    friendProvider.addFriendDirect(
+      _buildUser(
+        'u_friends_remote_avatar',
+        uid: 'SNF0A499',
+        nickname: 'Remote Avatar Friend',
+        avatar: 'avatar/u_friends_remote_avatar/profile.jpg',
+      ),
+    );
+
+    await tester.pumpWidget(
+      _buildHost(
+        friendProvider: friendProvider,
+      ),
+    );
+    await tester.pump();
+
+    expect(
+      find.descendant(
+        of: find
+            .byKey(const Key('friends-item-avatar-u_friends_remote_avatar')),
+        matching: find.byType(Image),
+      ),
+      findsOneWidget,
+    );
+
+    await _disposeHost(tester, friendProvider);
+  });
+
   testWidgets(
       'friends options sheet should keep actions reachable on compact size',
       (tester) async {

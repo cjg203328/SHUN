@@ -3761,6 +3761,99 @@ void main() {
     );
   });
 
+  test(
+      'sendMessage should advance interaction revision once when unfollowed counter changes',
+      () {
+    final provider = ChatProvider(enableRemoteHydration: false);
+    addTearDown(provider.dispose);
+
+    final thread = _buildThread('u_chat_interaction_unfollowed');
+    provider.addThread(thread);
+    provider.unfollowFriend(thread.id);
+
+    final revisionBeforeSend = provider.threadInteractionRevision(thread.id);
+
+    provider.sendMessage(thread.id, '这条消息会增加未互关计数');
+
+    expect(
+      provider.threadInteractionRevision(thread.id),
+      revisionBeforeSend + 1,
+    );
+    expect(provider.getThread(thread.id)?.messagesSinceUnfollow, 1);
+  });
+
+  test(
+      'markAsRead should advance interaction revision once when unread count changes',
+      () {
+    final provider = ChatProvider(enableRemoteHydration: false);
+    addTearDown(provider.dispose);
+
+    final now = DateTime.now();
+    final thread = ChatThread(
+      id: 'u_chat_mark_read_single_revision',
+      otherUser: _buildUser('u_chat_mark_read_single_revision'),
+      createdAt: now.subtract(const Duration(minutes: 10)),
+      expiresAt: now.add(const Duration(hours: 24)),
+      intimacyPoints: 60,
+      unreadCount: 1,
+    );
+    provider.addThread(thread);
+    provider.getMessages(thread.id).add(
+          Message(
+            id: 'mark-read-single-revision-message',
+            content: '还没读的消息',
+            isMe: false,
+            isRead: false,
+            timestamp: now,
+            status: MessageStatus.sent,
+          ),
+        );
+
+    final revisionBeforeMarkRead =
+        provider.threadInteractionRevision(thread.id);
+
+    provider.markAsRead(thread.id);
+
+    expect(
+      provider.threadInteractionRevision(thread.id),
+      revisionBeforeMarkRead + 1,
+    );
+    expect(provider.getThread(thread.id)?.unreadCount, 0);
+  });
+
+  test(
+      'duplicate incoming message should not advance interaction revision for active thread',
+      () {
+    final provider = ChatProvider(enableRemoteHydration: false);
+    addTearDown(provider.dispose);
+
+    final thread = _buildThread('u_chat_duplicate_incoming_noop');
+    provider.addThread(thread);
+    final message = Message(
+      id: 'duplicate-incoming-noop-message',
+      content: '已经存在的消息',
+      isMe: false,
+      timestamp: DateTime.parse('2026-03-26T10:00:00.000'),
+      status: MessageStatus.sent,
+    );
+    provider.getMessages(thread.id).add(message);
+
+    final revisionBeforeDuplicate =
+        provider.threadInteractionRevision(thread.id);
+
+    ChatSocketService.instance.onMessageNew?.call(
+      IncomingMessageEvent(
+        threadId: thread.id,
+        message: message,
+      ),
+    );
+
+    expect(
+      provider.threadInteractionRevision(thread.id),
+      revisionBeforeDuplicate,
+    );
+  });
+
   test('thread summary revision should stay scoped to the changed thread', () {
     final provider = ChatProvider(enableRemoteHydration: false);
     addTearDown(provider.dispose);

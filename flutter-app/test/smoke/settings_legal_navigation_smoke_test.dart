@@ -175,6 +175,10 @@ void main() {
         find.byKey(const Key('legal-document-scroll-view')),
         findsOneWidget,
       );
+      expect(
+        find.byKey(const Key('legal-document-summary-card')),
+        findsOneWidget,
+      );
       expect(tester.takeException(), isNull);
     },
   );
@@ -205,6 +209,10 @@ void main() {
 
       expect(
         find.byKey(const Key('legal-document-scroll-view')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const Key('legal-document-summary-card')),
         findsOneWidget,
       );
       expect(tester.takeException(), isNull);

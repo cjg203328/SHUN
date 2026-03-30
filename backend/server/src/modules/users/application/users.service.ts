@@ -111,6 +111,12 @@ export class UsersService {
         avatarUrl: objectKey,
         updatedAt: new Date().toISOString(),
       });
+    } else {
+      await this.store.saveUser({
+        ...user,
+        backgroundUrl: objectKey,
+        updatedAt: new Date().toISOString(),
+      });
     }
 
     return {

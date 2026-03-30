@@ -163,7 +163,7 @@ class AuthProvider extends ChangeNotifier {
     if (error is ApiException) {
       return error.userMessage;
     }
-    return '操作失败，请稍后重试';
+    return '操作失败，请重试';
   }
 
   String? consumePendingEntryHintSource() {

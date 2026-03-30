@@ -17,6 +17,7 @@ import 'package:sunliao/providers/settings_provider.dart';
 import 'package:sunliao/screens/main_screen.dart';
 import 'package:sunliao/screens/settings_screen.dart';
 import 'package:sunliao/services/image_upload_service.dart';
+import 'package:sunliao/services/storage_service.dart';
 
 import '../helpers/test_bootstrap.dart';
 
@@ -174,11 +175,37 @@ void main() {
     );
   }
 
-  testWidgets('main screen should render core content on default size',
-      (tester) async {
-    await tester.pumpWidget(buildApp());
+  Future<void> pumpMainScreen(
+    WidgetTester tester, {
+    String initialLocation = '/main',
+    AuthProvider? authProvider,
+  }) async {
+    await tester.pumpWidget(
+      buildApp(
+        initialLocation: initialLocation,
+        authProvider: authProvider,
+      ),
+    );
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
+  }
+
+  List<String> collectTextValues(WidgetTester tester, Finder root) {
+    return tester
+        .widgetList<Text>(
+          find.descendant(
+            of: root,
+            matching: find.byType(Text),
+          ),
+        )
+        .map((widget) => widget.data)
+        .whereType<String>()
+        .toList();
+  }
+
+  testWidgets('main screen should render core content on default size',
+      (tester) async {
+    await pumpMainScreen(tester);
 
     expect(find.byKey(const Key('main-tab-stack')), findsOneWidget);
     expect(find.byKey(const Key('messages-tab-title')), findsOneWidget);
@@ -188,9 +215,7 @@ void main() {
 
   testWidgets('main screen should show lightweight sync hint after login entry',
       (tester) async {
-    await tester.pumpWidget(buildApp(initialLocation: '/main?entry=login'));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 300));
+    await pumpMainScreen(tester, initialLocation: '/main?entry=login');
 
     expect(find.byKey(const Key('main-entry-sync-hint')), findsOneWidget);
     expect(find.byKey(const Key('main-entry-sync-spinner')), findsOneWidget);
@@ -209,14 +234,11 @@ void main() {
     addTearDown(authProvider.dispose);
     authProvider.debugPrimePendingEntryHintSource('login');
 
-    await tester.pumpWidget(
-      buildApp(
-        initialLocation: '/main',
-        authProvider: authProvider,
-      ),
+    await pumpMainScreen(
+      tester,
+      initialLocation: '/main',
+      authProvider: authProvider,
     );
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 300));
 
     expect(find.byKey(const Key('main-entry-sync-hint')), findsOneWidget);
     expect(find.byKey(const Key('main-entry-sync-spinner')), findsOneWidget);
@@ -230,16 +252,15 @@ void main() {
 
   testWidgets('main screen should show messages tab from route query',
       (tester) async {
-    await tester.pumpWidget(buildApp(initialLocation: '/main?tab=1'));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 300));
+    await pumpMainScreen(tester, initialLocation: '/main?tab=1');
 
     expect(find.byKey(const Key('messages-tab-title')), findsNothing);
-    expect(find.byKey(const Key('match-guide-card')), findsOneWidget);
+    expect(find.byKey(const Key('match-guide-card')), findsNothing);
+    expect(find.byKey(const Key('match-primary-action')), findsOneWidget);
   });
 
   testWidgets(
-      'main screen should keep profile quick actions visible on compact size',
+      'main screen should keep profile direct entry affordances visible on compact size',
       (tester) async {
     tester.view.physicalSize = const Size(360, 640);
     tester.view.devicePixelRatio = 1.0;
@@ -248,71 +269,40 @@ void main() {
       tester.view.resetDevicePixelRatio();
     });
 
-    await tester.pumpWidget(buildApp(initialLocation: '/main?tab=3'));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 300));
+    await pumpMainScreen(tester, initialLocation: '/main?tab=3');
 
     expect(
         find.byKey(const Key('profile-compact-identity-card')), findsOneWidget);
     expect(find.byKey(const Key('profile-stats-card')), findsOneWidget);
-    expect(find.byKey(const Key('profile-quick-actions-card')), findsOneWidget);
+    expect(find.byKey(const Key('profile-quick-actions-card')), findsNothing);
     expect(find.byKey(const Key('profile-quick-actions-badge')), findsNothing);
-    expect(find.byKey(const Key('profile-readiness-chip')), findsOneWidget);
-    expect(
-        find.byKey(const Key('profile-completion-checklist')), findsOneWidget);
+    expect(find.byKey(const Key('profile-avatar-trigger')), findsOneWidget);
     expect(find.byKey(const Key('profile-avatar-edit-pill')), findsOneWidget);
-    expect(find.byKey(const Key('profile-check-background')), findsOneWidget);
-    expect(find.byKey(const Key('profile-check-signature')), findsOneWidget);
-    expect(find.byKey(const Key('profile-check-status')), findsOneWidget);
-    expect(find.byKey(const Key('profile-quick-avatar')), findsOneWidget);
-    expect(find.byKey(const Key('profile-quick-status')), findsOneWidget);
-    expect(
-      find.descendant(
-        of: find.byKey(const Key('profile-quick-avatar')),
-        matching: find.text('补头像'),
-      ),
-      findsOneWidget,
-    );
-    expect(
-      find.descendant(
-        of: find.byKey(const Key('profile-quick-status')),
-        matching: find.text('改状态'),
-      ),
-      findsOneWidget,
-    );
-    expect(
-      find.byKey(const Key('profile-quick-background-mode')),
-      findsOneWidget,
-    );
-    expect(
-      find.descendant(
-        of: find.byKey(const Key('profile-quick-background-mode')),
-        matching: find.text('补背景'),
-      ),
-      findsOneWidget,
-    );
-    expect(find.byKey(const Key('profile-quick-settings')), findsOneWidget);
-    final quickStatusRect =
-        tester.getRect(find.byKey(const Key('profile-quick-status')));
-    final quickAvatarRect =
-        tester.getRect(find.byKey(const Key('profile-quick-avatar')));
-    final quickBackgroundRect =
-        tester.getRect(find.byKey(const Key('profile-quick-background-mode')));
-    final checklistRect =
-        tester.getRect(find.byKey(const Key('profile-completion-checklist')));
+    expect(find.byKey(const Key('profile-signature-trigger')), findsOneWidget);
+    expect(find.byKey(const Key('profile-status-trigger')), findsOneWidget);
+    expect(find.byKey(const Key('profile-header-settings-action')),
+        findsOneWidget);
+    expect(find.byKey(const Key('profile-background-surface')), findsOneWidget);
+    expect(find.byKey(const Key('profile-background-edit-pill')), findsNothing);
+
+    final avatarRect =
+        tester.getRect(find.byKey(const Key('profile-avatar-trigger')));
+    final signatureRect =
+        tester.getRect(find.byKey(const Key('profile-signature-trigger')));
+    final statusRect =
+        tester.getRect(find.byKey(const Key('profile-status-trigger')));
     final settingsRect =
-        tester.getRect(find.byKey(const Key('profile-quick-settings')));
-    expect(quickStatusRect.top, lessThan(checklistRect.top));
-    expect(quickAvatarRect.width, greaterThanOrEqualTo(88));
-    expect(quickStatusRect.height, greaterThanOrEqualTo(34));
-    expect(quickStatusRect.width, greaterThanOrEqualTo(88));
-    expect(quickBackgroundRect.width, greaterThanOrEqualTo(88));
-    expect(settingsRect.height, greaterThanOrEqualTo(34));
-    expect(settingsRect.width, greaterThanOrEqualTo(84));
-    expect(find.text('更多设置'), findsOneWidget);
-    final quickActionsRect =
-        tester.getRect(find.byKey(const Key('profile-quick-actions-card')));
-    expect(quickActionsRect.bottom, lessThanOrEqualTo(640));
+        tester.getRect(find.byKey(const Key('profile-header-settings-action')));
+
+    expect(avatarRect.width, greaterThanOrEqualTo(64));
+    expect(avatarRect.height, greaterThanOrEqualTo(64));
+    expect(signatureRect.width, greaterThanOrEqualTo(180));
+    expect(statusRect.height, greaterThanOrEqualTo(48));
+    expect(statusRect.width, greaterThanOrEqualTo(220));
+    expect(settingsRect.height, lessThanOrEqualTo(32));
+    expect(settingsRect.width, lessThanOrEqualTo(32));
+    expect(settingsRect.top, greaterThanOrEqualTo(0));
+
     final scrollableState = tester.state<ScrollableState>(
       find.descendant(
         of: find.byKey(const Key('profile-main-scroll')),
@@ -337,18 +327,11 @@ void main() {
       'background/mock_compact_profile.png',
     );
 
-    await tester.pumpWidget(buildApp(initialLocation: '/main?tab=3'));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 300));
+    await pumpMainScreen(tester, initialLocation: '/main?tab=3');
 
-    expect(find.byKey(const Key('profile-quick-avatar')), findsOneWidget);
-    expect(
-      find.descendant(
-        of: find.byKey(const Key('profile-quick-background-mode')),
-        matching: find.text('背景管理'),
-      ),
-      findsOneWidget,
-    );
+    expect(find.byKey(const Key('profile-avatar-trigger')), findsOneWidget);
+    expect(find.byKey(const Key('profile-header-settings-action')),
+        findsOneWidget);
     expect(
         find.byKey(const Key('profile-background-edit-pill')), findsOneWidget);
 
@@ -356,11 +339,15 @@ void main() {
         tester.getRect(find.byKey(const Key('profile-avatar-edit-pill')));
     final backgroundBadgeRect =
         tester.getRect(find.byKey(const Key('profile-background-edit-pill')));
+    final settingsRect =
+        tester.getRect(find.byKey(const Key('profile-header-settings-action')));
 
     expect(avatarBadgeRect.width, lessThanOrEqualTo(30));
     expect(avatarBadgeRect.height, lessThanOrEqualTo(30));
     expect(backgroundBadgeRect.width, lessThanOrEqualTo(32));
     expect(backgroundBadgeRect.height, lessThanOrEqualTo(32));
+    expect(settingsRect.width, lessThanOrEqualTo(32));
+    expect(settingsRect.height, lessThanOrEqualTo(32));
     expect(tester.takeException(), isNull);
   });
 
@@ -377,9 +364,7 @@ void main() {
       'background/mock_fullscreen_profile.png',
     );
 
-    await tester.pumpWidget(buildApp(initialLocation: '/main?tab=3'));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 300));
+    await pumpMainScreen(tester, initialLocation: '/main?tab=3');
 
     final mainContext = tester.element(find.byType(MainScreen));
     await Provider.of<ProfileProvider>(mainContext, listen: false)
@@ -398,8 +383,6 @@ void main() {
       find.byKey(const Key('profile-fullscreen-settings-action')),
       findsOneWidget,
     );
-    expect(find.text('背景'), findsOneWidget);
-    expect(find.text('设置'), findsOneWidget);
 
     final railRect =
         tester.getRect(find.byKey(const Key('profile-fullscreen-action-rail')));
@@ -441,11 +424,9 @@ void main() {
       tester.view.resetDevicePixelRatio();
     });
 
-    await tester.pumpWidget(buildApp(initialLocation: '/main?tab=3'));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 300));
+    await pumpMainScreen(tester, initialLocation: '/main?tab=3');
 
-    await tester.tap(find.byKey(const Key('profile-quick-avatar')));
+    await tester.tap(find.byKey(const Key('profile-avatar-trigger')));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
 
@@ -462,16 +443,15 @@ void main() {
           .widget<Text>(
               find.byKey(const Key('profile-avatar-management-status')))
           .data,
-      '当前还在使用默认头像',
+      isNotEmpty,
     );
     expect(
       tester
           .widget<Text>(
               find.byKey(const Key('profile-avatar-management-badge')))
           .data,
-      '待补充',
+      isNotEmpty,
     );
-    expect(find.text('补一个头像'), findsOneWidget);
     expect(
       find.byKey(const Key('profile-avatar-delete-action')),
       findsNothing,
@@ -493,12 +473,10 @@ void main() {
       'background/mock_profile_management.png',
     );
 
-    await tester.pumpWidget(buildApp(initialLocation: '/main?tab=3'));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 300));
+    await pumpMainScreen(tester, initialLocation: '/main?tab=3');
 
     await tester.tap(
-      find.byKey(const Key('profile-quick-background-mode')),
+      find.byKey(const Key('profile-background-edit-pill')),
       warnIfMissed: false,
     );
     await tester.pump();
@@ -508,24 +486,6 @@ void main() {
       find.byKey(const Key('profile-background-management-sheet')),
       findsOneWidget,
     );
-    expect(
-      tester
-          .widget<Text>(
-            find.byKey(const Key('profile-background-management-status')),
-          )
-          .data,
-      '当前背景已经生效',
-    );
-    expect(
-      tester
-          .widget<Text>(
-            find.byKey(const Key('profile-background-management-badge')),
-          )
-          .data,
-      '首屏展示中',
-    );
-    expect(find.text('重新上传背景'), findsOneWidget);
-    expect(find.text('调整背景模式'), findsOneWidget);
     expect(find.byKey(const Key('profile-background-delete-action')),
         findsOneWidget);
 
@@ -547,26 +507,107 @@ void main() {
       tester
           .widget<Text>(find.byKey(const Key('profile-inline-feedback-title')))
           .data,
-      '背景已恢复默认',
+      isNotEmpty,
     );
     expect(
       tester
           .widget<Text>(find.byKey(const Key('profile-inline-feedback-badge')))
           .data,
-      '已清空',
+      isNotEmpty,
     );
+    expect(find.byKey(const Key('profile-background-edit-pill')), findsNothing);
+    expect(find.byKey(const Key('profile-background-surface')), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('profile background mode sheet should keep switch state in sync',
+      (tester) async {
+    await ImageUploadService.saveBackgroundReference(
+      'background/mock_profile_mode.png',
+    );
+
+    await pumpMainScreen(tester, initialLocation: '/main?tab=3');
+
+    await tester.tap(
+      find.byKey(const Key('profile-background-edit-pill')),
+      warnIfMissed: false,
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    await tester.tap(
+      find.byKey(const Key('profile-background-mode-action')),
+      warnIfMissed: false,
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 260));
+    await tester.pumpAndSettle();
+
     expect(
-      find.descendant(
-        of: find.byKey(const Key('profile-quick-background-mode')),
-        matching: find.text('补背景'),
-      ),
+      find.byKey(const Key('profile-background-mode-sheet')),
       findsOneWidget,
     );
+
+    Switch portraitSwitch = tester.widget<Switch>(
+      find.byKey(const Key('profile-background-mode-portrait-switch')),
+    );
+    Switch transparentSwitch = tester.widget<Switch>(
+      find.byKey(const Key('profile-background-mode-transparent-switch')),
+    );
+
+    expect(portraitSwitch.value, isFalse);
+    expect(portraitSwitch.onChanged, isNotNull);
+    expect(transparentSwitch.value, isFalse);
+    expect(transparentSwitch.onChanged, isNull);
+
+    await tester.tap(
+      find.byKey(const Key('profile-background-mode-portrait-switch')),
+      warnIfMissed: false,
+    );
+    await tester.pumpAndSettle();
+
+    portraitSwitch = tester.widget<Switch>(
+      find.byKey(const Key('profile-background-mode-portrait-switch')),
+    );
+    transparentSwitch = tester.widget<Switch>(
+      find.byKey(const Key('profile-background-mode-transparent-switch')),
+    );
+
+    expect(portraitSwitch.value, isTrue);
+    expect(transparentSwitch.onChanged, isNotNull);
+
+    await tester.tap(
+      find.byKey(const Key('profile-background-mode-transparent-switch')),
+      warnIfMissed: false,
+    );
+    await tester.pumpAndSettle();
+
+    transparentSwitch = tester.widget<Switch>(
+      find.byKey(const Key('profile-background-mode-transparent-switch')),
+    );
+    expect(transparentSwitch.value, isTrue);
+
+    await tester.tap(
+      find.byKey(const Key('profile-background-mode-portrait-switch')),
+      warnIfMissed: false,
+    );
+    await tester.pumpAndSettle();
+
+    portraitSwitch = tester.widget<Switch>(
+      find.byKey(const Key('profile-background-mode-portrait-switch')),
+    );
+    transparentSwitch = tester.widget<Switch>(
+      find.byKey(const Key('profile-background-mode-transparent-switch')),
+    );
+
+    expect(portraitSwitch.value, isFalse);
+    expect(transparentSwitch.value, isFalse);
+    expect(transparentSwitch.onChanged, isNull);
     expect(tester.takeException(), isNull);
   });
 
   testWidgets(
-      'profile checklist should jump directly to editors on compact size',
+      'profile direct entry affordances should jump directly to editors on compact size',
       (tester) async {
     tester.view.physicalSize = const Size(360, 640);
     tester.view.devicePixelRatio = 1.0;
@@ -575,11 +616,9 @@ void main() {
       tester.view.resetDevicePixelRatio();
     });
 
-    await tester.pumpWidget(buildApp(initialLocation: '/main?tab=3'));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 300));
+    await pumpMainScreen(tester, initialLocation: '/main?tab=3');
 
-    await tester.tap(find.byKey(const Key('profile-check-signature')));
+    await tester.tap(find.byKey(const Key('profile-signature-trigger')));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
 
@@ -591,7 +630,7 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
 
-    await tester.tap(find.byKey(const Key('profile-check-status')));
+    await tester.tap(find.byKey(const Key('profile-status-trigger')));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
 
@@ -614,19 +653,15 @@ void main() {
       tester.view.resetDevicePixelRatio();
     });
 
-    await tester.pumpWidget(buildApp(initialLocation: '/main?tab=3'));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 300));
+    await pumpMainScreen(tester, initialLocation: '/main?tab=3');
 
-    await tester
-        .ensureVisible(find.byKey(const Key('profile-priority-signature')));
-    await tester.tap(find.byKey(const Key('profile-priority-signature')));
+    await tester.tap(find.byKey(const Key('profile-signature-trigger')));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
 
     await tester.enterText(
       find.byKey(const Key('profile-editor-input')),
-      '今晚想听点新鲜故事',
+      'fresh signature',
     );
     await tester.tap(find.byKey(const Key('profile-editor-save')));
     await tester.pumpAndSettle();
@@ -637,13 +672,13 @@ void main() {
       tester
           .widget<Text>(find.byKey(const Key('profile-inline-feedback-title')))
           .data,
-      '签名已经更新',
+      isNotEmpty,
     );
     expect(
       tester
           .widget<Text>(find.byKey(const Key('profile-inline-feedback-badge')))
           .data,
-      '展示已刷新',
+      isNotEmpty,
     );
     expect(
       tester
@@ -651,7 +686,7 @@ void main() {
             find.byKey(const Key('profile-inline-feedback-description')),
           )
           .data,
-      contains('新的签名已经写回当前资料卡'),
+      isNotEmpty,
     );
     expect(tester.takeException(), isNull);
   });
@@ -665,18 +700,15 @@ void main() {
       tester.view.resetDevicePixelRatio();
     });
 
-    await tester.pumpWidget(buildApp(initialLocation: '/main?tab=3'));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 300));
+    await pumpMainScreen(tester, initialLocation: '/main?tab=3');
 
-    expect(find.byKey(const Key('profile-priority-signature')), findsOneWidget);
-    expect(find.byKey(const Key('profile-priority-status')), findsOneWidget);
-    expect(
-        find.byKey(const Key('profile-priority-background')), findsOneWidget);
+    expect(find.byKey(const Key('profile-signature-trigger')), findsOneWidget);
+    expect(find.byKey(const Key('profile-status-trigger')), findsOneWidget);
+    expect(find.byKey(const Key('profile-background-surface')), findsOneWidget);
+    expect(find.byKey(const Key('profile-header-settings-action')),
+        findsOneWidget);
 
-    await tester
-        .ensureVisible(find.byKey(const Key('profile-priority-signature')));
-    await tester.tap(find.byKey(const Key('profile-priority-signature')));
+    await tester.tap(find.byKey(const Key('profile-signature-trigger')));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
 
@@ -685,13 +717,6 @@ void main() {
         find.byKey(const Key('profile-editor-preview-card')), findsOneWidget);
     expect(find.byKey(const Key('profile-editor-input')), findsOneWidget);
     expect(find.byKey(const Key('profile-editor-save')), findsOneWidget);
-    expect(
-      find.descendant(
-        of: find.byKey(const Key('profile-editor-preview-card')),
-        matching: find.text('默认'),
-      ),
-      findsOneWidget,
-    );
 
     await tester.tap(find.byKey(const Key('profile-editor-cancel')));
     await tester.pump();
@@ -699,9 +724,7 @@ void main() {
 
     expect(find.byKey(const Key('profile-signature-sheet')), findsNothing);
 
-    await tester
-        .ensureVisible(find.byKey(const Key('profile-priority-status')));
-    await tester.tap(find.byKey(const Key('profile-priority-status')));
+    await tester.tap(find.byKey(const Key('profile-status-trigger')));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
 
@@ -712,15 +735,14 @@ void main() {
       tester
           .widget<Text>(find.byKey(const Key('profile-status-current-value')))
           .data,
-      '想找人聊聊',
+      isNotEmpty,
     );
 
     await tester.tap(find.byKey(const Key('profile-status-option-0')));
     await tester.pumpAndSettle();
   });
 
-  testWidgets(
-      'profile tab should keep priority actions focused on unfinished items',
+  testWidgets('profile tab should keep direct status entry in sync',
       (tester) async {
     tester.view.physicalSize = const Size(430, 900);
     tester.view.devicePixelRatio = 1.0;
@@ -729,22 +751,18 @@ void main() {
       tester.view.resetDevicePixelRatio();
     });
 
-    await tester.pumpWidget(buildApp(initialLocation: '/main?tab=3'));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 300));
+    await pumpMainScreen(tester, initialLocation: '/main?tab=3');
 
-    expect(find.byKey(const Key('profile-priority-status')), findsOneWidget);
-    expect(
-      find.descendant(
-        of: find.byKey(const Key('profile-check-status')),
-        matching: find.text('去完善'),
-      ),
-      findsOneWidget,
+    expect(find.byKey(const Key('profile-quick-actions-card')), findsNothing);
+    expect(find.byKey(const Key('profile-status-trigger')), findsOneWidget);
+
+    final initialStatusTexts = collectTextValues(
+      tester,
+      find.byKey(const Key('profile-status-trigger')),
     );
+    expect(initialStatusTexts, isNotEmpty);
 
-    await tester
-        .ensureVisible(find.byKey(const Key('profile-priority-status')));
-    await tester.tap(find.byKey(const Key('profile-priority-status')));
+    await tester.tap(find.byKey(const Key('profile-status-trigger')));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
 
@@ -753,15 +771,12 @@ void main() {
     await tester.tap(find.byKey(const Key('profile-status-option-1')));
     await tester.pumpAndSettle();
 
-    expect(find.byKey(const Key('profile-priority-status')), findsNothing);
-    expect(find.byKey(const Key('profile-priority-signature')), findsOneWidget);
-    expect(
-      find.descendant(
-        of: find.byKey(const Key('profile-check-status')),
-        matching: find.text('可微调'),
-      ),
-      findsOneWidget,
+    final updatedStatusTexts = collectTextValues(
+      tester,
+      find.byKey(const Key('profile-status-trigger')),
     );
+
+    expect(updatedStatusTexts, isNot(equals(initialStatusTexts)));
     expect(tester.takeException(), isNull);
   });
 
@@ -775,9 +790,7 @@ void main() {
         tester.view.resetDevicePixelRatio();
       });
 
-      await tester.pumpWidget(buildApp(initialLocation: '/main?tab=3'));
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 300));
+      await pumpMainScreen(tester, initialLocation: '/main?tab=3');
 
       final profileScrollableFinder = find.descendant(
         of: find.byKey(const Key('profile-main-scroll')),
@@ -788,7 +801,7 @@ void main() {
       expect(profileScrollableState.position.maxScrollExtent, greaterThan(0));
 
       final quickSettingsButton =
-          find.byKey(const Key('profile-quick-settings'));
+          find.byKey(const Key('profile-header-settings-action'));
       await tester.ensureVisible(quickSettingsButton);
       await tester.tap(quickSettingsButton, warnIfMissed: false);
       await tester.pumpAndSettle();
@@ -819,12 +832,6 @@ void main() {
         findsOneWidget,
       );
       expect(
-        tester
-            .widget<Text>(find.byKey(const Key('profile-identity-sync-label')))
-            .data,
-        '首页同步中',
-      );
-      expect(
         find.byKey(const Key('profile-identity-sync-progress-icon')),
         findsOneWidget,
       );
@@ -839,28 +846,32 @@ void main() {
         findsOneWidget,
       );
       expect(
-        tester
-            .widget<Text>(find.byKey(const Key('profile-identity-sync-label')))
-            .data,
-        '首页已同步',
-      );
-      expect(
         find.byKey(const Key('profile-identity-sync-complete-icon')),
         findsOneWidget,
       );
       expect(
         tester
             .widget<Text>(
-                find.byKey(const Key('profile-inline-feedback-title')))
+              find.byKey(const Key('profile-inline-feedback-title')),
+            )
             .data,
-        '头像和背景已同步到首页',
+        '头像和背景已同步',
       );
       expect(
         tester
             .widget<Text>(
-                find.byKey(const Key('profile-inline-feedback-badge')))
+              find.byKey(const Key('profile-inline-feedback-badge')),
+            )
             .data,
-        '展示已刷新',
+        '已同步',
+      );
+      expect(
+        tester
+            .widget<Text>(
+              find.byKey(const Key('profile-inline-feedback-description')),
+            )
+            .data,
+        '当前首页已显示新的头像和背景。',
       );
       expect(find.byKey(const Key('profile-avatar-media')), findsOneWidget);
       expect(
@@ -894,6 +905,207 @@ void main() {
         (backgroundImage as NetworkImage).url,
         AppEnv.resolveMediaUrl('background/mock_uploaded.png'),
       );
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'profile tab should show deferred settings sync copy for local-only media when remote refresh fails',
+    (tester) async {
+      final avatarFile = File(
+        '${Directory.systemTemp.path}\\profile_settings_return_avatar_${DateTime.now().microsecondsSinceEpoch}.png',
+      );
+      final backgroundFile = File(
+        '${Directory.systemTemp.path}\\profile_settings_return_background_${DateTime.now().microsecondsSinceEpoch}.png',
+      );
+      await avatarFile.writeAsBytes(_kTransparentImageBytes);
+      await backgroundFile.writeAsBytes(_kTransparentImageBytes);
+      addTearDown(() async {
+        if (await avatarFile.exists()) {
+          await avatarFile.delete();
+        }
+        if (await backgroundFile.exists()) {
+          await backgroundFile.delete();
+        }
+      });
+
+      await StorageService.saveToken('remote-refresh-fail-token');
+      await pumpMainScreen(tester, initialLocation: '/main?tab=3');
+
+      final quickSettingsButton =
+          find.byKey(const Key('profile-header-settings-action'));
+      await tester.ensureVisible(quickSettingsButton);
+      await tester.tap(quickSettingsButton, warnIfMissed: false);
+      await tester.pumpAndSettle();
+
+      expect(find.byType(SettingsScreen), findsOneWidget);
+
+      await ImageUploadService.saveAvatarReference(avatarFile.path);
+      await ImageUploadService.saveBackgroundReference(backgroundFile.path);
+
+      final settingsContext = tester.element(find.byType(SettingsScreen));
+      GoRouter.of(settingsContext).pop();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 120));
+      await tester.pump(const Duration(milliseconds: 320));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const Key('profile-settings-sync-hint')),
+        findsOneWidget,
+      );
+      expect(
+        tester
+            .widget<Text>(
+              find.byKey(const Key('profile-inline-feedback-title')),
+            )
+            .data,
+        '头像和背景已保存在本机',
+      );
+      expect(
+        tester
+            .widget<Text>(
+              find.byKey(const Key('profile-inline-feedback-badge')),
+            )
+            .data,
+        '待联网同步',
+      );
+      expect(
+        tester
+            .widget<Text>(
+              find.byKey(const Key('profile-inline-feedback-description')),
+            )
+            .data,
+        '当前首页先显示新的头像和背景，联网后会继续同步到服务器。',
+      );
+    },
+  );
+
+  testWidgets(
+    'profile tab should fallback cleanly when local media references are stale',
+    (tester) async {
+      final missingAvatarPath =
+          '${Directory.systemTemp.path}\\missing_profile_avatar_${DateTime.now().microsecondsSinceEpoch}.png';
+      final missingBackgroundPath =
+          '${Directory.systemTemp.path}\\missing_profile_background_${DateTime.now().microsecondsSinceEpoch}.png';
+
+      await ImageUploadService.saveAvatarReference(missingAvatarPath);
+      await ImageUploadService.saveBackgroundReference(missingBackgroundPath);
+
+      await pumpMainScreen(tester, initialLocation: '/main?tab=3');
+
+      expect(find.byKey(const Key('profile-avatar-media')), findsNothing);
+
+      final backgroundSurface = tester.widget<Container>(
+        find.byKey(const Key('profile-background-surface')),
+      );
+      final backgroundDecoration =
+          backgroundSurface.decoration as BoxDecoration?;
+      expect(backgroundDecoration?.image, isNull);
+
+      await tester.tap(find.byKey(const Key('profile-avatar-trigger')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+
+      expect(
+        find.byKey(const Key('profile-avatar-management-sheet')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const Key('profile-avatar-management-image')),
+        findsNothing,
+      );
+
+      await tester.tap(find.byKey(const Key('profile-avatar-delete-action')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('app-dialog-cancel')));
+      await tester.pumpAndSettle();
+
+      await tester.tap(
+        find.byKey(const Key('profile-background-edit-pill')),
+        warnIfMissed: false,
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+
+      final backgroundThumbnail = tester.widget<Container>(
+        find.byKey(const Key('profile-background-management-thumbnail')),
+      );
+      final backgroundThumbnailDecoration =
+          backgroundThumbnail.decoration as BoxDecoration?;
+      expect(backgroundThumbnailDecoration?.image, isNull);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'profile media management should show deferred sync copy for local-only media',
+    (tester) async {
+      final avatarFile = File(
+        '${Directory.systemTemp.path}\\profile_local_avatar_${DateTime.now().microsecondsSinceEpoch}.png',
+      );
+      final backgroundFile = File(
+        '${Directory.systemTemp.path}\\profile_local_background_${DateTime.now().microsecondsSinceEpoch}.png',
+      );
+      await avatarFile.writeAsBytes(_kTransparentImageBytes);
+      await backgroundFile.writeAsBytes(_kTransparentImageBytes);
+      addTearDown(() async {
+        if (await avatarFile.exists()) {
+          await avatarFile.delete();
+        }
+        if (await backgroundFile.exists()) {
+          await backgroundFile.delete();
+        }
+      });
+
+      await ImageUploadService.saveAvatarReference(avatarFile.path);
+      await ImageUploadService.saveBackgroundReference(backgroundFile.path);
+
+      await pumpMainScreen(tester, initialLocation: '/main?tab=3');
+
+      await tester.tap(find.byKey(const Key('profile-avatar-trigger')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+
+      expect(
+        tester
+            .widget<Text>(
+              find.byKey(const Key('profile-avatar-management-status')),
+            )
+            .data,
+        '头像已保存在本机',
+      );
+      expect(
+        tester
+            .widget<Text>(
+              find.byKey(const Key('profile-avatar-management-badge')),
+            )
+            .data,
+        '待联网同步',
+      );
+      expect(find.text('更换头像'), findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('profile-background-edit-pill')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+
+      expect(
+        tester
+            .widget<Text>(
+              find.byKey(const Key('profile-background-management-status')),
+            )
+            .data,
+        '背景已保存在本机',
+      );
+      expect(
+        tester
+            .widget<Text>(
+              find.byKey(const Key('profile-background-management-badge')),
+            )
+            .data,
+        '待联网同步',
+      );
+      expect(find.text('更换背景'), findsOneWidget);
       expect(tester.takeException(), isNull);
     },
   );

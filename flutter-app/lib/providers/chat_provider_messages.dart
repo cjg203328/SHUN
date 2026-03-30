@@ -42,6 +42,7 @@ extension ChatProviderMessages on ChatProvider {
       _updateThread(
         threadId,
         messagesSinceUnfollow: thread.messagesSinceUnfollow + 1,
+        markInteraction: false,
         notify: false,
       );
     }
@@ -206,7 +207,13 @@ extension ChatProviderMessages on ChatProvider {
         previousOutgoingDeliveryFingerprint,
       );
       _markThreadListPresentationDirtyIfChanged(threadId, previousFingerprint);
-      _addIntimacy(threadId, content, true, notify: false);
+      _addIntimacy(
+        threadId,
+        content,
+        true,
+        markInteraction: false,
+        notify: false,
+      );
       _recordDeliverySuccess(MessageType.text, localMessageId);
       notifyListeners();
       return;
@@ -250,7 +257,13 @@ extension ChatProviderMessages on ChatProvider {
           previousOutgoingDeliveryFingerprint,
         );
         if (isSuccess) {
-          _addIntimacy(threadId, content, true, notify: false);
+          _addIntimacy(
+            threadId,
+            content,
+            true,
+            markInteraction: false,
+            notify: false,
+          );
         }
         notifyListeners();
 
@@ -265,6 +278,7 @@ extension ChatProviderMessages on ChatProvider {
     String threadId,
     String content,
     bool isSend, {
+    bool markInteraction = true,
     bool notify = false,
   }) {
     final thread = _threads[threadId];
@@ -293,7 +307,12 @@ extension ChatProviderMessages on ChatProvider {
     _lastMessageTime[threadId] = DateTime.now();
 
     final newPoints = thread.intimacyPoints + points;
-    _updateThread(threadId, intimacyPoints: newPoints, notify: notify);
+    _updateThread(
+      threadId,
+      intimacyPoints: newPoints,
+      markInteraction: markInteraction,
+      notify: notify,
+    );
   }
 
   bool canResendMessage(String threadId, String messageId) {
@@ -641,7 +660,13 @@ extension ChatProviderMessages on ChatProvider {
     _deletedThreads[threadId] = false;
     _markThreadInteractionChanged(threadId);
     _markThreadListPresentationDirtyIfChanged(threadId, previousFingerprint);
-    _addIntimacy(threadId, content, false, notify: false);
+    _addIntimacy(
+      threadId,
+      content,
+      false,
+      markInteraction: false,
+      notify: false,
+    );
 
     if (isActiveThread) {
       markAsRead(threadId);
@@ -668,7 +693,12 @@ extension ChatProviderMessages on ChatProvider {
     var messageUpdated = false;
     final currentUnread = _threads[threadId]?.unreadCount ?? 0;
     if (currentUnread != remainingUnread) {
-      _updateThread(threadId, unreadCount: remainingUnread, notify: false);
+      _updateThread(
+        threadId,
+        unreadCount: remainingUnread,
+        markInteraction: false,
+        notify: false,
+      );
       messageUpdated = true;
     }
 
@@ -926,6 +956,7 @@ extension ChatProviderMessages on ChatProvider {
         _updateThread(
           threadId,
           messagesSinceUnfollow: latestThread.messagesSinceUnfollow + 1,
+          markInteraction: false,
           notify: false,
         );
       }
@@ -1123,11 +1154,15 @@ extension ChatProviderMessages on ChatProvider {
           threadId,
           previousOutgoingDeliveryFingerprint,
         );
-        notifyListeners();
-
         if (isSuccess) {
-          _addIntimacy(threadId, '[图片]', true);
+          _addIntimacy(
+            threadId,
+            '[图片]',
+            true,
+            markInteraction: false,
+          );
         }
+        notifyListeners();
       }
     }
   }
@@ -1163,7 +1198,12 @@ extension ChatProviderMessages on ChatProvider {
         previousOutgoingDeliveryFingerprint,
       );
       _markThreadListPresentationDirtyIfChanged(threadId, previousFingerprint);
-      _addIntimacy(threadId, '[图片]', true);
+      _addIntimacy(
+        threadId,
+        '[图片]',
+        true,
+        markInteraction: false,
+      );
       _recordDeliverySuccess(MessageType.image, localMessageId);
       notifyListeners();
       return;
@@ -1190,8 +1230,12 @@ extension ChatProviderMessages on ChatProvider {
             lastReadMessageId: messageId,
           );
           if ((_threads[threadId]?.unreadCount ?? 0) != remainingUnread) {
-            _updateThread(threadId,
-                unreadCount: remainingUnread, notify: false);
+            _updateThread(
+              threadId,
+              unreadCount: remainingUnread,
+              markInteraction: false,
+              notify: false,
+            );
           }
           final readMessageIds = _resolveAutoReadMessageIds(messages);
           if (readMessageIds.isNotEmpty) {

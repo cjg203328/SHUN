@@ -4,6 +4,7 @@ export interface UserEntity {
   phone: string;
   nickname: string;
   avatarUrl?: string;
+  backgroundUrl?: string;
   signature: string;
   status: string;
   createdAt: string;
@@ -35,4 +36,3 @@ export interface AuthSessionEntity {
   deviceId: string;
   createdAt: number;
 }
-

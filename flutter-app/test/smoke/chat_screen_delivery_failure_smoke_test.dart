@@ -322,7 +322,8 @@ Future<({ChatProvider provider, File imageFile, String threadId})>
   return (provider: provider, imageFile: imageFile, threadId: thread.id);
 }
 
-Future<({ChatProvider provider, String threadId})> _buildProviderWithTextFailure({
+Future<({ChatProvider provider, String threadId})>
+    _buildProviderWithTextFailure({
   required String threadId,
   required String errorCode,
   required String errorMessage,
@@ -430,9 +431,9 @@ void main() {
     await tester.tap(find.text('查看说明'), warnIfMissed: false);
     await tester.pumpAndSettle();
 
-    expect(find.text('图片体积过大'), findsOneWidget);
-    expect(find.text('先压缩后再发送'), findsOneWidget);
-    expect(find.text('裁剪掉不必要区域'), findsOneWidget);
+    expect(find.text('图片太大'), findsOneWidget);
+    expect(find.text('先压缩再发送'), findsOneWidget);
+    expect(find.text('裁剪后再发送'), findsOneWidget);
 
     await _disposeHost(tester, chatProvider, friendProvider);
   });
@@ -471,9 +472,9 @@ void main() {
     await tester.tap(find.text('查看说明'), warnIfMissed: false);
     await tester.pumpAndSettle();
 
-    expect(find.text('图片格式暂不支持'), findsOneWidget);
-    expect(find.text('重新选择常见图片格式'), findsOneWidget);
-    expect(find.text('先重新保存一遍图片'), findsOneWidget);
+    expect(find.text('图片格式不支持'), findsOneWidget);
+    expect(find.text('换 JPG/PNG'), findsOneWidget);
+    expect(find.text('重新保存后再发'), findsOneWidget);
 
     await _disposeHost(tester, chatProvider, friendProvider);
   });

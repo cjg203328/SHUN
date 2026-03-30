@@ -10,6 +10,7 @@ CREATE TABLE IF NOT EXISTS users (
   phone VARCHAR(20) NOT NULL UNIQUE,
   nickname VARCHAR(32) NOT NULL DEFAULT '神秘人',
   avatar_url TEXT,
+  background_url TEXT,
   signature VARCHAR(120) NOT NULL DEFAULT '这个人很神秘，什么都没留下',
   status VARCHAR(64) NOT NULL DEFAULT '想找人聊聊',
   is_online BOOLEAN NOT NULL DEFAULT FALSE,
@@ -202,4 +203,3 @@ CREATE TABLE IF NOT EXISTS audit_logs (
 );
 
 CREATE INDEX IF NOT EXISTS idx_audit_logs_actor ON audit_logs(actor_user_id, created_at DESC);
-

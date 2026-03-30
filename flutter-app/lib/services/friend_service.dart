@@ -15,7 +15,8 @@ class FriendHydrationSnapshot {
 }
 
 class FriendService {
-  FriendService({ApiClient? apiClient}) : _apiClient = apiClient ?? ApiClient.instance;
+  FriendService({ApiClient? apiClient})
+      : _apiClient = apiClient ?? ApiClient.instance;
 
   final ApiClient _apiClient;
 
@@ -29,7 +30,8 @@ class FriendService {
 
     final normalizedUid = uid.trim().toUpperCase();
     if (normalizedUid.isEmpty) return null;
-    if (excludeUid != null && normalizedUid == excludeUid.trim().toUpperCase()) {
+    if (excludeUid != null &&
+        normalizedUid == excludeUid.trim().toUpperCase()) {
       return null;
     }
 
@@ -38,7 +40,7 @@ class FriendService {
         '/users/search',
         queryParameters: {'uid': normalizedUid},
       );
-      return _mapUser(data);
+      return mapUserPayload(data);
     } catch (_) {
       return null;
     }
@@ -62,7 +64,8 @@ class FriendService {
     if (!hasSession) return const [];
 
     try {
-      final data = await _apiClient.get<List<dynamic>>('/friends/requests/pending');
+      final data =
+          await _apiClient.get<List<dynamic>>('/friends/requests/pending');
       return data
           .whereType<Map<String, dynamic>>()
           .map(_mapFriendRequest)
@@ -79,7 +82,7 @@ class FriendService {
       final data = await _apiClient.get<List<dynamic>>('/users/blocked');
       return data
           .whereType<Map<String, dynamic>>()
-          .map(_mapUser)
+          .map(mapUserPayload)
           .toList(growable: false);
     } catch (_) {
       return const [];
@@ -91,8 +94,10 @@ class FriendService {
 
     try {
       final friendsData = await _apiClient.get<List<dynamic>>('/friends');
-      final requestsData = await _apiClient.get<List<dynamic>>('/friends/requests/pending');
-      final blockedUsersData = await _apiClient.get<List<dynamic>>('/users/blocked');
+      final requestsData =
+          await _apiClient.get<List<dynamic>>('/friends/requests/pending');
+      final blockedUsersData =
+          await _apiClient.get<List<dynamic>>('/users/blocked');
       return FriendHydrationSnapshot(
         friends: friendsData
             .whereType<Map<String, dynamic>>()
@@ -104,7 +109,7 @@ class FriendService {
             .toList(growable: false),
         blockedUsers: blockedUsersData
             .whereType<Map<String, dynamic>>()
-            .map(_mapUser)
+            .map(mapUserPayload)
             .toList(growable: false),
       );
     } catch (_) {
@@ -128,14 +133,16 @@ class FriendService {
   Future<void> acceptFriendRequest(String requestId) async {
     if (!hasSession) return;
     try {
-      await _apiClient.post<Map<String, dynamic>>('/friends/requests/$requestId/accept');
+      await _apiClient
+          .post<Map<String, dynamic>>('/friends/requests/$requestId/accept');
     } catch (_) {}
   }
 
   Future<void> rejectFriendRequest(String requestId) async {
     if (!hasSession) return;
     try {
-      await _apiClient.post<Map<String, dynamic>>('/friends/requests/$requestId/reject');
+      await _apiClient
+          .post<Map<String, dynamic>>('/friends/requests/$requestId/reject');
     } catch (_) {}
   }
 
@@ -154,26 +161,31 @@ class FriendService {
   }
 
   Friend _mapFriend(Map<String, dynamic> json) {
-    final userJson = (json['user'] as Map?)?.cast<String, dynamic>() ?? <String, dynamic>{};
+    final userJson =
+        (json['user'] as Map?)?.cast<String, dynamic>() ?? <String, dynamic>{};
     return Friend(
       id: (json['id'] ?? userJson['userId'] ?? userJson['id']).toString(),
-      user: _mapUser(userJson),
-      becameFriendAt: DateTime.tryParse(json['becameFriendAt']?.toString() ?? '') ?? DateTime.now(),
+      user: mapUserPayload(userJson),
+      becameFriendAt:
+          DateTime.tryParse(json['becameFriendAt']?.toString() ?? '') ??
+              DateTime.now(),
     );
   }
 
   FriendRequest _mapFriendRequest(Map<String, dynamic> json) {
-    final fromUserJson = (json['fromUser'] as Map?)?.cast<String, dynamic>() ?? <String, dynamic>{};
+    final fromUserJson = (json['fromUser'] as Map?)?.cast<String, dynamic>() ??
+        <String, dynamic>{};
     return FriendRequest(
       id: (json['id'] ?? json['requestId']).toString(),
-      fromUser: _mapUser(fromUserJson),
+      fromUser: mapUserPayload(fromUserJson),
       message: json['message']?.toString(),
-      createdAt: DateTime.tryParse(json['createdAt']?.toString() ?? '') ?? DateTime.now(),
+      createdAt: DateTime.tryParse(json['createdAt']?.toString() ?? '') ??
+          DateTime.now(),
       status: _mapRequestStatus(json['status']?.toString()),
     );
   }
 
-  User _mapUser(Map<String, dynamic> json) {
+  User mapUserPayload(Map<String, dynamic> json) {
     final userId = (json['userId'] ?? json['id'] ?? '').toString();
     return User(
       id: userId,
@@ -187,10 +199,11 @@ class FriendService {
   }
 
   String? _mapAvatar(String? avatarUrl) {
-    if (avatarUrl == null || avatarUrl.trim().isEmpty) {
+    final normalizedAvatar = avatarUrl?.trim();
+    if (normalizedAvatar == null || normalizedAvatar.isEmpty) {
       return '👤';
     }
-    return '👤';
+    return normalizedAvatar;
   }
 
   FriendRequestStatus _mapRequestStatus(String? status) {

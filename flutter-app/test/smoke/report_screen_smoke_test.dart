@@ -188,7 +188,7 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 180));
 
-    expect(find.text('提交过于频繁，请稍后再试'), findsOneWidget);
+    expect(find.text('提交频繁，请稍后重试'), findsOneWidget);
     expect(find.byType(ReportScreen), findsOneWidget);
     expect(find.text('report-home'), findsNothing);
   });
