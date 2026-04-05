@@ -204,6 +204,10 @@ void main() {
         findsOneWidget,
       );
       expect(find.text('系统通知未打开'), findsOneWidget);
+      expect(
+        find.text('离开会话后，新消息会先留在通知中心，锁屏和后台提醒暂不可用。'),
+        findsOneWidget,
+      );
 
       final settingsAction = find.byKey(
         const Key('chat-notification-permission-action'),
@@ -321,19 +325,39 @@ void main() {
         find.byKey(const Key('chat-notification-center-action')),
         findsOneWidget,
       );
+      expect(
+        find.byKey(const Key('chat-notification-permission-action')),
+        findsOneWidget,
+      );
       expect(find.byKey(const Key('chat-composer-shell')), findsOneWidget);
       expect(
           find.byKey(const Key('chat-composer-send-button')), findsOneWidget);
       expect(tester.takeException(), isNull);
 
+      final primaryActionRect = tester.getRect(
+        find.byKey(const Key('chat-notification-permission-action')),
+      );
       final bannerActionRect = tester.getRect(
         find.byKey(const Key('chat-notification-center-action')),
+      );
+      final titleRect = tester.getRect(
+        find.byKey(const Key('notification-permission-notice-title')),
+      );
+      final badgeRect = tester.getRect(
+        find.byKey(const Key('notification-permission-notice-badge')),
+      );
+      final descriptionRect = tester.getRect(
+        find.byKey(const Key('notification-permission-notice-description')),
       );
       final composerRect =
           tester.getRect(find.byKey(const Key('chat-composer-shell')));
       final sendRect =
           tester.getRect(find.byKey(const Key('chat-composer-send-button')));
 
+      expect(badgeRect.top, greaterThan(titleRect.bottom));
+      expect(descriptionRect.top, greaterThan(badgeRect.bottom));
+      expect(descriptionRect.bottom, lessThan(primaryActionRect.top));
+      expect(primaryActionRect.bottom, lessThan(bannerActionRect.top));
       expect(bannerActionRect.bottom, lessThan(composerRect.top));
       expect(sendRect.bottom, lessThanOrEqualTo(640));
       await tester.pump(const Duration(milliseconds: 700));

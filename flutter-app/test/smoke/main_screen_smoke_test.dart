@@ -982,6 +982,153 @@ void main() {
   );
 
   testWidgets(
+    'profile tab should show synced account settings hint without refocus after returning from settings',
+    (tester) async {
+      tester.view.physicalSize = const Size(430, 780);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+      });
+
+      await pumpMainScreen(tester, initialLocation: '/main?tab=3');
+
+      final profileScrollableFinder = find.descendant(
+        of: find.byKey(const Key('profile-main-scroll')),
+        matching: find.byType(Scrollable),
+      );
+      final profileScrollableState =
+          tester.state<ScrollableState>(profileScrollableFinder);
+      expect(profileScrollableState.position.maxScrollExtent, greaterThan(0));
+      profileScrollableState.position.jumpTo(96);
+      await tester.pump();
+      expect(profileScrollableState.position.pixels, greaterThan(0));
+
+      final quickSettingsButton =
+          find.byKey(const Key('profile-header-settings-action'));
+      await tester.ensureVisible(quickSettingsButton);
+      await tester.tap(quickSettingsButton, warnIfMissed: false);
+      await tester.pumpAndSettle();
+
+      expect(find.byType(SettingsScreen), findsOneWidget);
+      final settingsContext = tester.element(find.byType(SettingsScreen));
+      await settingsContext.read<AuthProvider>().updatePhone('13800138001');
+
+      GoRouter.of(settingsContext).pop();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 120));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const Key('profile-settings-sync-hint')),
+        findsOneWidget,
+      );
+      expect(
+        tester
+            .widget<Text>(
+              find.byKey(const Key('profile-inline-feedback-title')),
+            )
+            .data,
+        '账号设置已同步',
+      );
+      expect(
+        tester
+            .widget<Text>(
+              find.byKey(const Key('profile-inline-feedback-badge')),
+            )
+            .data,
+        '已同步',
+      );
+      expect(
+        tester
+            .widget<Text>(
+              find.byKey(const Key('profile-inline-feedback-description')),
+            )
+            .data,
+        '设置已同步完成，首页展示保持不变。',
+      );
+
+      final refreshedScrollableState =
+          tester.state<ScrollableState>(profileScrollableFinder);
+      expect(refreshedScrollableState.position.pixels, greaterThan(80));
+    },
+  );
+
+  testWidgets(
+    'profile tab should show deferred account settings hint without refocus after returning from settings',
+    (tester) async {
+      tester.view.physicalSize = const Size(430, 780);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+      });
+
+      await StorageService.saveToken('remote-refresh-fail-account-token');
+      await pumpMainScreen(tester, initialLocation: '/main?tab=3');
+
+      final profileScrollableFinder = find.descendant(
+        of: find.byKey(const Key('profile-main-scroll')),
+        matching: find.byType(Scrollable),
+      );
+      final profileScrollableState =
+          tester.state<ScrollableState>(profileScrollableFinder);
+      expect(profileScrollableState.position.maxScrollExtent, greaterThan(0));
+      profileScrollableState.position.jumpTo(96);
+      await tester.pump();
+      expect(profileScrollableState.position.pixels, greaterThan(0));
+
+      final quickSettingsButton =
+          find.byKey(const Key('profile-header-settings-action'));
+      await tester.ensureVisible(quickSettingsButton);
+      await tester.tap(quickSettingsButton, warnIfMissed: false);
+      await tester.pumpAndSettle();
+
+      expect(find.byType(SettingsScreen), findsOneWidget);
+      final settingsContext = tester.element(find.byType(SettingsScreen));
+      await settingsContext.read<AuthProvider>().updatePhone('13800138002');
+
+      GoRouter.of(settingsContext).pop();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 120));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const Key('profile-settings-sync-hint')),
+        findsOneWidget,
+      );
+      expect(
+        tester
+            .widget<Text>(
+              find.byKey(const Key('profile-inline-feedback-title')),
+            )
+            .data,
+        '设置已保存在本机',
+      );
+      expect(
+        tester
+            .widget<Text>(
+              find.byKey(const Key('profile-inline-feedback-badge')),
+            )
+            .data,
+        '待联网同步',
+      );
+      expect(
+        tester
+            .widget<Text>(
+              find.byKey(const Key('profile-inline-feedback-description')),
+            )
+            .data,
+        '这次远端同步没有完成，网络恢复后会继续更新账号设置。',
+      );
+
+      final refreshedScrollableState =
+          tester.state<ScrollableState>(profileScrollableFinder);
+      expect(refreshedScrollableState.position.pixels, greaterThan(80));
+    },
+  );
+
+  testWidgets(
     'profile tab should fallback cleanly when local media references are stale',
     (tester) async {
       final missingAvatarPath =

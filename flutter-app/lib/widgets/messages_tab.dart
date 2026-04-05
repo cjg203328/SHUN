@@ -986,6 +986,9 @@ class _ThreadItem extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Row(
+                    key: Key(
+                      'messages-thread-title-row-${viewData.threadId}',
+                    ),
                     children: [
                       Expanded(
                         child: Wrap(
@@ -1002,17 +1005,28 @@ class _ThreadItem extends StatelessWidget {
                               ),
                             ),
                             if (viewData.isFriend)
-                              _TinyTag(
-                                label: '好友',
-                                background:
-                                    AppColors.brandBlue.withValues(alpha: 0.15),
-                                foreground: AppColors.brandBlue,
+                              KeyedSubtree(
+                                key: Key(
+                                  'messages-thread-friend-tag-slot-${viewData.threadId}',
+                                ),
+                                child: _TinyTag(
+                                  label: '好友',
+                                  background: AppColors.brandBlue.withValues(
+                                    alpha: 0.15,
+                                  ),
+                                  foreground: AppColors.brandBlue,
+                                ),
                               ),
                             if (viewData.isPinned)
-                              const Icon(
-                                Icons.push_pin,
-                                size: 12,
-                                color: AppColors.textTertiary,
+                              KeyedSubtree(
+                                key: Key(
+                                  'messages-thread-pinned-icon-slot-${viewData.threadId}',
+                                ),
+                                child: const Icon(
+                                  Icons.push_pin,
+                                  size: 12,
+                                  color: AppColors.textTertiary,
+                                ),
                               ),
                           ],
                         ),
@@ -1040,10 +1054,16 @@ class _ThreadItem extends StatelessWidget {
                   ),
                   SizedBox(height: layout.previewGap),
                   Row(
+                    key: Key(
+                      'messages-thread-preview-row-${viewData.threadId}',
+                    ),
                     children: [
                       Expanded(
                         child: viewData.hasDraft
                             ? Row(
+                                key: Key(
+                                  'messages-thread-draft-slot-${viewData.threadId}',
+                                ),
                                 children: [
                                   _TinyTag(
                                     label: '草稿',
@@ -1084,24 +1104,39 @@ class _ThreadItem extends StatelessWidget {
                       ),
                       if (showDeliveryBadge) ...[
                         const SizedBox(width: 8),
-                        ChatDeliveryBadge(
-                          label: deliveryState.badgeLabel!,
-                          color: deliveryState.badgeColor!,
-                          icon: deliveryState.badgeIcon!,
-                          emphasized: deliveryState.isSuccessState,
+                        KeyedSubtree(
+                          key: Key(
+                            'messages-thread-delivery-badge-slot-${viewData.threadId}',
+                          ),
+                          child: ChatDeliveryBadge(
+                            label: deliveryState.badgeLabel!,
+                            color: deliveryState.badgeColor!,
+                            icon: deliveryState.badgeIcon!,
+                            emphasized: deliveryState.isSuccessState,
+                          ),
                         ),
                       ],
                       if (showInlineIntimacy) ...[
                         const SizedBox(width: 8),
-                        _buildIntimacyChip(layout),
+                        KeyedSubtree(
+                          key: Key(
+                            'messages-thread-intimacy-slot-preview-${viewData.threadId}',
+                          ),
+                          child: _buildIntimacyChip(layout),
+                        ),
                       ],
                       if (!moveUnreadBadgeToMetaRow &&
                           viewData.unreadCount > 0) ...[
                         const SizedBox(width: 8),
-                        _UnreadBadge(
-                          threadId: viewData.threadId,
-                          unreadCount: viewData.unreadCount,
-                          fontSize: layout.metaSize - 1,
+                        KeyedSubtree(
+                          key: Key(
+                            'messages-thread-unread-slot-preview-${viewData.threadId}',
+                          ),
+                          child: _UnreadBadge(
+                            threadId: viewData.threadId,
+                            unreadCount: viewData.unreadCount,
+                            fontSize: layout.metaSize - 1,
+                          ),
                         ),
                       ],
                     ],
@@ -1125,6 +1160,9 @@ class _ThreadItem extends StatelessWidget {
                         return const SizedBox.shrink();
                       }
                       return Padding(
+                        key: Key(
+                          'messages-thread-priority-row-${viewData.threadId}',
+                        ),
                         padding:
                             EdgeInsets.only(top: layout.priorityTopSpacing),
                         child: Wrap(
@@ -1170,6 +1208,9 @@ class _ThreadItem extends StatelessWidget {
                             ? AppColors.error
                             : AppColors.textTertiary;
                         return Row(
+                          key: Key(
+                            'messages-thread-meta-row-${viewData.threadId}',
+                          ),
                           children: [
                             Icon(
                               Icons.access_time,
@@ -1197,15 +1238,25 @@ class _ThreadItem extends StatelessWidget {
                             ),
                             if (moveUnreadBadgeToMetaRow) ...[
                               const SizedBox(width: 8),
-                              _UnreadBadge(
-                                threadId: viewData.threadId,
-                                unreadCount: viewData.unreadCount,
-                                fontSize: layout.metaSize - 1,
+                              KeyedSubtree(
+                                key: Key(
+                                  'messages-thread-unread-slot-meta-${viewData.threadId}',
+                                ),
+                                child: _UnreadBadge(
+                                  threadId: viewData.threadId,
+                                  unreadCount: viewData.unreadCount,
+                                  fontSize: layout.metaSize - 1,
+                                ),
                               ),
                             ],
                             if (showTrailingIntimacy) ...[
                               const SizedBox(width: 8),
-                              _buildIntimacyChip(layout),
+                              KeyedSubtree(
+                                key: Key(
+                                  'messages-thread-intimacy-slot-meta-${viewData.threadId}',
+                                ),
+                                child: _buildIntimacyChip(layout),
+                              ),
                             ],
                           ],
                         );

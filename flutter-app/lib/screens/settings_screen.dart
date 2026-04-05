@@ -183,9 +183,9 @@ class _SettingsScreenState extends State<SettingsScreen>
   Future<void> _refreshNotificationPermissionAfterSystemSettingsReturn() async {
     if (!mounted) return;
     final settingsProvider = context.read<SettingsProvider>();
-    final didRefresh = await settingsProvider
+    final handledRecovery = await settingsProvider
         .refreshPushRuntimeStateAfterSystemSettingsReturn();
-    if (!mounted || !didRefresh) return;
+    if (!mounted || !handledRecovery) return;
     _showInlineFeedback(
       _buildNotificationResumeInlineFeedback(settingsProvider),
     );
@@ -2783,8 +2783,8 @@ class _SettingsScreenState extends State<SettingsScreen>
     if (!viewData.pushHasDeviceToken) {
       return const _SettingsOverviewFocusState(
         icon: Icons.sync_outlined,
-        title: '通知通道正在同步',
-        subtitle: '系统权限已开，正在等通道恢复。',
+        title: '通知同步中',
+        subtitle: '提醒会在通道恢复后回来。',
         badgeLabel: '通道同步中',
       );
     }
@@ -2857,7 +2857,7 @@ class _SettingsScreenState extends State<SettingsScreen>
       return const _SettingsNotificationRuntimeState(
         icon: Icons.sync_outlined,
         badgeLabel: '通道同步中',
-        description: '系统权限已开，正在等通知通道恢复。',
+        description: '提醒会在通道恢复后回来。',
         followUpDescription: '刚改过权限时可手动刷新。',
         statusChipLabel: '通道同步中',
         actionLabel: '刷新状态',
@@ -2869,7 +2869,7 @@ class _SettingsScreenState extends State<SettingsScreen>
     return const _SettingsNotificationRuntimeState(
       icon: Icons.notifications_active_outlined,
       badgeLabel: '通道已就绪',
-      description: '系统权限和设备通道都已就绪。',
+      description: '新消息会正常提醒。',
       statusChipLabel: '通道已就绪',
       actionLabel: '收起通知',
       actionIcon: Icons.notifications_off_outlined,
@@ -3732,22 +3732,22 @@ class _SettingsScreenState extends State<SettingsScreen>
       _SettingsNotificationAction.refreshRuntimeState =>
         const _SettingsInlineFeedbackState(
           icon: Icons.sync_outlined,
-          title: '通知通道正在同步',
+          title: '通知同步中',
           badgeLabel: '通道同步中',
-          description: '系统权限已开，正在等通道就绪。',
+          description: '提醒会在通道就绪后恢复。',
         ),
       _SettingsNotificationAction.disableNotifications =>
         const _SettingsInlineFeedbackState(
           icon: Icons.notifications_active_outlined,
-          title: '通知已经恢复在线',
+          title: '通知已在线',
           badgeLabel: '通道已就绪',
-          description: '系统权限和设备通道都已就绪。',
+          description: '新消息会正常提醒。',
           isHealthy: true,
         ),
       _SettingsNotificationAction.enableNotifications =>
         const _SettingsInlineFeedbackState(
           icon: Icons.notifications_off_outlined,
-          title: '通知已切到静默',
+          title: '通知已静默',
           badgeLabel: '提醒已收起',
           description: '新消息仍会保存在通知中心。',
         ),
@@ -3771,24 +3771,24 @@ class _SettingsScreenState extends State<SettingsScreen>
       _SettingsNotificationAction.refreshRuntimeState =>
         const _SettingsInlineFeedbackState(
           icon: Icons.sync_outlined,
-          title: '通知通道正在恢复',
+          title: '通知恢复中',
           badgeLabel: '通道同步中',
-          description: '系统权限已开，正在等通道恢复。',
+          description: '提醒会在通道恢复后回来。',
         ),
       _SettingsNotificationAction.disableNotifications =>
         const _SettingsInlineFeedbackState(
           icon: Icons.notifications_active_outlined,
-          title: '通知已经恢复在线',
+          title: '通知已在线',
           badgeLabel: '通道已就绪',
-          description: '系统通知权限已恢复。',
+          description: '新消息会重新正常提醒。',
           isHealthy: true,
         ),
       _SettingsNotificationAction.enableNotifications =>
         const _SettingsInlineFeedbackState(
           icon: Icons.notifications_off_outlined,
-          title: '通知仍处于静默',
+          title: '通知仍静默',
           badgeLabel: '提醒已收起',
-          description: '系统权限已恢复，应用通知仍关闭。',
+          description: '系统权限已恢复，当前仍保持静默。',
         ),
     };
   }
@@ -3977,14 +3977,14 @@ class _SettingsScreenState extends State<SettingsScreen>
     return switch (preset) {
       SettingsExperiencePreset.responsive => const _SettingsInlineFeedbackState(
           icon: Icons.flash_on_outlined,
-          title: '体验预设已切到在线回复',
+          title: '已切到在线回复',
           badgeLabel: '主入口',
           description: '通知、震动和展示都已打开，适合作为主聊天入口。',
           isHealthy: true,
         ),
       SettingsExperiencePreset.balanced => const _SettingsInlineFeedbackState(
           icon: Icons.tune_outlined,
-          title: '体验预设已切到低干扰',
+          title: '已切到低干扰',
           badgeLabel: '提醒更克制',
           description: '会继续在线收消息，但提醒更克制。',
           isHealthy: true,
@@ -3992,7 +3992,7 @@ class _SettingsScreenState extends State<SettingsScreen>
       SettingsExperiencePreset.quietObserve =>
         const _SettingsInlineFeedbackState(
           icon: Icons.nightlight_round_outlined,
-          title: '体验预设已切到安静观察',
+          title: '已切到安静观察',
           badgeLabel: '展示已收起',
           description: '通知和震动已关闭，并切到隐身状态。',
         ),
@@ -4413,9 +4413,9 @@ class _SettingsScreenState extends State<SettingsScreen>
       _showInlineFeedback(
         _buildAccountSavedFeedback(
           icon: Icons.phone_outlined,
-          title: '手机号已经更新',
-          badgeLabel: '账号已刷新',
-          description: '新手机号已同步到账号资料。',
+          title: '手机号已更新',
+          badgeLabel: '已同步',
+          description: '当前账号已切到新手机号。',
         ),
       );
       AppFeedback.showToast(context, AppToastCode.saved, subject: '手机号');
@@ -4619,9 +4619,9 @@ class _SettingsScreenState extends State<SettingsScreen>
         _showInlineFeedback(
           _buildAccountSavedFeedback(
             icon: Icons.lock_outlined,
-            title: '密码已经更新',
-            badgeLabel: '安全已刷新',
-            description: '新密码已保存，请改用新密码登录。',
+            title: '密码已更新',
+            badgeLabel: '已保存',
+            description: '请改用新密码登录。',
           ),
         );
         AppFeedback.showToast(context, AppToastCode.saved, subject: '密码');

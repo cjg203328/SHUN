@@ -349,6 +349,30 @@ class ChatDeliveryStatusCard extends StatelessWidget {
   final VoidCallback? onActionTap;
   final bool animated;
 
+  Widget _buildActionChip(Color color) {
+    return GestureDetector(
+      key: ValueKey<String>(
+        'chat-delivery-status-action:${spec.actionType?.name ?? spec.actionLabel}',
+      ),
+      onTap: onActionTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.14),
+          borderRadius: BorderRadius.circular(999),
+        ),
+        child: Text(
+          spec.actionLabel!,
+          style: TextStyle(
+            fontSize: 10,
+            fontWeight: FontWeight.w500,
+            color: color,
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     if (!spec.hasCard) {
@@ -356,6 +380,7 @@ class ChatDeliveryStatusCard extends StatelessWidget {
     }
 
     final color = spec.cardColor!;
+    final hasAction = spec.actionLabel != null && onActionTap != null;
     final child = Container(
       key: ValueKey<String>('card:${spec.stateKey}'),
       width: double.infinity,
@@ -374,61 +399,57 @@ class ChatDeliveryStatusCard extends StatelessWidget {
               ]
             : null,
       ),
-      child: Row(
-        children: [
-          Icon(spec.cardIcon!, size: 13, color: color),
-          const SizedBox(width: 6),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  spec.cardLabel!,
-                  style: TextStyle(
-                    fontSize: 10,
-                    fontWeight: FontWeight.w500,
-                    color: color,
-                  ),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final useStackedAction = hasAction && constraints.maxWidth <= 240;
+          return Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(spec.cardIcon!, size: 13, color: color),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      spec.cardLabel!,
+                      key: ValueKey<String>(
+                        'chat-delivery-status-label:${spec.stateKey}',
+                      ),
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w500,
+                        color: color,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      spec.cardDetail!,
+                      key: ValueKey<String>(
+                        'chat-delivery-status-detail:${spec.stateKey}',
+                      ),
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w300,
+                        color: color.withValues(alpha: 0.88),
+                        height: 1.25,
+                      ),
+                    ),
+                    if (useStackedAction) ...[
+                      const SizedBox(height: 8),
+                      _buildActionChip(color),
+                    ],
+                  ],
                 ),
-                const SizedBox(height: 2),
-                Text(
-                  spec.cardDetail!,
-                  style: TextStyle(
-                    fontSize: 10,
-                    fontWeight: FontWeight.w300,
-                    color: color.withValues(alpha: 0.88),
-                    height: 1.25,
-                  ),
-                ),
+              ),
+              if (hasAction && !useStackedAction) ...[
+                const SizedBox(width: 8),
+                _buildActionChip(color),
               ],
-            ),
-          ),
-          if (spec.actionLabel != null && onActionTap != null) ...[
-            const SizedBox(width: 8),
-            GestureDetector(
-              key: ValueKey<String>(
-                'chat-delivery-status-action:${spec.actionType?.name ?? spec.actionLabel}',
-              ),
-              onTap: onActionTap,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-                decoration: BoxDecoration(
-                  color: color.withValues(alpha: 0.14),
-                  borderRadius: BorderRadius.circular(999),
-                ),
-                child: Text(
-                  spec.actionLabel!,
-                  style: TextStyle(
-                    fontSize: 10,
-                    fontWeight: FontWeight.w500,
-                    color: color,
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ],
+            ],
+          );
+        },
       ),
     );
 

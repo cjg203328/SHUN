@@ -190,7 +190,8 @@ class SettingsProvider extends ChangeNotifier {
     _pendingNotificationPermissionRecovery = false;
     _notificationPermissionRecoveryInFlight = true;
     try {
-      return await refreshPushRuntimeState();
+      await refreshPushRuntimeState();
+      return true;
     } finally {
       _notificationPermissionRecoveryInFlight = false;
     }

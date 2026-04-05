@@ -555,6 +555,19 @@ extension ChatProviderMessages on ChatProvider {
     return true;
   }
 
+  @visibleForTesting
+  void markMessageFailedForTesting(
+    String threadId,
+    String messageId, {
+    ChatDeliveryFailureState? failureState,
+  }) {
+    _markMessageFailed(
+      threadId,
+      messageId,
+      failureState: failureState,
+    );
+  }
+
   void _markMessageFailed(
     String threadId,
     String messageId, {

@@ -27,6 +27,9 @@ class NotificationPermissionNoticeCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final hasSecondaryAction =
+        secondaryActionLabel != null && onSecondaryActionPressed != null;
+    final useStackedCompactActions = compact && hasSecondaryAction;
     final contentPadding = compact
         ? const EdgeInsets.fromLTRB(10, 8, 10, 7)
         : const EdgeInsets.all(12);
@@ -62,41 +65,76 @@ class NotificationPermissionNoticeCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(
-                      child: Text(
-                        NotificationPermissionGuidance.title,
-                        style: TextStyle(
-                          fontSize: titleSize,
-                          fontWeight: FontWeight.w400,
-                          color: AppColors.textPrimary,
-                        ),
+                if (compact) ...[
+                  Text(
+                    key: const Key('notification-permission-notice-title'),
+                    NotificationPermissionGuidance.title,
+                    style: TextStyle(
+                      fontSize: titleSize,
+                      fontWeight: FontWeight.w400,
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Container(
+                    key: const Key('notification-permission-notice-badge'),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: AppColors.brandBlue.withValues(alpha: 0.16),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: const Text(
+                      NotificationPermissionGuidance.badgeLabel,
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w300,
+                        color: AppColors.brandBlue,
                       ),
                     ),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 4,
-                      ),
-                      decoration: BoxDecoration(
-                        color: AppColors.brandBlue.withValues(alpha: 0.16),
-                        borderRadius: BorderRadius.circular(999),
-                      ),
-                      child: const Text(
-                        NotificationPermissionGuidance.badgeLabel,
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w300,
-                          color: AppColors.brandBlue,
+                  ),
+                ] else
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: Text(
+                          key:
+                              const Key('notification-permission-notice-title'),
+                          NotificationPermissionGuidance.title,
+                          style: TextStyle(
+                            fontSize: titleSize,
+                            fontWeight: FontWeight.w400,
+                            color: AppColors.textPrimary,
+                          ),
                         ),
                       ),
-                    ),
-                  ],
-                ),
+                      Container(
+                        key: const Key('notification-permission-notice-badge'),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: AppColors.brandBlue.withValues(alpha: 0.16),
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        child: const Text(
+                          NotificationPermissionGuidance.badgeLabel,
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w300,
+                            color: AppColors.brandBlue,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 SizedBox(height: compact ? 4 : 6),
                 Text(
+                  key: const Key('notification-permission-notice-description'),
                   description,
                   style: TextStyle(
                     fontSize: descriptionSize,
@@ -109,67 +147,120 @@ class NotificationPermissionNoticeCard extends StatelessWidget {
                       compact ? TextOverflow.ellipsis : TextOverflow.visible,
                 ),
                 SizedBox(height: compact ? 8 : 10),
-                Row(
-                  children: [
-                    Expanded(
-                      child: SizedBox(
-                        height: compact ? 34 : 38,
-                        child: TextButton(
-                          key: actionKey,
-                          onPressed: onActionPressed,
-                          style: TextButton.styleFrom(
-                            padding: EdgeInsets.zero,
-                            foregroundColor: AppColors.brandBlue,
-                            backgroundColor:
-                                AppColors.brandBlue.withValues(alpha: 0.14),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                          ),
-                          child: Text(
-                            actionLabel,
-                            style: TextStyle(
-                              fontSize: compact ? 11.5 : 12,
-                              fontWeight: FontWeight.w400,
-                              letterSpacing: 0.2,
-                            ),
-                          ),
+                if (useStackedCompactActions) ...[
+                  SizedBox(
+                    width: double.infinity,
+                    height: 34,
+                    child: TextButton(
+                      key: actionKey,
+                      onPressed: onActionPressed,
+                      style: TextButton.styleFrom(
+                        padding: EdgeInsets.zero,
+                        foregroundColor: AppColors.brandBlue,
+                        backgroundColor:
+                            AppColors.brandBlue.withValues(alpha: 0.14),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                      ),
+                      child: Text(
+                        actionLabel,
+                        style: const TextStyle(
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w400,
+                          letterSpacing: 0.2,
                         ),
                       ),
                     ),
-                    if (secondaryActionLabel != null &&
-                        onSecondaryActionPressed != null) ...[
-                      const SizedBox(width: 8),
+                  ),
+                  const SizedBox(height: 8),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 34,
+                    child: TextButton(
+                      key: secondaryActionKey,
+                      onPressed: onSecondaryActionPressed,
+                      style: TextButton.styleFrom(
+                        padding: EdgeInsets.zero,
+                        foregroundColor: AppColors.textSecondary,
+                        backgroundColor: AppColors.white08,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                          side: const BorderSide(
+                            color: AppColors.white12,
+                          ),
+                        ),
+                      ),
+                      child: Text(
+                        secondaryActionLabel!,
+                        style: const TextStyle(
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w300,
+                        ),
+                      ),
+                    ),
+                  ),
+                ] else
+                  Row(
+                    children: [
                       Expanded(
                         child: SizedBox(
                           height: compact ? 34 : 38,
                           child: TextButton(
-                            key: secondaryActionKey,
-                            onPressed: onSecondaryActionPressed,
+                            key: actionKey,
+                            onPressed: onActionPressed,
                             style: TextButton.styleFrom(
                               padding: EdgeInsets.zero,
-                              foregroundColor: AppColors.textSecondary,
-                              backgroundColor: AppColors.white08,
+                              foregroundColor: AppColors.brandBlue,
+                              backgroundColor:
+                                  AppColors.brandBlue.withValues(alpha: 0.14),
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(10),
-                                side: const BorderSide(
-                                  color: AppColors.white12,
-                                ),
                               ),
                             ),
                             child: Text(
-                              secondaryActionLabel!,
+                              actionLabel,
                               style: TextStyle(
                                 fontSize: compact ? 11.5 : 12,
-                                fontWeight: FontWeight.w300,
+                                fontWeight: FontWeight.w400,
+                                letterSpacing: 0.2,
                               ),
                             ),
                           ),
                         ),
                       ),
+                      if (hasSecondaryAction) ...[
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: SizedBox(
+                            height: compact ? 34 : 38,
+                            child: TextButton(
+                              key: secondaryActionKey,
+                              onPressed: onSecondaryActionPressed,
+                              style: TextButton.styleFrom(
+                                padding: EdgeInsets.zero,
+                                foregroundColor: AppColors.textSecondary,
+                                backgroundColor: AppColors.white08,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(10),
+                                  side: const BorderSide(
+                                    color: AppColors.white12,
+                                  ),
+                                ),
+                              ),
+                              child: Text(
+                                secondaryActionLabel!,
+                                style: TextStyle(
+                                  fontSize: compact ? 11.5 : 12,
+                                  fontWeight: FontWeight.w300,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
                     ],
-                  ],
-                ),
+                  ),
               ],
             ),
           ),

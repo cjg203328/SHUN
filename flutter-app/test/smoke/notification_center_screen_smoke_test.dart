@@ -175,6 +175,10 @@ void main() {
         findsOneWidget,
       );
       expect(find.text('系统通知未打开'), findsOneWidget);
+      expect(
+        find.text('新消息会先留在这里，锁屏和后台提醒暂不可用。'),
+        findsOneWidget,
+      );
 
       final settingsAction = find.byKey(
         const Key('notification-center-permission-action'),
@@ -346,6 +350,18 @@ void main() {
       final bannerFinder = find.byKey(
         const Key('notification-center-permission-banner'),
       );
+      final actionFinder = find.byKey(
+        const Key('notification-center-permission-action'),
+      );
+      final titleFinder = find.byKey(
+        const Key('notification-permission-notice-title'),
+      );
+      final badgeFinder = find.byKey(
+        const Key('notification-permission-notice-badge'),
+      );
+      final descriptionFinder = find.byKey(
+        const Key('notification-permission-notice-description'),
+      );
       final filterFinder = find.byKey(
         const Key('notification-center-filter-system'),
       );
@@ -354,13 +370,25 @@ void main() {
       );
 
       expect(bannerFinder, findsOneWidget);
+      expect(actionFinder, findsOneWidget);
+      expect(titleFinder, findsOneWidget);
+      expect(badgeFinder, findsOneWidget);
+      expect(descriptionFinder, findsOneWidget);
       expect(filterFinder, findsOneWidget);
       expect(itemFinder, findsOneWidget);
       expect(tester.takeException(), isNull);
 
+      final actionRect = tester.getRect(actionFinder);
+      final titleRect = tester.getRect(titleFinder);
+      final badgeRect = tester.getRect(badgeFinder);
+      final descriptionRect = tester.getRect(descriptionFinder);
       final filterRect = tester.getRect(filterFinder);
       final itemRect = tester.getRect(itemFinder);
 
+      expect(badgeRect.top, greaterThan(titleRect.bottom));
+      expect(descriptionRect.top, greaterThan(badgeRect.bottom));
+      expect(descriptionRect.bottom, lessThan(actionRect.top));
+      expect(actionRect.bottom, lessThan(filterRect.top));
       expect(filterRect.bottom, lessThan(itemRect.top));
       expect(itemRect.bottom, lessThanOrEqualTo(640));
     },

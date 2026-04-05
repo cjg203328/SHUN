@@ -835,7 +835,7 @@ void main() {
               find.byKey(const Key('settings-inline-feedback-title')),
             )
             .data,
-        '\u901a\u77e5\u5df2\u5207\u5230\u9759\u9ed8',
+        '\u901a\u77e5\u5df2\u9759\u9ed8',
       );
       expect(
         tester
@@ -844,6 +844,14 @@ void main() {
             )
             .data,
         '\u63d0\u9192\u5df2\u6536\u8d77',
+      );
+      expect(
+        tester
+            .widget<Text>(
+              find.byKey(const Key('settings-inline-feedback-description')),
+            )
+            .data,
+        '\u65b0\u6d88\u606f\u4ecd\u4f1a\u4fdd\u5b58\u5728\u901a\u77e5\u4e2d\u5fc3\u3002',
       );
 
       final vibrationSwitch = find.descendant(
@@ -956,7 +964,7 @@ void main() {
         find.byKey(const Key('settings-inline-feedback-card')),
         findsOneWidget,
       );
-      expect(find.text('体验预设已切到安静观察'), findsOneWidget);
+      expect(find.text('已切到安静观察'), findsOneWidget);
       expect(
         tester
             .widget<Text>(
@@ -1092,6 +1100,10 @@ void main() {
 
       expect(runtimeBadgeText, '待授权');
       expect(
+        find.text('新消息仍会留在通知中心，系统提醒暂不可用。'),
+        findsOneWidget,
+      );
+      expect(
         find.byKey(const Key('settings-notification-runtime-action')),
         findsOneWidget,
       );
@@ -1141,7 +1153,7 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));
 
-      expect(find.text('通知通道正在同步'), findsOneWidget);
+      expect(find.text('通知同步中'), findsOneWidget);
       final runtimeBadgeText = tester
           .widgetList<Text>(
             find.descendant(
@@ -1800,7 +1812,7 @@ void main() {
               find.byKey(const Key('settings-inline-feedback-title')),
             )
             .data,
-        '\u901a\u77e5\u5df2\u7ecf\u6062\u590d\u5728\u7ebf',
+        '\u901a\u77e5\u5df2\u5728\u7ebf',
       );
       expect(
         tester
@@ -1822,7 +1834,7 @@ void main() {
   );
 
   testWidgets(
-    'settings screen should avoid duplicate recovery feedback when notification permission is unchanged after returning from system settings',
+    'settings screen should show current notification state when permission is unchanged after returning from system settings',
     (tester) async {
       final pushNotificationService = _TestPushNotificationService(
         initialState: const PushRuntimeState(
@@ -1900,7 +1912,7 @@ void main() {
               find.byKey(const Key('settings-inline-feedback-title')),
             )
             .data,
-        '已打开系统设置',
+        '通知权限仍待授权',
       );
       expect(
         tester
@@ -1908,7 +1920,15 @@ void main() {
               find.byKey(const Key('settings-inline-feedback-badge')),
             )
             .data,
-        '等待返回',
+        '待授权',
+      );
+      expect(
+        tester
+            .widget<Text>(
+              find.byKey(const Key('settings-inline-feedback-description')),
+            )
+            .data,
+        '返回后仍未检测到系统通知权限。',
       );
     },
   );
@@ -1989,7 +2009,7 @@ void main() {
               find.byKey(const Key('settings-inline-feedback-title')),
             )
             .data,
-        '\u901a\u77e5\u5df2\u7ecf\u6062\u590d\u5728\u7ebf',
+        '\u901a\u77e5\u5df2\u5728\u7ebf',
       );
       expect(
         tester
@@ -2005,7 +2025,7 @@ void main() {
               find.byKey(const Key('settings-inline-feedback-description')),
             )
             .data,
-        contains('\u90fd\u5df2\u5c31\u7eea'),
+        '\u65b0\u6d88\u606f\u4f1a\u91cd\u65b0\u6b63\u5e38\u63d0\u9192\u3002',
       );
     },
   );
@@ -2596,7 +2616,7 @@ void main() {
             .widget<Text>(
                 find.byKey(const Key('settings-inline-feedback-title')))
             .data,
-        '\u624b\u673a\u53f7\u5df2\u7ecf\u66f4\u65b0',
+        '\u624b\u673a\u53f7\u5df2\u66f4\u65b0',
       );
       expect(
         tester
@@ -2604,7 +2624,7 @@ void main() {
               find.byKey(const Key('settings-inline-feedback-badge')),
             )
             .data,
-        '\u8d26\u53f7\u5df2\u5237\u65b0',
+        '\u5df2\u540c\u6b65',
       );
       expect(
         tester
@@ -2612,8 +2632,7 @@ void main() {
               find.byKey(const Key('settings-inline-feedback-description')),
             )
             .data,
-        contains(
-            '\u65b0\u624b\u673a\u53f7\u5df2\u540c\u6b65\u5230\u8d26\u53f7\u8d44\u6599'),
+        '\u5f53\u524d\u8d26\u53f7\u5df2\u5207\u5230\u65b0\u624b\u673a\u53f7\u3002',
       );
 
       final passwordItem = find.byKey(const Key('settings-password-item'));
@@ -2682,7 +2701,7 @@ void main() {
             .widget<Text>(
                 find.byKey(const Key('settings-inline-feedback-title')))
             .data,
-        '\u5bc6\u7801\u5df2\u7ecf\u66f4\u65b0',
+        '\u5bc6\u7801\u5df2\u66f4\u65b0',
       );
       expect(
         tester
@@ -2690,7 +2709,7 @@ void main() {
               find.byKey(const Key('settings-inline-feedback-badge')),
             )
             .data,
-        '\u5b89\u5168\u5df2\u5237\u65b0',
+        '\u5df2\u4fdd\u5b58',
       );
       expect(
         tester
@@ -2698,7 +2717,7 @@ void main() {
               find.byKey(const Key('settings-inline-feedback-description')),
             )
             .data,
-        contains('\u65b0\u5bc6\u7801\u5df2\u4fdd\u5b58'),
+        '\u8bf7\u6539\u7528\u65b0\u5bc6\u7801\u767b\u5f55\u3002',
       );
     },
   );
